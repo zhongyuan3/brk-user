@@ -1,0 +1,10 @@
+*.o
+*.d
+*.elf
+*.out
+
+.cache/
+compile_commands.json
+.vscode/
+
+build/
