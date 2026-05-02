@@ -12,6 +12,7 @@ SRC_BUILD_DIR := $(BUILD_DIR)/src
 LIB_BUILD_DIR := $(BUILD_DIR)/lib
 MKFS_BUILD_DIR := $(BUILD_DIR)/mkfs
 MKFS_TARGET := $(MKFS_BUILD_DIR)/mkfs
+FS_IMG := $(BUILD_DIR)/brkfs.img
 
 BUILD ?= DEBUG
 OPT_LEVELS :=
@@ -59,11 +60,16 @@ USER_OBJS_DEPS := $(USER_OBJS:.o=.d)
 LIB_OBJS_DEPS := $(LIB_OBJS:.o=.d)
 MKFS_OBJS_DEPS := $(MKFS_OBJS:.o=.d)
 
-.PHONY: all clean echo user_prog user_lib mkfs
+.PHONY: all clean echo user_prog user_lib mkfs fs_img
 
 .PRECIOUS: $(USER_OBJS) $(LIB_OBJS) $(MKFS_OBJS)
 
-all: user_lib user_prog mkfs
+all: user_lib user_prog mkfs fs_img
+
+fs_img: $(FS_IMG)
+
+$(FS_IMG): $(MKFS_TARGET) $(USER_PROG)
+	$(MKFS_TARGET) -v -n 128 -d 1024 $@ $(USER_PROG)
 
 clean:
 	$(RM) -rf $(BUILD_DIR)
