@@ -1,491 +1,657 @@
+/*
+ * Host tool: create a brkfs image from brkfs.h layout.
+ *
+ * On-disk layout (block numbers are 0-based, size s_blocksize):
+ *   block 0: bytes [0,1024) reserved; [1024,2048) struct brkfs_super_block;
+ *            rest of block 0 zero.
+ *   block s_inode_bitmap_start: inode bitmap (1 bit per inode slot; inode N uses bit N).
+ *   block s_data_bitmap_start: data block bitmap (1 bit per data slot; slot K is
+ *            physical block s_data_start + K).
+ *   blocks [s_inode_start, s_inode_start + s_inode_blocks): inode table; inode
+ *            number ino (>=1) at byte offset (ino-1)*sizeof(inode) from inode_start.
+ *   blocks [s_data_start, s_data_start + s_data_blocks): payload and index blocks;
+ *            inode i_blocks[] holds absolute physical block numbers.
+ *
+ * i_block[]: [0..6] direct data; [7] singly-indirect index block; [8] doubly;
+ *            [9] triply (see brkfs.h).
+ */
+
+#include "brkfs.h"
+
 #include <assert.h>
 #include <dirent.h>
 #include <fcntl.h>
-#include <stdalign.h>
-#include <stdbool.h>
+#include <inttypes.h>
+#include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdnoreturn.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
-#include "brkfs.h"
+#define BRKFS_INODE_BYTES ((uint32_t)sizeof(struct brkfs_inode))
+#define BRKFS_PTRS_PER_BLOCK(bs) ((bs) / (uint32_t)sizeof(uint32_t))
 
-/*
- * Disk layout:
- *   boot block
- *   superblock (1024-byte fixed offset, 1024-byte size)
- *   inode bitmap
- *   data bitmap
- *   inode table
- *   data blocks
- */
+struct host_file {
+	char *path;
+	char *name;
+	uint8_t *data;
+	uint32_t size;
+};
 
-#define BLOCK_SIZE 4096
-#define INODES_PER_BLOCK (BLOCK_SIZE / sizeof(struct brkfs_inode))
-#define ADDRS_PER_BLOCK (BLOCK_SIZE / sizeof(uint32_t))
-#define INODE_BITMAP_BLKS 1
-#define DATA_BITMAP_BLKS 4
+struct mkfs_ctx {
+	uint8_t *img;
+	uint32_t bs;
+	struct brkfs_super_block *sb;
+	uint8_t *inode_bmp;
+	uint8_t *data_bmp;
+	uint32_t inodes_capacity;
+	uint32_t data_slots;
+};
 
-#define INODE_BLKS \
-	(((INODE_BITMAP_BLKS) * (BLOCK_SIZE) * 8) / (INODES_PER_BLOCK))
-#define DATA_BLKS ((BLOCK_SIZE) * (DATA_BITMAP_BLKS))
-#define BLKS                                                           \
-	(1 + (INODE_BITMAP_BLKS) + (DATA_BITMAP_BLKS) + (INODE_BLKS) + \
-	 (DATA_BLKS))
+enum { OUT_QUIET = 0, OUT_NORMAL = 1, OUT_VERBOSE = 2 };
 
-#define INODE_BITMAP_START 1
-#define DATA_BITMAP_START ((INODE_BITMAP_START) + (INODE_BITMAP_BLKS))
-#define INODE_START ((DATA_BITMAP_START) + (DATA_BITMAP_BLKS))
-#define DATA_START ((INODE_START) + (INODE_BLKS))
+static int out_level = OUT_NORMAL;
 
-/* Sentinel value for allocation failure (0 is the boot block, never a
- * valid data/inode-table block returned by alloc_*). */
-#define ALLOC_FAIL 0
-
-static uint32_t calc_min_len(uint32_t n)
+static void warn(const char *fmt, ...)
 {
-	return (n + 3) & ~3;
+	va_list ap;
+	fputs("mkfs: ", stderr);
+	va_start(ap, fmt);
+	vfprintf(stderr, fmt, ap);
+	va_end(ap);
+	fputc('\n', stderr);
 }
 
-static uint32_t inode_phys_bno(uint32_t ino, struct brkfs_super_block *sb)
+static noreturn void die(const char *msg)
 {
-	return ino / INODES_PER_BLOCK + sb->inode_start;
+	fputs("mkfs: ", stderr);
+	perror(msg);
+	exit(1);
 }
 
-static void read_block(int fd, uint32_t bno, void *buf)
+static void fmt_bytes(char *buf, size_t buflen, uint64_t n)
 {
-	if (lseek(fd, (off_t)BLOCK_SIZE * bno, SEEK_SET) !=
-	    (off_t)BLOCK_SIZE * bno) {
-		perror("lseek");
-		exit(1);
-	}
-	if (read(fd, buf, BLOCK_SIZE) != BLOCK_SIZE) {
-		perror("read");
-		exit(1);
-	}
+	if (n >= 1048576u && n % 1048576u == 0)
+		snprintf(buf, buflen, "%" PRIu64 " MiB", n / 1048576u);
+	else if (n >= 1024u && n % 1024u == 0)
+		snprintf(buf, buflen, "%" PRIu64 " KiB", n / 1024u);
+	else
+		snprintf(buf, buflen, "%" PRIu64 " B", n);
 }
 
-static void write_block(int fd, uint32_t bno, const void *buf)
+/* Verbose trace to stdout (no prefix; lines are indented for readability). */
+static void vlog(const char *fmt, ...)
 {
-	if (lseek(fd, (off_t)BLOCK_SIZE * bno, SEEK_SET) !=
-	    (off_t)BLOCK_SIZE * bno) {
-		perror("lseek");
-		exit(1);
-	}
-	if (write(fd, buf, BLOCK_SIZE) != BLOCK_SIZE) {
-		perror("write");
-		exit(1);
-	}
+	if (out_level < OUT_VERBOSE)
+		return;
+	va_list ap;
+	va_start(ap, fmt);
+	vprintf(fmt, ap);
+	va_end(ap);
 }
 
-/*
- * pre-mark system blocks (boot + super + bitmaps + inode table) as used
- * in the data bitmap so alloc_block never hands out block 0 or any other
- * reserved block.  We achieve this by initialising the bitmap with all
- * system-block bits already set before the first allocation; that is
- * handled in main() via write_block of a pre-built bitmap buffer.
- *
- * alloc_block itself now also returns ALLOC_FAIL (0) only when the bitmap
- * is genuinely full, and callers check for it.
- */
-static uint32_t alloc_block(int fd, struct brkfs_super_block *sb)
+static void *xmalloc(size_t n)
 {
-	uint8_t buf[BLOCK_SIZE];
+	void *p = malloc(n);
+	if (p)
+		return p;
+	die("malloc");
+}
 
-	read_block(fd, sb->data_bitmap_start, buf);
-	for (uint32_t byte = 0; byte < BLOCK_SIZE; byte++) {
-		for (uint32_t shift = 0; shift <= 7; shift++) {
-			if (!(buf[byte] & (1u << shift))) {
-				buf[byte] |= (1u << shift);
-				write_block(fd, sb->data_bitmap_start, buf);
-				return byte * 8 + shift + sb->data_start;
-			}
+static uint32_t div_round_up(uint32_t a, uint32_t b)
+{
+	assert(b > 0);
+	return (a + b - 1u) / b;
+}
+
+static uint32_t file_payload_blocks(uint32_t file_size, uint32_t bs)
+{
+	if (file_size == 0)
+		return 0;
+	return div_round_up(file_size, bs);
+}
+
+/* Payload blocks + index blocks needed to map them. */
+static uint32_t data_blocks_for_file(uint32_t file_size, uint32_t bs)
+{
+	uint32_t payload = file_payload_blocks(file_size, bs);
+	if (payload == 0)
+		return 0;
+	if (payload <= BRKFS_DIRECT_BLOCKS)
+		return payload;
+
+	uint32_t ptrs = BRKFS_PTRS_PER_BLOCK(bs);
+	uint32_t rem1 = payload - BRKFS_DIRECT_BLOCKS;
+	if (rem1 <= ptrs)
+		return payload + 1;
+
+	warn("file too large for this mkfs (needs double indirect)");
+	exit(1);
+}
+
+static uint32_t dirent_reclen(const char *name, uint8_t name_len)
+{
+	uint32_t core = 8u + (uint32_t)name_len;
+	uint32_t al = (core + 3u) & ~3u;
+	if (al < BRKFS_DIR_ENTRY_MIN_LEN)
+		al = BRKFS_DIR_ENTRY_MIN_LEN;
+	return al;
+}
+
+static uint32_t root_dir_size(struct host_file *files, int nfiles, uint32_t bs)
+{
+	uint32_t total = 0;
+	total += dirent_reclen(".", 1);
+	total += dirent_reclen("..", 2);
+	for (int i = 0; i < nfiles; i++) {
+		size_t len = strlen(files[i].name);
+		if (len == 0 || len > BRKFS_NAME_LEN) {
+			warn("bad entry name (length) for %s", files[i].path);
+			exit(1);
 		}
+		total += dirent_reclen(files[i].name, (uint8_t)len);
 	}
+	total = ((total + bs - 1) / bs) *
+		bs; /* directory always takes full blocks */
+	return total;
+}
 
-	return ALLOC_FAIL;
+static void write_dirent(void *base, uint32_t *off, uint32_t ino, uint8_t type,
+			 const char *name, uint8_t name_len)
+{
+	uint32_t reclen = dirent_reclen(name, name_len);
+	struct brkfs_dir_entry *de =
+		(struct brkfs_dir_entry *)((uint8_t *)base + *off);
+	de->inode = ino;
+	de->entry_len = (uint16_t)reclen;
+	de->name_len = name_len;
+	de->file_type = type;
+	memcpy(de->name, name, name_len);
+	memset(de->name + name_len, 0, reclen - 8u - (uint32_t)name_len);
+	*off += reclen;
+}
+
+static void set_bit(uint8_t *bmp, uint32_t bit)
+{
+	bmp[bit / 8] |= (uint8_t)(1u << (bit % 8));
+}
+
+static int test_bit(const uint8_t *bmp, uint32_t bit)
+{
+	return (bmp[bit / 8] >> (bit % 8)) & 1;
+}
+
+static uint32_t count_bitmap_bits(const uint8_t *bmp, uint32_t nbits)
+{
+	uint32_t c = 0;
+	for (uint32_t b = 0; b < nbits; b++) {
+		if (test_bit(bmp, b))
+			c++;
+	}
+	return c;
+}
+
+static uint32_t find_free_bit(uint8_t *bmp, uint32_t nbits, uint32_t start)
+{
+	for (uint32_t b = start; b < nbits; b++) {
+		if (!test_bit(bmp, b))
+			return b;
+	}
+	warn("data or inode bitmap full");
+	exit(1);
+}
+
+static uint8_t *blk_ptr(struct mkfs_ctx *c, uint32_t blk)
+{
+	return c->img + (uint64_t)blk * c->bs;
 }
 
 /*
- * inode 0 is intentionally never allocated (bit 0 is always skipped) so
- * that ino==0 can serve as a "null" / "free" sentinel in directory entries.
- * alloc_inode returns ALLOC_FAIL (0) on failure.
+ * Map logical file block lbn (0-based payload block) to physical block number.
+ * desc receives a short path label for verbose output.
  */
-static uint32_t alloc_inode(int fd, struct brkfs_super_block *sb)
+static int resolve_lbn_to_phys(struct mkfs_ctx *c, const struct brkfs_inode *in,
+			       uint32_t lbn, uint32_t *phys_out, char *desc,
+			       size_t desclen)
 {
-	uint8_t buf[BLOCK_SIZE];
+	const uint32_t D = BRKFS_DIRECT_BLOCKS;
+	const uint32_t ptrs = BRKFS_PTRS_PER_BLOCK(c->bs);
+	const uint64_t dspan = (uint64_t)ptrs * ptrs;
+	const uint64_t tspan = dspan * ptrs;
 
-	read_block(fd, sb->inode_bitmap_start, buf);
-	for (uint32_t byte = 0; byte < BLOCK_SIZE; byte++) {
-		for (uint32_t shift = 0; shift <= 7; shift++) {
-			/* Skip bit 0 (inode 0 is the null inode). */
-			if ((byte || shift) && !(buf[byte] & (1u << shift))) {
-				buf[byte] |= (1u << shift);
-				write_block(fd, sb->inode_bitmap_start, buf);
-				return byte * 8 + shift;
-			}
-		}
+	if (lbn < D) {
+		snprintf(desc, desclen, "direct[%u]", lbn);
+		*phys_out = in->i_block[lbn];
+		return 1;
 	}
 
-	return ALLOC_FAIL;
+	uint64_t off = (uint64_t)lbn - D;
+	if (off < ptrs) {
+		uint32_t ib = in->i_block[BRKFS_INDIRECT_BLOCK];
+		if (!ib)
+			return 0;
+		const uint32_t *idx = (const uint32_t *)blk_ptr(c, ib);
+		snprintf(desc, desclen, "s_ind[%u]", (uint32_t)off);
+		*phys_out = idx[(uint32_t)off];
+		return 1;
+	}
+
+	off -= ptrs;
+	if (off < dspan) {
+		uint32_t dib = in->i_block[BRKFS_DOUBLE_INDIRECT_BLOCK];
+		if (!dib)
+			return 0;
+		uint32_t j = (uint32_t)(off / ptrs);
+		uint32_t k = (uint32_t)(off % ptrs);
+		const uint32_t *top = (const uint32_t *)blk_ptr(c, dib);
+		uint32_t sib = top[j];
+		if (!sib)
+			return 0;
+		const uint32_t *mid = (const uint32_t *)blk_ptr(c, sib);
+		snprintf(desc, desclen, "d_ind[%u][%u]", j, k);
+		*phys_out = mid[k];
+		return 1;
+	}
+
+	off -= dspan;
+	if (off < tspan) {
+		uint32_t tib = in->i_block[BRKFS_TRIPLE_INDIRECT_BLOCK];
+		if (!tib)
+			return 0;
+		uint32_t i = (uint32_t)(off / dspan);
+		uint64_t rem = off % dspan;
+		uint32_t j = (uint32_t)(rem / ptrs);
+		uint32_t k = (uint32_t)(rem % ptrs);
+		const uint32_t *t1 = (const uint32_t *)blk_ptr(c, tib);
+		uint32_t b1 = t1[i];
+		if (!b1)
+			return 0;
+		const uint32_t *t2 = (const uint32_t *)blk_ptr(c, b1);
+		uint32_t b2 = t2[j];
+		if (!b2)
+			return 0;
+		const uint32_t *t3 = (const uint32_t *)blk_ptr(c, b2);
+		snprintf(desc, desclen, "t_ind[%u][%u][%u]", i, j, k);
+		*phys_out = t3[k];
+		return 1;
+	}
+
+	return 0;
 }
 
-static void write_inode(int fd, struct brkfs_super_block *sb,
-			struct brkfs_inode *ip)
+static void print_one_lbn_line(struct mkfs_ctx *c, const struct brkfs_inode *in,
+			       uint32_t lbn)
 {
-	uint8_t buf[BLOCK_SIZE];
-	read_block(fd, inode_phys_bno(ip->ino, sb), buf);
-	memmove(((struct brkfs_inode *)buf) + (ip->ino % INODES_PER_BLOCK), ip,
-		sizeof(*ip));
-	write_block(fd, inode_phys_bno(ip->ino, sb), buf);
-}
-
-/*
- * get_block: translate logical block number `lbn` (0-based, in units of
- * BLOCK_SIZE) to a physical block number, allocating indirect/data blocks
- * as needed.
- *
- * After allocating a new direct or indirect-pointer block, the updated
- * ip->blocks[] entry is in memory; the caller is responsible for calling
- * write_inode() after all get_block()/write_file() work is done. (Previously
- * the indirect-block pointer was never flushed.)
- */
-static uint32_t get_block(int fd, struct brkfs_super_block *sb,
-			  struct brkfs_inode *ip, uint32_t lbn)
-{
-	uint8_t buf[BLOCK_SIZE];
-	uint32_t *blocks;
+	char desc[48];
 	uint32_t phys;
 
-	blocks = ip->blocks;
-	if (lbn < BRKFS_N_DIRECT) {
-		if (blocks[lbn] == ALLOC_FAIL) {
-			blocks[lbn] = alloc_block(fd, sb);
-			if (blocks[lbn] == ALLOC_FAIL) {
-				fprintf(stderr, "alloc_block: out of space\n");
-				exit(1);
-			}
-		}
-		return blocks[lbn];
+	if (!resolve_lbn_to_phys(c, in, lbn, &phys, desc, sizeof desc)) {
+		vlog("      LBN %5u  (unmapped, missing index?)\n", lbn);
+		return;
+	}
+	vlog("      LBN %5u -> phys %5u  %s\n", lbn, phys, desc);
+}
+
+static void print_inode_mapping_verbose(struct mkfs_ctx *c,
+					const struct brkfs_inode *in)
+{
+	const uint32_t bs = c->bs;
+	const uint32_t nblk = file_payload_blocks(in->i_size, bs);
+
+	if (nblk == 0) {
+		vlog("      (no payload blocks; i_size=%u)\n", in->i_size);
+		return;
 	}
 
-	lbn -= BRKFS_N_DIRECT;
-	blocks += BRKFS_N_DIRECT;
+	vlog("      i_size=%u  payload_blocks=%u  block_size=%u\n", in->i_size,
+	     nblk, bs);
 
-	if (lbn < BRKFS_N_INDIRECT * ADDRS_PER_BLOCK) {
-		if (blocks[lbn / ADDRS_PER_BLOCK] == ALLOC_FAIL) {
-			blocks[lbn / ADDRS_PER_BLOCK] = alloc_block(fd, sb);
-			if (blocks[lbn / ADDRS_PER_BLOCK] == ALLOC_FAIL) {
-				fprintf(stderr, "alloc_block: out of space\n");
-				exit(1);
-			}
-		}
-		read_block(fd, blocks[lbn / ADDRS_PER_BLOCK], buf);
-		if (((uint32_t *)buf)[lbn % ADDRS_PER_BLOCK] == ALLOC_FAIL) {
-			phys = alloc_block(fd, sb);
-			if (phys == ALLOC_FAIL) {
-				fprintf(stderr, "alloc_block: out of space\n");
-				exit(1);
-			}
-			((uint32_t *)buf)[lbn % ADDRS_PER_BLOCK] = phys;
-			write_block(fd, blocks[lbn / ADDRS_PER_BLOCK], buf);
-		}
-		return ((uint32_t *)buf)[lbn % ADDRS_PER_BLOCK];
+	vlog("      i_block[] (inode slots; s_idx/d_top/t_top are index blocks):\n");
+	for (uint32_t s = 0; s < BRKFS_BLOCKS; s++) {
+		if (in->i_block[s] == 0)
+			continue;
+		const char *role =
+			(s < BRKFS_DIRECT_BLOCKS)	   ? "data" :
+			(s == BRKFS_INDIRECT_BLOCK)	   ? "s_idx" :
+			(s == BRKFS_DOUBLE_INDIRECT_BLOCK) ? "d_top" :
+			(s == BRKFS_TRIPLE_INDIRECT_BLOCK) ? "t_top" :
+							     "?";
+		vlog("        [%u] phys %u - %s\n", s, in->i_block[s], role);
 	}
 
-	fprintf(stderr, "%s(): file too large\n", __func__);
+	const uint32_t max_detail = 80;
+
+	if (nblk <= max_detail) {
+		for (uint32_t lbn = 0; lbn < nblk; lbn++)
+			print_one_lbn_line(c, in, lbn);
+	} else {
+		const uint32_t half = max_detail / 2;
+		uint32_t lbn;
+		for (lbn = 0; lbn < half; lbn++)
+			print_one_lbn_line(c, in, lbn);
+		vlog("      ...  %u LBNs omitted (LBN %u .. %u)  ...\n",
+		     nblk - max_detail, half, nblk - half - 1);
+		for (lbn = nblk - half; lbn < nblk; lbn++)
+			print_one_lbn_line(c, in, lbn);
+	}
+}
+
+static void write_inode_at(struct mkfs_ctx *c, uint32_t ino,
+			   const struct brkfs_inode *in)
+{
+	if (ino == 0)
+		return;
+	uint64_t off = (uint64_t)c->sb->s_inode_start * c->bs +
+		       (uint64_t)(ino - 1u) * BRKFS_INODE_BYTES;
+	memcpy(c->img + off, in, sizeof(*in));
+}
+
+/* Allocate a data block, return the physical block number. */
+static uint32_t alloc_data_slot(struct mkfs_ctx *c)
+{
+	uint32_t bit = find_free_bit(c->data_bmp, c->data_slots, 0);
+	set_bit(c->data_bmp, bit);
+	return c->sb->s_data_start + bit;
+}
+
+/* Allocate payload blocks, copy data, then wire inode block pointers. */
+static void store_file(struct mkfs_ctx *c, struct brkfs_inode *ino,
+		       const uint8_t *data, uint32_t size)
+{
+	uint32_t bs = c->bs;
+	uint32_t nblk = file_payload_blocks(size, bs);
+	uint32_t ptrs = BRKFS_PTRS_PER_BLOCK(bs);
+
+	memset(ino->i_block, 0, sizeof(ino->i_block));
+
+	if (nblk == 0) {
+		ino->i_size = size;
+		return;
+	}
+
+	uint32_t *dblks = xmalloc((size_t)nblk * sizeof(uint32_t));
+	uint32_t pos = 0;
+	for (uint32_t i = 0; i < nblk; i++) {
+		uint32_t db = alloc_data_slot(c);
+		dblks[i] = db;
+		uint32_t chunk = bs;
+		if (size - pos < chunk)
+			chunk = size - pos;
+		memcpy(blk_ptr(c, db), data + pos, chunk);
+		pos += chunk;
+	}
+	ino->i_size = size;
+
+	if (nblk <= BRKFS_DIRECT_BLOCKS) {
+		for (uint32_t i = 0; i < nblk; i++)
+			ino->i_block[i] = dblks[i];
+		free(dblks);
+		return;
+	}
+
+	for (uint32_t i = 0; i < BRKFS_DIRECT_BLOCKS; i++)
+		ino->i_block[i] = dblks[i];
+
+	uint32_t rem = nblk - BRKFS_DIRECT_BLOCKS;
+	uint32_t iblk = alloc_data_slot(c);
+	ino->i_block[BRKFS_INDIRECT_BLOCK] = iblk;
+	uint32_t *idx = (uint32_t *)blk_ptr(c, iblk);
+	memset(idx, 0, bs);
+
+	if (rem <= ptrs) {
+		for (uint32_t j = 0; j < rem; j++)
+			idx[j] = dblks[BRKFS_DIRECT_BLOCKS + j];
+		free(dblks);
+		return;
+	}
+
+	warn("file too large while writing (needs double indirect)");
 	exit(1);
 }
 
-static void init_sb(struct brkfs_super_block *sb)
+static noreturn void usage(void)
 {
-	sb->block_size = BLOCK_SIZE;
-	sb->inode_blocks_count = INODE_BLKS;
-	sb->data_blocks_count = DATA_BLKS;
-	sb->inode_bitmap_start = INODE_BITMAP_START;
-	sb->data_bitmap_start = DATA_BITMAP_START;
-	sb->inode_start = INODE_START;
-	sb->data_start = DATA_START;
-	sb->magic = BRKFS_MAGIC;
-}
-
-/*
- * dir_add_entry_to: try to insert a new directory entry into the block
- * pointed to by `dir`.  Returns true on success.
- *
- * When reusing a free slot (ino==0), preserve reclen from the existing
- * entry so the linked list of entries in the block stays intact. Previously
- * reclen was left untouched only by accident; now it is explicit and we
- * split the remaining space into a new free entry when the free slot is
- * larger than needed.
- */
-static bool dir_add_entry_to(uint8_t *dir, const char *name, uint32_t ino,
-			     uint8_t type)
-{
-	uint32_t n = BLOCK_SIZE;
-	uint32_t name_len = strlen(name);
-	uint32_t new_ent_len = calc_min_len(8 + name_len);
-	uint8_t *p = dir;
-	struct brkfs_direntry *ent, *new_ent;
-	uint32_t ent_min_len, ent_len;
-
-	while (n >= BRKFS_DIRENTRY_MIN_LEN) {
-		ent = (struct brkfs_direntry *)p;
-		ent_len = ent->reclen;
-
-		if (ent_len == 0) {
-			/* Corrupt block; stop to avoid infinite loop. */
-			break;
-		}
-
-		if (ent->ino == 0 && ent_len >= new_ent_len) {
-			/*
-			 * Free slot.  If it's larger than we need, carve off
-			 * the remainder as a new free entry so future entries
-			 * can use the leftover space.
-			 */
-			if (ent_len - new_ent_len >= BRKFS_DIRENTRY_MIN_LEN) {
-				new_ent =
-					(struct brkfs_direntry *)(p +
-								  new_ent_len);
-				new_ent->ino = 0;
-				new_ent->reclen =
-					(uint16_t)(ent_len - new_ent_len);
-				new_ent->name_len = 0;
-				new_ent->type = 0;
-				ent->reclen = (uint16_t)new_ent_len;
-			}
-			/* reclen is now correctly set; fill in the entry. */
-			ent->ino = ino;
-			ent->type = type;
-			ent->name_len = (uint8_t)name_len;
-			memcpy(ent->name, name, name_len);
-			return true;
-		}
-
-		ent_min_len = calc_min_len(8 + ent->name_len);
-
-		if (ent->ino > 0 && ent_len - ent_min_len >= new_ent_len) {
-			new_ent = (struct brkfs_direntry *)(p + ent_min_len);
-			new_ent->ino = ino;
-			new_ent->reclen = (uint16_t)(ent_len - ent_min_len);
-			new_ent->type = type;
-			new_ent->name_len = (uint8_t)name_len;
-			memcpy(new_ent->name, name, name_len);
-			ent->reclen = (uint16_t)ent_min_len;
-			return true;
-		}
-
-		n -= ent_len;
-		p += ent_len;
-	}
-
-	return false;
-}
-
-static void dir_add_entry(int fd, struct brkfs_super_block *sb,
-			  struct brkfs_inode *ip, const char *name,
-			  uint32_t ino, uint8_t type)
-{
-	uint8_t buf[BLOCK_SIZE];
-	uint32_t *blocks = ip->blocks;
-	struct brkfs_direntry *ent;
-
-	for (uint32_t i = 0; i < BRKFS_N_DIRECT; i++) {
-		if (blocks[i] == 0) {
-			blocks[i] = alloc_block(fd, sb);
-			if (blocks[i] == ALLOC_FAIL) {
-				fprintf(stderr,
-					"%s(): out of space allocating block for %s\n",
-					__func__, name);
-				exit(1);
-			}
-			ip->size += BLOCK_SIZE;
-			/* Initialise the new block as a single spanning free entry. */
-			memset(buf, 0, BLOCK_SIZE);
-			ent = (struct brkfs_direntry *)buf;
-			ent->ino = 0;
-			ent->reclen = BLOCK_SIZE;
-		} else {
-			read_block(fd, blocks[i], buf);
-		}
-
-		if (dir_add_entry_to(buf, name, ino, type)) {
-			write_block(fd, blocks[i], buf);
-			return;
-		}
-	}
-
-	fprintf(stderr, "%s(): no space for %s\n", __func__, name);
-	exit(1);
-}
-
-static void write_file(int fd, struct brkfs_super_block *sb,
-		       struct brkfs_inode *ip, const void *buf, uint32_t size,
-		       uint32_t off)
-{
-	uint32_t phys_bno;
-	uint32_t in_off;
-	uint8_t blk_buf[BLOCK_SIZE];
-	uint32_t n;
-	const uint8_t *p = buf;
-
-	while (size > 0) {
-		phys_bno = get_block(fd, sb, ip, off / BLOCK_SIZE);
-		in_off = off % BLOCK_SIZE;
-
-		read_block(fd, phys_bno, blk_buf);
-
-		n = BLOCK_SIZE - in_off;
-		if (n > size)
-			n = size;
-		memcpy(blk_buf + in_off, p, n);
-
-		write_block(fd, phys_bno, blk_buf);
-
-		off += n;
-		size -= n;
-		p += n;
-	}
-
-	if (off > ip->size)
-		ip->size = off;
-}
-
-static void copy_files(int fd, struct brkfs_super_block *sb,
-		       struct brkfs_inode *root_ip, char **files, int n)
-{
-	uint8_t buf[4096];
-
-	for (int i = 0; i < n; ++i) {
-		printf("copying %s\n", files[i]);
-
-		int src_fd = open(files[i], O_RDONLY);
-		if (src_fd < 0) {
-			perror("open");
-			continue;
-		}
-
-		struct brkfs_inode inode = { 0 };
-
-		uint32_t ino = alloc_inode(fd, sb);
-		if (ino == ALLOC_FAIL) {
-			fprintf(stderr, "alloc_inode: no free inodes\n");
-			close(src_fd);
-			continue;
-		}
-		inode.ino = ino;
-		inode.mode = S_IFREG;
-		inode.nlink = 1;
-
-		uint32_t off = 0;
-
-		while (1) {
-			ssize_t r = read(src_fd, buf, sizeof(buf));
-			if (r < 0) {
-				perror("read");
-				break;
-			}
-			if (r == 0)
-				break;
-			write_file(fd, sb, &inode, buf, (uint32_t)r, off);
-			off += (uint32_t)r;
-		}
-
-		close(src_fd);
-
-		write_inode(fd, sb, &inode);
-
-		const char *basename = strrchr(files[i], '/');
-		basename = basename ? basename + 1 : files[i];
-		dir_add_entry(fd, sb, root_ip, basename, ino, DT_REG);
-		/* Persist root inode after each new entry. */
-		write_inode(fd, sb, root_ip);
-	}
+	fprintf(stderr,
+		"usage: mkfs [-q|--quiet] [-v|--verbose] [-b blocksize] [-n inodes] [-d datablocks] image file ...\n");
+	exit(2);
 }
 
 int main(int argc, char **argv)
 {
-	uint8_t buf[BLOCK_SIZE];
-	struct brkfs_super_block sb;
-	struct brkfs_inode root_inode = { 0 };
-	uint32_t root_ino;
+	uint32_t bs = 4096;
+	uint32_t min_inodes = 128;
+	uint32_t min_datablocks = 0;
 
-	if (argc < 2) {
-		fprintf(stderr, "Usage: %s [image name] [files...]\n", argv[0]);
+	out_level = OUT_NORMAL;
+
+	int i = 1;
+	while (i < argc && argv[i][0] == '-') {
+		if (!strcmp(argv[i], "-b") && i + 1 < argc) {
+			bs = (uint32_t)strtoul(argv[++i], NULL, 0);
+		} else if (!strcmp(argv[i], "-n") && i + 1 < argc) {
+			min_inodes = (uint32_t)strtoul(argv[++i], NULL, 0);
+		} else if (!strcmp(argv[i], "-d") && i + 1 < argc) {
+			min_datablocks = (uint32_t)strtoul(argv[++i], NULL, 0);
+		} else if (!strcmp(argv[i], "-v") ||
+			   !strcmp(argv[i], "--verbose")) {
+			out_level = OUT_VERBOSE;
+		} else if (!strcmp(argv[i], "-q") ||
+			   !strcmp(argv[i], "--quiet")) {
+			out_level = OUT_QUIET;
+		} else {
+			usage();
+		}
+		i++;
+	}
+
+	if (i >= argc)
+		usage();
+	const char *outpath = argv[i++];
+	int nfiles = argc - i;
+	if (nfiles == 0) {
+		warn("need at least one file to pack");
+		usage();
+	}
+
+	if (bs < 512 || bs % 512 != 0 ||
+	    bs < BRKFS_SUPER_BLOCK_OFFSET + BRKFS_SUPER_BLOCK_SIZE) {
+		warn("invalid block size %u (need >= %u, multiple of 512)", bs,
+		     BRKFS_SUPER_BLOCK_OFFSET + BRKFS_SUPER_BLOCK_SIZE);
 		return 1;
 	}
 
-	int fd = open(argv[1], O_RDWR | O_CREAT | O_TRUNC, 0666);
-	if (fd < 0) {
-		perror("open");
+	struct host_file *files =
+		xmalloc((size_t)nfiles * sizeof(struct host_file));
+	memset(files, 0, (size_t)nfiles * sizeof(struct host_file));
+
+	for (int f = 0; f < nfiles; f++) {
+		files[f].path = argv[i + f];
+		files[f].name = strrchr(files[f].path, '/');
+		files[f].name = files[f].name ? files[f].name + 1 :
+						files[f].path;
+		struct stat st;
+		if (stat(files[f].path, &st) != 0)
+			die(files[f].path);
+		if (!S_ISREG(st.st_mode)) {
+			warn("not a regular file: %s", files[f].path);
+			return 1;
+		}
+		if (st.st_size > 0x7fffffff) {
+			warn("file too large (>2GiB): %s", files[f].path);
+			return 1;
+		}
+		files[f].size = (uint32_t)st.st_size;
+		FILE *fp = fopen(files[f].path, "rb");
+		if (!fp)
+			die(files[f].path);
+		files[f].data = xmalloc(files[f].size ? files[f].size : 1);
+		if (files[f].size && fread(files[f].data, 1, files[f].size,
+					   fp) != files[f].size) {
+			warn("short read: %s", files[f].path);
+			return 1;
+		}
+		fclose(fp);
+	}
+
+	uint32_t root_sz = root_dir_size(files, nfiles, bs);
+	vlog("sizes:\n");
+	vlog("  root directory (padded)     %7u bytes\n", root_sz);
+	uint32_t data_used = data_blocks_for_file(root_sz, bs);
+	vlog("  root on-disk blocks         %7u (payload + index)\n",
+	     data_used);
+	for (int f = 0; f < nfiles; f++) {
+		uint32_t db = data_blocks_for_file(files[f].size, bs);
+		vlog("  %-28s  %7u B  ->  %u blocks\n", files[f].name,
+		     files[f].size, db);
+		data_used += db;
+	}
+	vlog("  (sum payload+index blocks)  %7u\n", data_used);
+
+	uint32_t n_inodes = 2u + (uint32_t)nfiles;
+	if (n_inodes < min_inodes)
+		n_inodes = min_inodes;
+
+	uint32_t inode_blocks = div_round_up(n_inodes * BRKFS_INODE_BYTES, bs);
+	uint32_t max_ino_bits = bs * 8u;
+	uint32_t max_data_bits = bs * 8u;
+	if (n_inodes > max_ino_bits) {
+		warn("inode count %u exceeds one bitmap block (%u bits)",
+		     n_inodes, max_ino_bits);
 		return 1;
 	}
 
-	init_sb(&sb);
+	uint32_t data_blocks = data_used + 512;
+	if (data_blocks < min_datablocks)
+		data_blocks = min_datablocks;
+	if (data_blocks > max_data_bits)
+		data_blocks = max_data_bits;
 
-	/* Zero-fill the entire image. */
-	memset(buf, 0, sizeof(buf));
-	for (uint32_t i = 0; i < BLKS; ++i)
-		write_block(fd, i, buf);
+	vlog("data bitmap capacity: %u blocks (%u free vs minimum %u)\n",
+	     data_blocks, data_blocks > data_used ? data_blocks - data_used : 0,
+	     data_used);
 
-	/*
-	 * pre-mark all system blocks as used in the data bitmap so alloc_block()
-	 * never returns a block that overlaps the boot block, superblock, bitmap
-	 * blocks, or inode table.
-	 *
-	 * DATA_START is the index of the first usable data block relative to
-	 * the start of the disk.  The data bitmap counts blocks starting from
-	 * data_start (i.e. bit N in the bitmap corresponds to disk block
-	 * data_start + N).  All blocks before data_start have no
-	 * representation in the data bitmap, so there is nothing to pre-mark
-	 * there — alloc_block already adds data_start to the bit index when
-	 * computing the physical block number.  The loop below is therefore a
-	 * no-op for the current layout, but it is kept here explicitly so
-	 * that any future change to the layout that accidentally makes a
-	 * system block fall inside the data region is caught immediately.
-	 */
-	{
-		uint8_t bmap[BLOCK_SIZE];
-		memset(bmap, 0, sizeof(bmap));
-		/*
-		 * Mark bits for any disk block < DATA_START that would
-		 * (incorrectly) fall inside the data region.  For the
-		 * current layout DATA_START == sb.data_start, and all data
-		 * blocks start exactly at data_start, so bit 0 of the bitmap
-		 * corresponds to disk block data_start — no system block
-		 * overlaps the data region and no bits need pre-setting.
-		 *
-		 * We still write the zeroed bitmap explicitly to make the
-		 * initialisation intent clear.
-		 */
-		write_block(fd, sb.data_bitmap_start, bmap);
+	if (data_used > data_blocks) {
+		warn("need at least %u data blocks; raise -d", data_used);
+		return 1;
 	}
 
-	/* Write superblock. */
-	memset(buf, 0, sizeof(buf));
-	memmove(buf, &sb, sizeof(sb));
-	write_block(fd, 1, buf);
+	uint32_t inode_bmp_blk = 1;
+	uint32_t data_bmp_blk = 2;
+	uint32_t inode_start = 3;
+	uint32_t data_start = inode_start + inode_blocks;
+	uint32_t total_blks = data_start + data_blocks;
 
-	/* Allocate and initialise the root directory inode. */
-	root_ino = alloc_inode(fd, &sb);
-	assert(root_ino == BRKFS_ROOT_INO);
-	root_inode.ino = root_ino;
-	root_inode.mode = S_IFDIR;
-	root_inode.nlink = 1;
-	write_inode(fd, &sb, &root_inode);
+	uint64_t imgsz = (uint64_t)total_blks * bs;
+	uint8_t *img = xmalloc((size_t)imgsz);
+	memset(img, 0, (size_t)imgsz);
 
-	dir_add_entry(fd, &sb, &root_inode, ".", root_ino, DT_DIR);
-	root_inode.nlink += 1;
-	dir_add_entry(fd, &sb, &root_inode, "..", root_ino, DT_DIR);
-	root_inode.nlink += 1;
-	write_inode(fd, &sb, &root_inode);
+	struct brkfs_super_block sb = {
+		.s_blocksize = bs,
+		.s_inode_blocks = inode_blocks,
+		.s_data_blocks = data_blocks,
+		.s_inode_bitmap_start = inode_bmp_blk,
+		.s_data_bitmap_start = data_bmp_blk,
+		.s_inode_start = inode_start,
+		.s_data_start = data_start,
+		.s_magic = BRKFS_MAGIC,
+	};
+	memcpy(img + BRKFS_SUPER_BLOCK_OFFSET, &sb, sizeof(sb));
 
-	if (argc > 2)
-		copy_files(fd, &sb, &root_inode, argv + 2, argc - 2);
+	vlog("layout (block size %u):\n", bs);
+	vlog("  superblock      byte offset %u  magic %#x\n",
+	     (unsigned)BRKFS_SUPER_BLOCK_OFFSET, sb.s_magic);
+	vlog("  inode bitmap    block %u\n", sb.s_inode_bitmap_start);
+	vlog("  data bitmap     block %u\n", sb.s_data_bitmap_start);
+	vlog("  inode table     blocks %u .. %u  (%u blocks)\n",
+	     sb.s_inode_start, sb.s_inode_start + sb.s_inode_blocks - 1u,
+	     sb.s_inode_blocks);
+	vlog("  data area       blocks %u .. %u  (%u slots)\n", sb.s_data_start,
+	     sb.s_data_start + sb.s_data_blocks - 1u, sb.s_data_blocks);
+	vlog("  image           %u blocks (%" PRIu64 " bytes)\n", total_blks,
+	     imgsz);
 
+	struct mkfs_ctx ctx;
+	ctx.img = img;
+	ctx.bs = bs;
+	ctx.sb = (struct brkfs_super_block *)(img + BRKFS_SUPER_BLOCK_OFFSET);
+	ctx.inode_bmp = img + (uint64_t)inode_bmp_blk * bs;
+	ctx.data_bmp = img + (uint64_t)data_bmp_blk * bs;
+	ctx.inodes_capacity = max_ino_bits;
+	ctx.data_slots = data_blocks;
+
+	set_bit(ctx.inode_bmp, 1);
+
+	struct brkfs_inode root = { 0 };
+	root.i_ino = BRKFS_ROOT_INO;
+	root.i_mode = S_IFDIR | 0755;
+	root.i_nlink = 2;
+	root.i_size = root_sz;
+	uint32_t root_off = 0;
+	uint8_t *dirbuf = xmalloc(root_sz);
+	uint32_t old_root_off = root_off;
+	write_dirent(dirbuf, &root_off, 1, DT_DIR, ".", 1);
+	old_root_off = root_off;
+	write_dirent(dirbuf, &root_off, 1, DT_DIR, "..", 2);
+	for (int f = 0; f < nfiles; f++) {
+		uint32_t ino = 2u + (uint32_t)f;
+		uint8_t nl = (uint8_t)strlen(files[f].name);
+		old_root_off = root_off;
+		write_dirent(dirbuf, &root_off, ino, DT_REG, files[f].name, nl);
+	}
+	if (root_off > root_sz) {
+		warn("root directory entry length mismatch");
+		return 1;
+	}
+	struct brkfs_dir_entry *last_de =
+		(struct brkfs_dir_entry *)(dirbuf + old_root_off);
+	assert(last_de->name_len == strlen(files[nfiles - 1].name));
+	assert(!memcmp(last_de->name, files[nfiles - 1].name, last_de->name_len));
+	last_de->entry_len += root_sz - root_off; /* fix up last dirent */
+
+	store_file(&ctx, &root, dirbuf, root_sz);
+	write_inode_at(&ctx, 1, &root);
+	free(dirbuf);
+
+	for (int f = 0; f < nfiles; f++) {
+		struct brkfs_inode in = { 0 };
+		uint32_t ino = 2u + (uint32_t)f;
+		in.i_ino = ino;
+		in.i_mode = S_IFCHR | 0755;
+		in.i_nlink = 1;
+		set_bit(ctx.inode_bmp, ino);
+		store_file(&ctx, &in, files[f].data, files[f].size);
+		write_inode_at(&ctx, ino, &in);
+		vlog("  inode %-3u  %-28s  %7u B\n", ino, files[f].name,
+		     files[f].size);
+		print_inode_mapping_verbose(&ctx, &in);
+		free(files[f].data);
+	}
+	free(files);
+
+	int fd = open(outpath, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+	if (fd < 0)
+		die(outpath);
+	if (write(fd, img, (size_t)imgsz) != (ssize_t)imgsz) {
+		warn("short write to %s", outpath);
+		return 1;
+	}
 	close(fd);
+
+	if (out_level >= OUT_NORMAL) {
+		char human[48];
+		fmt_bytes(human, sizeof human, imgsz);
+		uint32_t d_used = count_bitmap_bits(ctx.data_bmp, data_blocks);
+		uint32_t i_used =
+			count_bitmap_bits(ctx.inode_bmp, ctx.inodes_capacity);
+		printf("mkfs: wrote %s: %s, %u blocks * %u B, data %u/%u "
+		       "blocks used, inodes %u used, %d files\n",
+		       outpath, human, total_blks, bs, d_used, data_blocks,
+		       i_used, nfiles);
+	}
+
+	free(img);
 	return 0;
 }
