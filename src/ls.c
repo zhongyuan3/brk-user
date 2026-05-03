@@ -1,4 +1,10 @@
-#include <ulib.h>
+#include <dirent.h>
+#include <fcntl.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
 
 struct ls_option {
 	const char *path;
@@ -36,8 +42,7 @@ static void print_dirent_long(struct dirent64 *p)
 		type = "w";
 		break;
 	}
-	dprintf(STDOUT_FILENO, "%s %s%s\n", type, p->d_name,
-		p->d_type == 4 ? "/" : "");
+	printf("%s %s%s\n", type, p->d_name, p->d_type == 4 ? "/" : "");
 }
 
 static int ls(int fd, const struct ls_option *opt)
@@ -58,7 +63,7 @@ static int ls(int fd, const struct ls_option *opt)
 			if (opt->long_format)
 				print_dirent_long(p);
 			else
-				dprintf(STDOUT_FILENO, "%s\n", p->d_name);
+				printf("%s\n", p->d_name);
 			i += p->d_reclen;
 			p = (struct dirent64 *)((uint64_t)p + p->d_reclen);
 		}
@@ -75,8 +80,8 @@ static int parse_config(int argc, char *argv[], struct ls_option *opt)
 			    !strcmp(argv[i], "-l")) {
 				opt->long_format = true;
 			} else {
-				dprintf(STDERR_FILENO,
-					"ls: unknown option %s\n", argv[i]);
+				fprintf(stderr, "ls: unknown option %s\n",
+					argv[i]);
 				return 1;
 			}
 		} else {

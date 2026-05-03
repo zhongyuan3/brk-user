@@ -1,9 +1,10 @@
-#include <ulib.h>
+#include <stdio.h>
+#include <unistd.h>
 
 int main(int argc, char *argv[])
 {
 	if (argc != 3) {
-		dprintf(STDERR_FILENO, "Usage: link <target> <linkname>\n");
+		fprintf(stderr, "Usage: link <target> <linkname>\n");
 		return 1;
 	}
 

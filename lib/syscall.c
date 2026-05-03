@@ -1,419 +1,302 @@
 #include "internal.h"
-#include <ulib.h>
+#include <brk/macros.h>
+#include <brk/syscall.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <string.h>
+#include <sys/mount.h>
+#include <sys/stat.h>
+#include <sys/time.h>
+#include <sys/times.h>
+#include <sys/utsname.h>
+#include <sys/wait.h>
+#include <time.h>
+#include <unistd.h>
 
 static char *environ[] = { NULL };
-static char *sys_path[] = { "/bin" };
+static char *sys_path[] = { "/", "/bin" };
+
+/* Kernel ABI: success is zero or a non-negative value; errors are negative errno. */
+static inline void errno_ok(void)
+{
+	errno = 0;
+}
+
+static inline int ret_err0(long err)
+{
+	if (err != 0) {
+		errno = (int)(-err);
+		return -1;
+	}
+	errno_ok();
+	return 0;
+}
+
+static inline ssize_t ret_ssize(long v)
+{
+	if (v < 0) {
+		errno = (int)(-v);
+		return -1;
+	}
+	errno_ok();
+	return (ssize_t)v;
+}
+
+static inline off_t ret_off(long v)
+{
+	if (v < 0) {
+		errno = (int)(-v);
+		return (off_t)-1;
+	}
+	errno_ok();
+	return (off_t)v;
+}
+
+static inline int ret_fd(long fd)
+{
+	if (fd < 0) {
+		errno = (int)(-fd);
+		return -1;
+	}
+	errno_ok();
+	return (int)fd;
+}
+
+static inline pid_t ret_pid(long v)
+{
+	if (v < 0) {
+		errno = (int)(-v);
+		return -1;
+	}
+	errno_ok();
+	return (pid_t)v;
+}
+
+static inline clock_t ret_clock(long t)
+{
+	if (t < 0) {
+		errno = (int)(-t);
+		return -1;
+	}
+	errno_ok();
+	return (clock_t)t;
+}
+
+static inline char *ret_getcwd(long err, char *buf)
+{
+	if (err != 0) {
+		errno = (int)(-err);
+		return NULL;
+	}
+	errno_ok();
+	return buf;
+}
 
 ssize_t read(int fd, void *buf, size_t count)
 {
-	ssize_t rcnt = syscall(SYS_read, fd, buf, count);
-	if (rcnt < 0) {
-		errno = -rcnt;
-		return -1;
-	}
-	errno = 0;
-	return rcnt;
+	return ret_ssize(syscall(SYS_read, fd, buf, count));
 }
 
 ssize_t write(int fd, const void *buf, size_t count)
 {
-	ssize_t wcnt = syscall(SYS_write, fd, buf, count);
-	if (wcnt < 0) {
-		errno = -wcnt;
-		return -1;
-	}
-	errno = 0;
-	return wcnt;
+	return ret_ssize(syscall(SYS_write, fd, buf, count));
+}
+
+off_t lseek(int fd, off_t offset, int whence)
+{
+	return ret_off(syscall(SYS_lseek, fd, offset, whence));
 }
 
 void exit(int status)
 {
 	syscall(SYS_exit, status);
-	errno = 0;
-	while (1) {
-	}
+	errno_ok();
+	for (;;)
+		;
 }
 
 int open(const char *path, int flags, ...)
 {
-	int fd = syscall(SYS_open, path, flags, 0);
-	if (fd < 0) {
-		errno = -fd;
-		return -1;
-	}
-	errno = 0;
-	return fd;
+	return ret_fd(syscall(SYS_open, path, flags, 0));
 }
 
 int openat(int dirfd, const char *path, int flags, mode_t mode)
 {
-	int fd = syscall(SYS_openat, dirfd, path, flags, mode);
-	if (fd < 0) {
-		errno = -fd;
-		return -1;
-	}
-	errno = 0;
-	return fd;
+	return ret_fd(syscall(SYS_openat, dirfd, path, flags, mode));
 }
 
 int close(int fd)
 {
-	int err = syscall(SYS_close, fd);
-	if (err) {
-		errno = -err;
-		return -1;
-	}
-	errno = 0;
-	return 0;
+	return ret_err0(syscall(SYS_close, fd));
 }
 
 int dup(int oldfd)
 {
-	int fd = syscall(SYS_dup, oldfd);
-	if (fd < 0) {
-		errno = -fd;
-		return -1;
-	}
-	errno = 0;
-	return fd;
+	return ret_fd(syscall(SYS_dup, oldfd));
 }
 
 int dup2(int oldfd, int newfd)
 {
-	int fd = syscall(SYS_dup2, oldfd, newfd);
-	if (fd < 0) {
-		errno = -fd;
-		return -1;
-	}
-	errno = 0;
-	return fd;
+	return ret_fd(syscall(SYS_dup2, oldfd, newfd));
 }
 
 int execve(const char *path, char *const argv[], char *const envp[])
 {
-	int err = syscall(SYS_execve, path, argv, envp);
-	if (err) {
-		errno = -err;
-		return -1;
-	}
-	errno = 0;
-	return 0;
+	return ret_err0(syscall(SYS_execve, path, argv, envp));
 }
 
 pid_t getpid(void)
 {
-	int pid = syscall(SYS_getpid);
-	if (pid < 0) {
-		errno = -pid;
-		return -1;
-	}
-	errno = 0;
-	return pid;
+	return ret_pid(syscall(SYS_getpid));
 }
 
 pid_t getppid(void)
 {
-	int ppid = syscall(SYS_getppid);
-	if (ppid < 0) {
-		errno = -ppid;
-		return -1;
-	}
-	errno = 0;
-	return ppid;
+	return ret_pid(syscall(SYS_getppid));
 }
 
 int mkdir(const char *path, mode_t mode)
 {
-	int err = syscall(SYS_mkdir, path, mode);
-	if (err) {
-		errno = -err;
-		return -1;
-	}
-	errno = 0;
-	return 0;
+	return ret_err0(syscall(SYS_mkdir, path, mode));
 }
 
 int mkdirat(int dirfd, const char *path, mode_t mode)
 {
-	int err = syscall(SYS_mkdirat, dirfd, path, mode);
-	if (err) {
-		errno = -err;
-		return -1;
-	}
-	errno = 0;
-	return 0;
+	return ret_err0(syscall(SYS_mkdirat, dirfd, path, mode));
 }
 
 int chdir(const char *path)
 {
-	int err = syscall(SYS_chdir, path);
-	if (err) {
-		errno = -err;
-		return -1;
-	}
-	errno = 0;
-	return 0;
+	return ret_err0(syscall(SYS_chdir, path));
 }
 
 char *getcwd(char *buf, size_t size)
 {
-	int err = syscall(SYS_getcwd, buf, size);
-	if (err) {
-		errno = -err;
-		return 0;
-	}
-	errno = 0;
-	return buf;
+	return ret_getcwd(syscall(SYS_getcwd, buf, size), buf);
 }
 
 int mknod(const char *path, mode_t mode, dev_t dev)
 {
-	int err = syscall(SYS_mknod, path, mode, dev);
-	if (err) {
-		errno = -err;
-		return -1;
-	}
-	errno = 0;
-	return 0;
+	return ret_err0(syscall(SYS_mknod, path, mode, dev));
 }
 
 int mknodat(int dirfd, const char *path, mode_t mode, dev_t dev)
 {
-	int err = syscall(SYS_mknodat, dirfd, path, mode, dev);
-	if (err) {
-		errno = -err;
-		return -1;
-	}
-	errno = 0;
-	return 0;
+	return ret_err0(syscall(SYS_mknodat, dirfd, path, mode, dev));
 }
 
 int link(const char *oldpath, const char *newpath)
 {
-	int err = syscall(SYS_link, oldpath, newpath);
-	if (err) {
-		errno = -err;
-		return -1;
-	}
-	errno = 0;
-	return 0;
+	return ret_err0(syscall(SYS_link, oldpath, newpath));
 }
 
 int linkat(int olddirfd, const char *oldpath, int newdirfd, const char *newpath,
 	   int flags)
 {
-	int err = syscall(SYS_linkat, olddirfd, oldpath, newdirfd, newpath,
-			  flags);
-	if (err) {
-		errno = -err;
-		return -1;
-	}
-	errno = 0;
-	return 0;
+	return ret_err0(syscall(SYS_linkat, olddirfd, oldpath, newdirfd,
+				newpath, flags));
 }
 
 int unlink(const char *path)
 {
-	int err = syscall(SYS_unlink, path);
-	if (err) {
-		errno = -err;
-		return -1;
-	}
-	errno = 0;
-	return 0;
+	return ret_err0(syscall(SYS_unlink, path));
 }
 
 int unlinkat(int dirfd, const char *path, int flags)
 {
-	int err = syscall(SYS_unlinkat, dirfd, path, flags);
-	if (err) {
-		errno = -err;
-		return -1;
-	}
-	errno = 0;
-	return 0;
+	return ret_err0(syscall(SYS_unlinkat, dirfd, path, flags));
 }
 
 int pipe(int pipefd[2])
 {
-	int err = syscall(SYS_pipe, pipefd);
-	if (err) {
-		errno = -err;
-		return -1;
-	}
-	errno = 0;
-	return 0;
+	return ret_err0(syscall(SYS_pipe, pipefd));
 }
 
 int pipe2(int pipefd[2], int flags)
 {
-	int err = syscall(SYS_pipe2, pipefd, flags);
-	if (err) {
-		errno = -err;
-		return -1;
-	}
-	errno = 0;
-	return 0;
+	return ret_err0(syscall(SYS_pipe2, pipefd, flags));
 }
 
 int uname(struct utsname *buf)
 {
-	int err = syscall(SYS_uname, buf);
-	if (err) {
-		errno = -err;
-		return -1;
-	}
-	errno = 0;
-	return 0;
+	return ret_err0(syscall(SYS_uname, buf));
 }
 
 int brk(void *addr)
 {
 	if (!addr)
 		return 0;
-	return syscall(SYS_brk, addr);
+	return (int)syscall(SYS_brk, addr);
 }
 
 ssize_t getdents64(int fd, void *dirp, size_t count)
 {
-	ssize_t rcnt = syscall(SYS_getdents64, fd, dirp, count);
-	if (rcnt < 0) {
-		errno = -rcnt;
-		return -1;
-	}
-	errno = 0;
-	return rcnt;
+	return ret_ssize(syscall(SYS_getdents64, fd, dirp, count));
 }
 
 pid_t wait4(pid_t pid, int *wstatus, int options, struct rusage *rusage)
 {
-	pid_t child_pid = syscall(SYS_wait4, pid, wstatus, options, rusage);
-	if (child_pid < 0) {
-		errno = -child_pid;
-		return -1;
-	}
-	errno = 0;
-	return child_pid;
+	return ret_pid(syscall(SYS_wait4, pid, wstatus, options, rusage));
 }
 
 pid_t fork(void)
 {
-	pid_t pid = syscall(SYS_fork);
-	if (pid < 0) {
-		errno = -pid;
-		return -1;
-	}
-	errno = 0;
-	return pid;
+	return ret_pid(syscall(SYS_fork));
 }
 
 int nanosleep(const struct timespec *duration, struct timespec *rem)
 {
-	int err = syscall(SYS_nanosleep, duration, rem);
-	if (err) {
-		errno = -err;
-		return -1;
-	}
-	errno = 0;
-	return 0;
+	return ret_err0(syscall(SYS_nanosleep, duration, rem));
 }
 
 clock_t times(struct tms *buf)
 {
-	clock_t t = syscall(SYS_times, buf);
-	if (t < 0) {
-		errno = -t;
-		return -1;
-	}
-	errno = 0;
-	return t;
+	return ret_clock(syscall(SYS_times, buf));
 }
 
 int mount(const char *source, const char *target, const char *filesystemtype,
 	  unsigned long mountflags, const void *data)
 {
-	int err = syscall(SYS_mount, source, target, filesystemtype, mountflags,
-			  data);
-	if (err) {
-		errno = -err;
-		return -1;
-	}
-	errno = 0;
-	return 0;
+	return ret_err0(syscall(SYS_mount, source, target, filesystemtype,
+				mountflags, data));
 }
 
 int umount2(const char *target, int flags)
 {
-	int err = syscall(SYS_umount2, target, flags);
-	if (err) {
-		errno = -err;
-		return -1;
-	}
-	errno = 0;
-	return 0;
+	return ret_err0(syscall(SYS_umount2, target, flags));
 }
 
 int gettimeofday(struct timeval *tv, struct timezone *tz)
 {
-	int err = syscall(SYS_gettimeofday, tv, tz);
-	if (err) {
-		errno = -err;
-		return -1;
-	}
-	errno = 0;
-	return 0;
+	return ret_err0(syscall(SYS_gettimeofday, tv, tz));
 }
 
 int settimeofday(const struct timeval *tv, const struct timezone *tz)
 {
-	int err = syscall(SYS_settimeofday, tv, tz);
-	if (err) {
-		errno = -err;
-		return -1;
-	}
-	errno = 0;
-	return 0;
+	return ret_err0(syscall(SYS_settimeofday, tv, tz));
 }
 
 int fstat(int fd, struct stat *buf)
 {
-	int err = syscall(SYS_fstat, fd, buf);
-	if (err) {
-		errno = -err;
-		return -1;
-	}
-	errno = 0;
-	return 0;
+	return ret_err0(syscall(SYS_fstat, fd, buf));
 }
 
 int stat(const char *path, struct stat *buf)
 {
-	int err = syscall(SYS_stat, path, buf);
-	if (err) {
-		errno = -err;
-		return -1;
-	}
-	errno = 0;
-	return 0;
+	return ret_err0(syscall(SYS_stat, path, buf));
 }
 
 int lstat(const char *path, struct stat *buf)
 {
-	int err = syscall(SYS_lstat, path, buf);
-	if (err) {
-		errno = -err;
-		return -1;
-	}
-	errno = 0;
-	return 0;
+	return ret_err0(syscall(SYS_lstat, path, buf));
 }
 
-int wait(int *wstatus)
+pid_t wait(int *wstatus)
 {
 	return wait4(-1, wstatus, 0, 0);
 }
 
-int waitpid(pid_t pid, int *wstatus, int options)
+pid_t waitpid(pid_t pid, int *wstatus, int options)
 {
 	return wait4(pid, wstatus, options, 0);
 }
@@ -440,7 +323,7 @@ int execvpe(const char *file, char *const argv[], char *const envp[])
 		return -1;
 	}
 
-	for (size_t i = 0; i < sizeof(sys_path) / sizeof(sys_path[0]); i++) {
+	for (size_t i = 0; i < countof(sys_path); i++) {
 		size_t sys_path_len = strlen(sys_path[i]);
 		if (sys_path_len + file_len + 2 >= PATH_MAX) {
 			errno = ENAMETOOLONG;
@@ -459,16 +342,17 @@ int execvpe(const char *file, char *const argv[], char *const envp[])
 void *sbrk(intptr_t increment)
 {
 	static uint64_t curr_brk = 0;
+
 	if (curr_brk == 0)
 		curr_brk = syscall(SYS_brk, 0);
 	uint64_t new_brk = (uint64_t)((intptr_t)curr_brk + increment);
-	int ret = syscall(SYS_brk, new_brk);
+	long ret = syscall(SYS_brk, new_brk);
 	if (ret != 0) {
-		errno = -ret;
+		errno = (int)(-ret);
 		return (void *)-1;
 	}
 	uint64_t old_brk = curr_brk;
 	curr_brk = new_brk;
-	errno = 0;
+	errno_ok();
 	return (void *)old_brk;
 }

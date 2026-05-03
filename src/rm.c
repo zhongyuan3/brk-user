@@ -1,9 +1,10 @@
-#include <ulib.h>
+#include <stdio.h>
+#include <unistd.h>
 
 int main(int argc, char *argv[])
 {
 	if (argc < 2) {
-		dprintf(STDERR_FILENO, "Usage: rm files...\n");
+		fprintf(stderr, "Usage: rm files...\n");
 		return 1;
 	}
 
