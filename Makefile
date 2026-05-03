@@ -12,20 +12,10 @@ SRC_BUILD_DIR := $(BUILD_DIR)/src
 LIB_BUILD_DIR := $(BUILD_DIR)/lib
 MKFS_BUILD_DIR := $(BUILD_DIR)/mkfs
 MKFS_TARGET := $(MKFS_BUILD_DIR)/mkfs
+BRKLS_TARGET := $(MKFS_BUILD_DIR)/brkls
 FS_IMG := $(BUILD_DIR)/brkfs.img
 
-BUILD ?= DEBUG
-OPT_LEVELS :=
-OPT_LEVELS += DEBUG=0
-OPT_LEVELS += RELEASE=2
-
-ifneq ($(filter $(BUILD),$(foreach opt,$(OPT_LEVELS),$(word 1,$(subst =, ,$(opt))))),$(BUILD))
-$(error unknown build type $(BUILD))
-endif
-
-OPT := $(foreach opt,$(OPT_LEVELS),$(if $(filter $(BUILD),$(word 1,$(subst =, ,$(opt)))),$(word 2,$(subst =, ,$(opt))),))
-
-CFLAGS := -O$(OPT) -ggdb -gdwarf-2 -Wall -Wextra -Werror
+CFLAGS := -O2 -ggdb -gdwarf-2 -Wall -Wextra -Werror
 CFLAGS += -Wno-unused-parameter -Wno-unknown-attributes -Wno-main
 CFLAGS += -march=rv64gc -mabi=lp64d -mcmodel=medlow
 CFLAGS += -ffreestanding -nostdlib -fno-common
@@ -35,7 +25,7 @@ CFLAGS += -MMD
 CFLAGS += -I./include
 
 MKFS_CC := gcc
-MKFS_CFLAGS := -g -O0
+MKFS_CFLAGS := -O2
 MKFS_CFLAGS += -Wall -Wextra -Werror -Wno-unused-parameter -Wno-unknown-attributes
 MKFS_CFLAGS += -I./mkfs
 MKFS_CFLAGS += -MMD
@@ -48,28 +38,31 @@ USER_LIB := $(LIB_BUILD_DIR)/lib$(USER_LIB_NAME).a
 
 USER_SRC_FILES := $(wildcard src/*.c)
 LIB_SRC_FILES := $(wildcard lib/*.c)
-MKFS_SRC_FILES := $(wildcard mkfs/*.c)
+MKFS_SRC_FILES := mkfs/mkfs.c
+BRKLS_SRC_FILES := mkfs/brkls.c
 
 USER_OBJS := $(patsubst src/%.c,$(SRC_BUILD_DIR)/%.o,$(USER_SRC_FILES))
 LIB_OBJS := $(patsubst lib/%.c,$(LIB_BUILD_DIR)/%.o,$(LIB_SRC_FILES))
 MKFS_OBJS := $(patsubst mkfs/%.c,$(MKFS_BUILD_DIR)/%.o,$(MKFS_SRC_FILES))
+BRKLS_OBJS := $(patsubst mkfs/%.c,$(MKFS_BUILD_DIR)/%.o,$(BRKLS_SRC_FILES))
 
 USER_PROG := $(patsubst $(SRC_BUILD_DIR)/%.o,$(SRC_BUILD_DIR)/%,$(USER_OBJS))
 
 USER_OBJS_DEPS := $(USER_OBJS:.o=.d)
 LIB_OBJS_DEPS := $(LIB_OBJS:.o=.d)
 MKFS_OBJS_DEPS := $(MKFS_OBJS:.o=.d)
+BRKLS_OBJS_DEPS := $(BRKLS_OBJS:.o=.d)
 
-.PHONY: all clean echo user_prog user_lib mkfs fs_img
+.PHONY: all clean echo user_prog user_lib mkfs brkls fs_img
 
-.PRECIOUS: $(USER_OBJS) $(LIB_OBJS) $(MKFS_OBJS)
+.PRECIOUS: $(USER_OBJS) $(LIB_OBJS) $(MKFS_OBJS) $(BRKLS_OBJS)
 
-all: user_lib user_prog mkfs fs_img
+all: user_lib user_prog mkfs brkls fs_img
 
 fs_img: $(FS_IMG)
 
 $(FS_IMG): $(MKFS_TARGET) $(USER_PROG)
-	$(MKFS_TARGET) -v -n 128 -d 1024 $@ $(USER_PROG)
+	$(MKFS_TARGET) -bs 4096 -ic 128 -bc 1024 $@ $(USER_PROG)
 
 clean:
 	$(RM) -rf $(BUILD_DIR)
@@ -88,7 +81,9 @@ user_lib: $(USER_LIB)
 
 mkfs: $(MKFS_TARGET)
 
--include $(USER_OBJS_DEPS) $(LIB_OBJS_DEPS) $(MKFS_OBJS_DEPS)
+brkls: $(BRKLS_TARGET)
+
+-include $(USER_OBJS_DEPS) $(LIB_OBJS_DEPS) $(MKFS_OBJS_DEPS) $(BRKLS_OBJS_DEPS)
 
 $(SRC_BUILD_DIR)/%: $(SRC_BUILD_DIR)/%.o $(USER_LIB) $(USER_LD)
 	$(LD) -z max-page-size=4096 -T $(USER_LD) -static -o $@ $< -L$(LIB_BUILD_DIR) -l$(USER_LIB_NAME)
@@ -114,4 +109,7 @@ $(MKFS_BUILD_DIR)/%.o: mkfs/%.c
 	$(MKFS_CC) $(MKFS_CFLAGS) -c -o $@ $<
 
 $(MKFS_TARGET): $(MKFS_OBJS)
+	$(MKFS_CC) $(MKFS_CFLAGS) -o $@ $^
+
+$(BRKLS_TARGET): $(BRKLS_OBJS)
 	$(MKFS_CC) $(MKFS_CFLAGS) -o $@ $^

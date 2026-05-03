@@ -24,14 +24,16 @@
 #define BRKFS_NAME_LEN 255
 
 struct brkfs_super_block {
-	uint32_t s_blocksize;
-	uint32_t s_inode_blocks;
-	uint32_t s_data_blocks;
-	uint32_t s_inode_bitmap_start;
-	uint32_t s_data_bitmap_start;
-	uint32_t s_inode_start;
-	uint32_t s_data_start;
-	uint32_t s_magic;
+	uint32_t s_blocksize; /* Block size */
+	uint32_t s_inode_bitmap; /* Inode bitmap start block number */
+	uint32_t s_inodes_count; /* Total number of inodes */
+	uint32_t s_data_block_bitmap; /* Data block bitmap start block number */
+	uint32_t s_data_blocks_count; /* Total number of data blocks */
+	uint32_t s_inode_table; /* Inode table start block number */
+	uint32_t s_first_data_block; /* First data block number */
+	uint32_t s_magic; /* File system magic number */
+	uint32_t s_inode_size; /* Size of an inode */
+	uint32_t s_blocks_count; /* Total number of blocks */
 };
 
 struct brkfs_inode {
