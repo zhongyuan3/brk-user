@@ -1,4 +1,7 @@
-#include <ulib.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 int main(void)
 {
@@ -12,7 +15,7 @@ int main(void)
 		}
 
 		if (cpid == 0) {
-			char *argv[] = { "/bin/sh", 0 };
+			char *argv[] = { "/sh", 0 };
 			char *envp[] = { 0 };
 			execve(argv[0], argv, envp);
 			perror("execve failed");

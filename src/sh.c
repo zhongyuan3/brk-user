@@ -1,4 +1,9 @@
-#include <ulib.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 #define CWD_BUF_SIZE 1024
 #define INPUT_BUF_SIZE 1024
@@ -88,7 +93,8 @@ int main(int argc, char *argv[])
 		sh_panic("getcwd failed");
 
 	while (true) {
-		dprintf(STDOUT_FILENO, "$ ");
+		printf("$ ");
+		fflush(stdout);
 		if (sh_get_cmd(buf, INPUT_BUF_SIZE) < 0)
 			break;
 		if (buf[0] == '\n' || buf[0] == '\r')
@@ -102,10 +108,10 @@ int main(int argc, char *argv[])
 			if (!getcwd(cwd, sizeof(cwd)))
 				sh_panic("getcwd failed");
 		} else if (!strncmp(buf, "exit", 4)) {
-			dprintf(STDOUT_FILENO, "exit\n");
+			printf("exit\n");
 			exit(0);
 		} else if (!strncmp(buf, "pwd", 3)) {
-			dprintf(STDOUT_FILENO, "%s\n", cwd);
+			printf("%s\n", cwd);
 		} else {
 			toks = sh_parse_line(buf);
 			cmd = sh_parse_cmd(toks);
@@ -119,7 +125,7 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	dprintf(STDOUT_FILENO, "\nexit\n");
+	printf("\nexit\n");
 	return 0;
 }
 
@@ -177,7 +183,7 @@ static void sh_run_cmd(struct cmd *cmd)
 		if (!ecmd->argv[0])
 			exit(1);
 		execvp(ecmd->argv[0], ecmd->argv);
-		dprintf(STDERR_FILENO, "exec %s failed\n", ecmd->argv[0]);
+		fprintf(stderr, "exec %s failed\n", ecmd->argv[0]);
 		exit(1);
 		break;
 	case CMD_PIPE:
@@ -206,7 +212,7 @@ static void sh_run_cmd(struct cmd *cmd)
 		rcmd = (struct redir_cmd *)cmd;
 		fd = open(rcmd->file, rcmd->omode);
 		if (fd < 0) {
-			dprintf(STDERR_FILENO, "cannot open %s\n", rcmd->file);
+			fprintf(stderr, "cannot open %s\n", rcmd->file);
 			exit(1);
 		}
 		dup2(fd, rcmd->fd);
@@ -449,6 +455,6 @@ static pid_t sh_fork(void)
 
 static void sh_panic(const char *str)
 {
-	dprintf(STDERR_FILENO, "sh panic: %s\n", str);
+	fprintf(stderr, "sh panic: %s\n", str);
 	exit(1);
 }

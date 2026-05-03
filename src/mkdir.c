@@ -1,9 +1,11 @@
-#include <ulib.h>
+#include <stdio.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 int main(int argc, char *argv[])
 {
 	if (argc < 2) {
-		dprintf(STDERR_FILENO, "Usage: mkdir files...\n");
+		fprintf(stderr, "Usage: mkdir files...\n");
 		return 1;
 	}
 

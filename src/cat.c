@@ -1,4 +1,6 @@
-#include <ulib.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <unistd.h>
 
 static char buf[1024];
 

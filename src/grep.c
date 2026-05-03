@@ -1,4 +1,7 @@
-#include <ulib.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
 
 #define BUF_SIZE 4096
 
@@ -27,8 +30,8 @@ static int grep(int fd, const char *pattern)
 				line_buf[line_pos] = '\0';
 
 				if (strstr(line_buf, pattern)) {
-					dprintf(STDOUT_FILENO, "%d:%s\n",
-						line_number, line_buf);
+					printf("%d:%s\n", line_number,
+					       line_buf);
 					found = 1;
 				}
 
@@ -45,8 +48,7 @@ static int grep(int fd, const char *pattern)
 	if (line_pos > 0) {
 		line_buf[line_pos] = '\0';
 		if (strstr(line_buf, pattern)) {
-			dprintf(STDOUT_FILENO, "%d:%s\n", line_number,
-				line_buf);
+			printf("%d:%s\n", line_number, line_buf);
 			found = 1;
 		}
 	}
@@ -60,7 +62,7 @@ static int grep(int fd, const char *pattern)
 int main(int argc, char *argv[])
 {
 	if (argc < 2) {
-		dprintf(STDOUT_FILENO, "Usage: grep PATTERN [FILE]\n");
+		printf("Usage: grep PATTERN [FILE]\n");
 		return 1;
 	}
 

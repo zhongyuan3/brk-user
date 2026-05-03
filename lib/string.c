@@ -121,15 +121,14 @@ int strncmp(const char *s1, const char *s2, size_t n)
 	if (n == 0)
 		return 0;
 
-	while (n-- > 0 && *s1 && (*s1 == *s2)) {
+	while (n > 0 && *s1 && *s2 && *s1 == *s2) {
 		++s1;
 		++s2;
+		--n;
 	}
-
-	if (n == (size_t)-1)
+	if (n == 0)
 		return 0;
-
-	return (*(unsigned char *)s1 - *(unsigned char *)s2);
+	return (int)(*(unsigned char *)s1 - *(unsigned char *)s2);
 }
 
 char *strcpy(char *dst, const char *src)
@@ -156,20 +155,18 @@ char *strncpy(char *dst, const char *src, size_t n)
 
 size_t strlcpy(char *dst, char const *src, size_t size)
 {
-	char *d = dst;
+	const char *const src0 = src;
 
-	if (!size--)
-		goto finally;
+	if (size == 0)
+		return strlen(src);
 
-	while (size && *src) {
-		--size;
+	size_t left = size - 1;
+	while (left && *src) {
 		*dst++ = *src++;
+		left--;
 	}
-
 	*dst = '\0';
-
-finally:
-	return (size_t)(dst - d) + strlen(src);
+	return (size_t)(src - src0) + strlen(src);
 }
 
 char *strcat(char *dst, char const *src)
@@ -345,12 +342,15 @@ static const char *errmsgs[] = {
 
 const char *strerror(int errnum)
 {
+	const char *msg;
+
 	if (errnum < 0)
 		errnum = -errnum;
 
 	if ((size_t)errnum >= countof(errmsgs))
 		return "Unknown error";
-	return errmsgs[errnum];
+	msg = errmsgs[errnum];
+	return msg ? msg : "Unknown error";
 }
 
 size_t strspn(const char *s, const char *accept)

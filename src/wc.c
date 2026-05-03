@@ -1,4 +1,8 @@
-#include <ulib.h>
+#include <fcntl.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
 
 char buf[512];
 
@@ -29,8 +33,7 @@ int wc(int fd, char *name)
 		}
 	}
 
-	dprintf(STDOUT_FILENO, "%lu %lu %lu %s\n", line_cnt, word_cnt, char_cnt,
-		name);
+	printf("%lu %lu %lu %s\n", line_cnt, word_cnt, char_cnt, name);
 	return 0;
 }
 
