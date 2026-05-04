@@ -118,10 +118,8 @@ unsigned long strtoul(const char *nptr, char **endptr, int base)
 	int neg;
 	unsigned long long val = strtoull_core(nptr, endptr, base, &neg);
 
-	if (neg) {
-		errno = ERANGE;
-		return ULONG_MAX;
-	}
+	if (neg)
+		return (unsigned long)(0ULL - val);
 
 	if (val > ULONG_MAX) {
 		errno = ERANGE;
@@ -135,9 +133,7 @@ unsigned long long strtoull(const char *nptr, char **endptr, int base)
 	int neg;
 	unsigned long long val = strtoull_core(nptr, endptr, base, &neg);
 
-	if (neg) {
-		errno = ERANGE;
-		return ULLONG_MAX;
-	}
+	if (neg)
+		return 0ULL - val;
 	return val;
 }

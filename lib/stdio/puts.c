@@ -2,7 +2,9 @@
 
 int puts(const char *s)
 {
-	fputs(s, stdout);
-	fputc('\n', stdout);
+	if (fputs(s, stdout) == EOF)
+		return EOF;
+	if (fputc('\n', stdout) == EOF)
+		return EOF;
 	return 0;
 }

@@ -1,5 +1,9 @@
+#include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+
+#include "stdio_int.h"
 
 #define ZERO_PAD (1U << 0)
 #define LEFT_ALIGN (1U << 1)
@@ -184,9 +188,20 @@ static char *fmt_x(uintmax_t x, char *s, char const *d)
 
 static void out(struct fmt_context *ctx, char const *buf, size_t len)
 {
-	size_t n = 0;
-	ctx->stream->write(ctx->stream, buf, len, &n);
-	ctx->cnt += n;
+	while (len > 0) {
+		size_t n = 0;
+		int (*wfn)(FILE *, char const *, size_t, size_t *) =
+			ctx->stream->write;
+		if (!wfn)
+			wfn = __stdio_file_write;
+		if (wfn(ctx->stream, buf, len, &n) < 0)
+			return;
+		if (n == 0)
+			return;
+		ctx->cnt += n;
+		buf += n;
+		len -= n;
+	}
 }
 
 static void pad(struct fmt_context *ctx, size_t pad_len, char pad_ch)

@@ -2,6 +2,8 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+#include "stdio_impl.h"
+
 int fclose(FILE *stream)
 {
 	if (!stream)

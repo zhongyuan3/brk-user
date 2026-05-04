@@ -1,6 +1,8 @@
 #include <stdio.h>
 
+#include "stdio_impl.h"
+
 int ferror(FILE *stream)
 {
-	return 0;
+	return stream && (stream->flags & __IO_ERR);
 }
