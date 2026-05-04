@@ -1,6 +1,8 @@
 #include <stdio.h>
 
+#include "stdio_impl.h"
+
 int feof(FILE *stream)
 {
-	return 0;
+	return stream && (stream->flags & __IO_EOF);
 }

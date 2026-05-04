@@ -1,21 +1,11 @@
 #ifndef _STDIO_H
 #define _STDIO_H
 
-#include <brk/types.h>
 #include <stdarg.h>
 #include <stddef.h>
 #include <sys/types.h>
 
 typedef struct __io_file FILE;
-
-struct __io_file {
-	int (*write)(FILE *stream, char const *buf, size_t len, size_t *wlen);
-	char *buf;
-	size_t buf_used;
-	size_t buf_size;
-	int fd;
-	bool sync;
-};
 
 int printf(const char *format, ...) __attribute__((format(printf, 1, 2)));
 int vprintf(const char *format, va_list ap);
@@ -35,6 +25,8 @@ size_t fwrite(const void *ptr, size_t size, size_t nmemb, FILE *stream);
 int fseek(FILE *stream, long offset, int whence);
 long ftell(FILE *stream);
 int fflush(FILE *stream);
+void clearerr(FILE *stream);
+void rewind(FILE *stream);
 int ferror(FILE *stream);
 int feof(FILE *stream);
 
