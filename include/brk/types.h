@@ -6,10 +6,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-struct list_head {
-	struct list_head *prev, *next;
-};
-
 typedef uint32_t dev_t;
 typedef unsigned int mode_t;
 typedef unsigned int fmode_t;
@@ -21,7 +17,5 @@ typedef long suseconds_t;
 
 typedef unsigned int uid_t;
 typedef unsigned int gid_t;
-
-typedef long refcnt_t;
 
 #endif

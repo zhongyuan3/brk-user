@@ -1,19 +1,21 @@
 #ifndef _STDIO_H
 #define _STDIO_H
 
-#include <brk/printf.h>
 #include <brk/types.h>
 #include <stdarg.h>
 #include <stddef.h>
 #include <sys/types.h>
 
-typedef struct __file {
+typedef struct __io_file FILE;
+
+struct __io_file {
+	int (*write)(FILE *stream, char const *buf, size_t len, size_t *wlen);
 	char *buf;
 	size_t buf_used;
 	size_t buf_size;
 	int fd;
 	bool sync;
-} FILE;
+};
 
 int printf(const char *format, ...) __attribute__((format(printf, 1, 2)));
 int vprintf(const char *format, va_list ap);
@@ -44,6 +46,9 @@ int fputs(const char *s, FILE *stream);
 int puts(const char *s);
 
 void perror(const char *s);
+
+ssize_t getline(char **lineptr, size_t *n, FILE *stream);
+ssize_t getdelim(char **lineptr, size_t *n, int delimiter, FILE *stream);
 
 extern FILE *__stdin_file;
 extern FILE *__stdout_file;
