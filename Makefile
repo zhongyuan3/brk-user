@@ -24,72 +24,63 @@ RANLIB := $(CROSS_COMPILE)ranlib
 CPP := $(CC) -E
 
 BUILD_DIR := build
-SRC_BUILD_DIR := $(BUILD_DIR)/src
-LIB_BUILD_DIR := $(BUILD_DIR)/lib
+BINDIR := $(BUILD_DIR)/bin
 
-MKDIR_P := mkdir -p
-
-BASEFLAGS := -O2 -ggdb -gdwarf-2 -Wall -Wextra -Werror
-BASEFLAGS += -Wno-unused-parameter -Wno-unknown-attributes -Wno-main
-BASEFLAGS += -march=rv64gc -mabi=lp64d -mcmodel=medlow
-BASEFLAGS += -ffreestanding -nostdlib -fno-common
-BASEFLAGS += -fno-omit-frame-pointer -fno-stack-protector
-BASEFLAGS += -fno-pie -no-pie
-BASEFLAGS += -I./include
-
-CFLAGS := $(BASEFLAGS) -MMD -MP
-
-USER_LDFLAGS := -z max-page-size=4096 -static
+CFLAGS := -O2 -ggdb -gdwarf-2 -Wall -Wextra -Werror
+CFLAGS += -Wno-unused-parameter -Wno-unknown-attributes -Wno-main
+CFLAGS += -march=rv64gc -mabi=lp64d -mcmodel=medlow
+CFLAGS += -ffreestanding -nostdlib -fno-common
+CFLAGS += -fno-omit-frame-pointer -fno-stack-protector
+CFLAGS += -fno-pie -no-pie
+CFLAGS += -I./include
+CFLAGS += -MMD -MP
 
 USER_LD_SOURCE := src/user.ld.S
-USER_LD := $(SRC_BUILD_DIR)/user.ld
+USER_LD := $(BUILD_DIR)/user.ld
 
-USER_LIB_NAME := user
-USER_LIB := $(LIB_BUILD_DIR)/lib$(USER_LIB_NAME).a
+USER_LDFLAGS := -z max-page-size=4096 -static -T $(USER_LD)
 
-USER_SRC_FILES := $(wildcard src/*.c)
-LIB_SRC_FILES := $(wildcard lib/*/*.c)
+LIB_SRCS := $(sort $(wildcard lib/*/*.c))
+LIB_OBJS := $(patsubst lib/%.c,$(BUILD_DIR)/lib/%.o,$(LIB_SRCS))
+LIBUSER_A := $(BUILD_DIR)/libuser.a
 
-USER_OBJS := $(patsubst src/%.c,$(SRC_BUILD_DIR)/%.o,$(USER_SRC_FILES))
-LIB_OBJS := $(patsubst lib/%.c,$(LIB_BUILD_DIR)/%.o,$(LIB_SRC_FILES))
+USER_SRCS := $(wildcard src/*.c)
+USER_PROGS := $(basename $(notdir $(USER_SRCS)))
+USER_BINS := $(addprefix $(BINDIR)/,$(USER_PROGS))
+USER_OBJS := $(addprefix $(BUILD_DIR)/,$(addsuffix .o,$(USER_PROGS)))
 
-USER_PROG := $(patsubst $(SRC_BUILD_DIR)/%.o,$(SRC_BUILD_DIR)/%,$(USER_OBJS))
+.SECONDARY: $(USER_OBJS)
 
-USER_OBJS_DEPS := $(USER_OBJS:.o=.d)
-LIB_OBJS_DEPS := $(LIB_OBJS:.o=.d)
+.PHONY: all clean
 
-.PHONY: all clean user_prog user_lib
+all: $(USER_BINS)
 
-.DELETE_ON_ERROR:
+$(BUILD_DIR):
+	mkdir -p $@
 
-.PRECIOUS: $(USER_OBJS) $(LIB_OBJS)
+$(BINDIR): | $(BUILD_DIR)
+	mkdir -p $@
 
-all: user_lib user_prog
+$(USER_LD): $(USER_LD_SOURCE) | $(BUILD_DIR)
+	$(CPP) $(CFLAGS) -P -o $@ $<
+
+$(BUILD_DIR)/lib/%.o: lib/%.c | $(BUILD_DIR)
+	mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+$(LIBUSER_A): $(LIB_OBJS)
+	$(RM) $@
+	$(AR) rcs $@ $^
+	$(RANLIB) $@
+
+$(BUILD_DIR)/%.o: src/%.c | $(BUILD_DIR)
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+$(BINDIR)/%: $(BUILD_DIR)/%.o $(LIBUSER_A) $(USER_LD) | $(BINDIR)
+	$(CC) $(CFLAGS) -o $@ $< $(LIBUSER_A) $(USER_LDFLAGS)
 
 clean:
 	$(RM) -rf $(BUILD_DIR)
 
-user_prog: $(USER_PROG)
-
-user_lib: $(USER_LIB)
-
--include $(USER_OBJS_DEPS) $(LIB_OBJS_DEPS)
-
-$(SRC_BUILD_DIR)/%: $(SRC_BUILD_DIR)/%.o $(USER_LIB) $(USER_LD)
-	$(LD) $(USER_LDFLAGS) -T $(USER_LD) -o $@ $< -L$(LIB_BUILD_DIR) -l$(USER_LIB_NAME)
-
-$(USER_LIB): $(LIB_OBJS)
-	$(AR) rcs $@ $^
-	$(RANLIB) $@
-
-$(SRC_BUILD_DIR)/%.o: src/%.c
-	@$(MKDIR_P) $(dir $@)
-	$(CC) $(CFLAGS) -c -o $@ $<
-
-$(LIB_BUILD_DIR)/%.o: lib/%.c
-	@$(MKDIR_P) $(dir $@)
-	$(CC) $(CFLAGS) -c -o $@ $<
-
-$(USER_LD): $(USER_LD_SOURCE)
-	@$(MKDIR_P) $(dir $@)
-	$(CPP) -P $(BASEFLAGS) -o $@ $<
+-include $(LIB_OBJS:.o=.d)
+-include $(addprefix $(BUILD_DIR)/,$(addsuffix .d,$(USER_PROGS)))
