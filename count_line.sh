@@ -1,40 +1,29 @@
 #!/bin/bash
 
-directories=(
-    "./include/"
-    "./lib/"
-    "./src/"
-    "./mkfs/"
-)
+DEFAULT_DIRS=("./include" "./src" "./lib") 
 
-extensions=("c" "h" "S")
+if [ $# -gt 0 ]; then
+    target_dirs=("$@")
+else
+    target_dirs=("${DEFAULT_DIRS[@]}")
+fi
 
 total_lines=0
 
-temp_file=$(mktemp)
-
-for dir in "${directories[@]}"; do
+for dir in "${target_dirs[@]}"; do
     if [ ! -d "$dir" ]; then
+        echo "❌ Error: Directory '$dir' does not exist, skipped."
         continue
     fi
 
-    for ext in "${extensions[@]}"; do
-        find "$dir" -type f -name "*.$ext" 2>/dev/null >>"$temp_file"
-    done
+    echo "📃 Counting [$dir]..."
+
+    count=$(find "$dir" -type f \( -name "*.c" -o -name "*.h" -o -name "*.S" \) -exec wc -l {} + 2>/dev/null | awk 'END { print $1+0 }')
+    
+    echo "📂 Directory [$dir]: $count lines"
+    
+    total_lines=$((total_lines + count))
 done
 
-if [ ! -s "$temp_file" ]; then
-    rm -f "$temp_file"
-    exit 0
-fi
-
-while IFS= read -r file; do
-    lines=$(wc -l <"$file" 2>/dev/null)
-    if [ -n "$lines" ] && [ "$lines" -eq "$lines" ] 2>/dev/null; then
-        total_lines=$((total_lines + lines))
-    fi
-done <"$temp_file"
-
-rm -f "$temp_file"
-
-echo "$total_lines"
+echo "--------------------------------"
+echo "✅ Total lines: $total_lines"
