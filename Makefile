@@ -44,12 +44,17 @@ LIB_SRCS := $(sort $(wildcard lib/*/*.c))
 LIB_OBJS := $(patsubst lib/%.c,$(BUILD_DIR)/lib/%.o,$(LIB_SRCS))
 LIBUSER_A := $(BUILD_DIR)/libuser.a
 
-USER_SRCS := $(wildcard src/*.c)
-USER_PROGS := $(basename $(notdir $(USER_SRCS)))
-USER_BINS := $(addprefix $(BINDIR)/,$(USER_PROGS))
-USER_OBJS := $(addprefix $(BUILD_DIR)/,$(addsuffix .o,$(USER_PROGS)))
+USER_SINGLE_SRCS := $(wildcard src/*.c)
+USER_SINGLE_PROGS := $(basename $(notdir $(USER_SINGLE_SRCS)))
 
-.SECONDARY: $(USER_OBJS)
+SH_SRCS := $(sort $(wildcard sh/*.c))
+SH_OBJS := $(patsubst sh/%.c,$(BUILD_DIR)/sh/%.o,$(SH_SRCS))
+
+USER_PROGS := $(sort $(USER_SINGLE_PROGS) sh)
+USER_BINS := $(addprefix $(BINDIR)/,$(USER_PROGS))
+USER_SINGLE_OBJS := $(addprefix $(BUILD_DIR)/,$(addsuffix .o,$(USER_SINGLE_PROGS)))
+
+.SECONDARY: $(USER_SINGLE_OBJS) $(SH_OBJS)
 
 .PHONY: all clean
 
@@ -59,6 +64,9 @@ $(BUILD_DIR):
 	mkdir -p $@
 
 $(BINDIR): | $(BUILD_DIR)
+	mkdir -p $@
+
+$(BUILD_DIR)/sh: | $(BUILD_DIR)
 	mkdir -p $@
 
 $(USER_LD): $(USER_LD_SOURCE) | $(BUILD_DIR)
@@ -76,6 +84,12 @@ $(LIBUSER_A): $(LIB_OBJS)
 $(BUILD_DIR)/%.o: src/%.c | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
+$(BUILD_DIR)/sh/%.o: sh/%.c | $(BUILD_DIR)/sh
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+$(BINDIR)/sh: $(SH_OBJS) $(LIBUSER_A) $(USER_LD) | $(BINDIR)
+	$(CC) $(CFLAGS) -o $@ $(SH_OBJS) $(LIBUSER_A) $(USER_LDFLAGS)
+
 $(BINDIR)/%: $(BUILD_DIR)/%.o $(LIBUSER_A) $(USER_LD) | $(BINDIR)
 	$(CC) $(CFLAGS) -o $@ $< $(LIBUSER_A) $(USER_LDFLAGS)
 
@@ -83,4 +97,5 @@ clean:
 	$(RM) -rf $(BUILD_DIR)
 
 -include $(LIB_OBJS:.o=.d)
--include $(addprefix $(BUILD_DIR)/,$(addsuffix .d,$(USER_PROGS)))
+-include $(addprefix $(BUILD_DIR)/,$(addsuffix .d,$(USER_SINGLE_PROGS)))
+-include $(SH_OBJS:.o=.d)
