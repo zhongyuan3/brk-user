@@ -37,6 +37,11 @@ int putchar(int c);
 int fputs(const char *s, FILE *stream);
 int puts(const char *s);
 
+int getc(FILE *stream);
+int fgetc(FILE *stream);
+int getchar(void);
+char *fgets(char *s, int size, FILE *stream);
+
 void perror(const char *s);
 
 ssize_t getline(char **lineptr, size_t *n, FILE *stream);
