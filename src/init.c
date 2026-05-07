@@ -1,36 +1,35 @@
 #include <stdio.h>
-#include <stdlib.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
 int main(void)
 {
-	write(STDOUT_FILENO, "welcome to aosd v0.1.0\n", 23);
-
 	while (1) {
 		pid_t cpid = fork();
 		if (cpid < 0) {
 			perror("fork failed");
-			goto end;
+			goto fail;
 		}
 
 		if (cpid == 0) {
-			char *argv[] = { "/sh", 0 };
-			char *envp[] = { 0 };
-			execve(argv[0], argv, envp);
+			char *argv[] = { "sh", 0 };
+			execvp(argv[0], argv);
 			perror("execve failed");
-			exit(1);
+			_exit(1);
 		}
 
 		while (1) {
 			pid_t wpid = wait(0);
-			if (wpid == cpid)
+			if (wpid == cpid) {
+				printf("\npress any key restart shell\n");
+				getchar();
 				break;
+			}
 		}
 	}
 
-end:
-	write(STDERR_FILENO, "failed to start shell\n", 22);
+fail:
+	fprintf(stderr, "failed to start shell\n");
 	while (1)
 		wait(0);
 }
