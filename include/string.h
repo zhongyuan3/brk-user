@@ -33,4 +33,7 @@ char *strtok(char *str, const char *delim);
 
 const char *strerror(int errnum);
 
+char *strdup(char const *s);
+char *strndup(char const *s, size_t n);
+
 #endif
