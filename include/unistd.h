@@ -47,6 +47,8 @@ pid_t fork(void);
 
 void _exit(int status) __attribute__((noreturn));
 
+unsigned int sleep(unsigned int seconds);
+
 extern char **environ;
 
 #endif
