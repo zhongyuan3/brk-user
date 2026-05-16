@@ -1,5 +1,5 @@
-#ifndef BRK_STDIO_INT_H
-#define BRK_STDIO_INT_H
+#ifndef _STDIO_INT_H
+#define _STDIO_INT_H
 
 #include <stdio.h>
 

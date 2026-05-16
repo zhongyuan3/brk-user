@@ -1,4 +1,4 @@
-#include <brk/macros.h>
+#include <brk/kernel.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
@@ -16,7 +16,8 @@ static int file_write_sync(FILE *stream, const char *buf, size_t len,
 		stream->buf_used += chunk;
 		len -= chunk;
 		buf += chunk;
-		if (stream->buf_used >= stream->buf_size && fflush(stream) < 0) {
+		if (stream->buf_used >= stream->buf_size &&
+		    fflush(stream) < 0) {
 			stream->flags |= __IO_ERR;
 			return -1;
 		}
@@ -35,7 +36,8 @@ static int file_write(FILE *stream, const char *buf, size_t len, size_t *wlen)
 	const size_t orig = len;
 
 	while (len > 0) {
-		if (stream->buf_used >= stream->buf_size && fflush(stream) < 0) {
+		if (stream->buf_used >= stream->buf_size &&
+		    fflush(stream) < 0) {
 			stream->flags |= __IO_ERR;
 			return -1;
 		}

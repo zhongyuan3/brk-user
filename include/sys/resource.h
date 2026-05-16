@@ -1,7 +1,7 @@
-#ifndef BRK_RESOURCE_H
-#define BRK_RESOURCE_H
+#ifndef _SYS_RESOURCE_H
+#define _SYS_RESOURCE_H
 
-#include <brk/time.h>
+#include <sys/time.h>
 
 struct rusage {
 	struct timeval ru_utime; /* user time used */

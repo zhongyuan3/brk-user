@@ -1,7 +1,7 @@
 OUTPUT_ARCH("riscv")
 ENTRY(_start)
 
-#include <brk/asm.h>
+#define PAGE_SIZE 4096
 
 USER_BASE = 0x10000;
 
