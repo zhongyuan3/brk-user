@@ -437,9 +437,34 @@ static int ls_one(const char *path, const struct ls_args *args)
 	int ret = 0;
 	char **names = NULL;
 	size_t n = 0;
+	struct stat st;
 
 	if (fd < 0) {
 		perror("ls: open failed");
+		return 1;
+	}
+
+	if (fstat(fd, &st)) {
+		perror("ls: stat failed");
+		return 1;
+	}
+
+	if (S_ISREG(st.st_mode)) {
+		const char *basename = strrchr(path, '/');
+		if (basename)
+			++basename;
+		else
+			basename = path;
+		if (args->long_format) {
+			print_long_line(basename, &st, args->human_readable, 1, 1, 1, 1);
+		} else {
+			puts(basename);
+		}
+		return 0;
+	}
+
+	if (!S_ISDIR(st.st_mode)) {
+		fprintf(stderr, "ls: invalid type\n");
 		return 1;
 	}
 
