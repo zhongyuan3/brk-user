@@ -229,19 +229,18 @@ static int ls_long(const char *path, char **names, size_t n,
 	}
 
 	/* GNU-style: sum of allocated blocks, printed as 1 KiB units. */
-	{
-		unsigned long long n512 = 0;
-		unsigned long long total_k;
 
-		for (size_t i = 0; i < n; i++) {
-			long b = sts[i].st_blocks;
+	unsigned long long n512 = 0;
+	unsigned long long total_k;
 
-			if (b > 0)
-				n512 += (unsigned long long)b;
-		}
-		total_k = (n512 * 512ULL + 1023ULL) / 1024ULL;
-		printf("total %llu\n", (unsigned long long)total_k);
+	for (size_t i = 0; i < n; i++) {
+		long b = sts[i].st_blocks;
+
+		if (b > 0)
+			n512 += (unsigned long long)b;
 	}
+	total_k = (n512 * 512ULL + 1023ULL) / 1024ULL;
+	printf("total %llu\n", (unsigned long long)total_k);
 
 	for (size_t i = 0; i < n; i++)
 		print_long_line(names[i], &sts[i], human_readable, wnlink, wuid,
@@ -431,42 +430,11 @@ out:
 	return ret;
 }
 
-static int ls_one(const char *path, const struct ls_args *args)
+static int ls_dir(int fd, const char *path, const struct ls_args *args)
 {
-	int fd = open(path, O_RDONLY);
-	int ret = 0;
 	char **names = NULL;
 	size_t n = 0;
-	struct stat st;
-
-	if (fd < 0) {
-		perror("ls: open failed");
-		return 1;
-	}
-
-	if (fstat(fd, &st)) {
-		perror("ls: stat failed");
-		return 1;
-	}
-
-	if (S_ISREG(st.st_mode)) {
-		const char *basename = strrchr(path, '/');
-		if (basename)
-			++basename;
-		else
-			basename = path;
-		if (args->long_format) {
-			print_long_line(basename, &st, args->human_readable, 1, 1, 1, 1);
-		} else {
-			puts(basename);
-		}
-		return 0;
-	}
-
-	if (!S_ISDIR(st.st_mode)) {
-		fprintf(stderr, "ls: invalid type\n");
-		return 1;
-	}
+	int ret = 0;
 
 	if (collect_names(fd, args->all, &names, &n) != 0) {
 		ret = 1;
@@ -475,9 +443,9 @@ static int ls_one(const char *path, const struct ls_args *args)
 
 	qsort(names, n, sizeof(*names), cmp_strp);
 
-	if (args->long_format)
+	if (args->long_format) {
 		ret = ls_long(path, names, n, args->human_readable);
-	else {
+	} else {
 		unsigned cols;
 
 		if (get_term_cols(&cols) != 0) {
@@ -491,6 +459,37 @@ static int ls_one(const char *path, const struct ls_args *args)
 	for (size_t k = 0; k < n; k++)
 		free(names[k]);
 	free(names);
+
+done:
+	return ret;
+}
+
+static int ls_one(const char *path, const struct ls_args *args)
+{
+	int fd = open(path, O_RDONLY);
+	int ret = 0;
+	struct stat st;
+
+	if (fd < 0) {
+		perror("ls: open failed");
+		return 1;
+	}
+
+	if (fstat(fd, &st)) {
+		perror("ls: stat failed");
+		return 1;
+	}
+
+	if (S_ISDIR(st.st_mode)) {
+		ret = ls_dir(fd, path, args);
+		goto done;
+	}
+
+	if (args->long_format)
+		print_long_line(path, &st, args->human_readable, 1, 1, 1, 1);
+	else
+		puts(path);
+
 done:
 	close(fd);
 	return ret;
