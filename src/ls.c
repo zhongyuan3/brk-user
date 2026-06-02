@@ -1,3 +1,4 @@
+#include <apputil.h>
 #include <dirent.h>
 #include <fcntl.h>
 #include <stdbool.h>
@@ -11,12 +12,9 @@
 #include <unistd.h>
 
 struct ls_args {
-	int path_indices[256];
-	int npaths;
 	bool long_format;
 	bool all;
 	bool human_readable;
-	bool want_help;
 };
 
 static char *dup_name(const char *s)
@@ -195,16 +193,15 @@ static int ls_long(const char *path, char **names, size_t n,
 
 	sts = calloc(n, sizeof(*sts));
 	if (!sts) {
-		perror("ls: calloc failed");
+		return app_fail_errno("calloc failed");
 		return 1;
 	}
 
 	for (size_t i = 0; i < n; i++) {
 		strlcpy(sep, names[i], pb_len);
 		if (stat(path_buf, &sts[i]) != 0) {
-			perror("ls: stat failed");
 			free(sts);
-			return 1;
+			return app_fail_errno("stat failed");
 		}
 	}
 
@@ -296,7 +293,7 @@ static void print_columns(char **names, size_t n, unsigned term_cols)
 
 	widths = malloc(n * sizeof(*widths));
 	if (!widths) {
-		perror("ls: malloc failed");
+		app_error_errno("malloc failed");
 		return;
 	}
 	for (size_t i = 0; i < n; i++)
@@ -365,8 +362,7 @@ static int collect_names(int fd, bool all, char ***out_names, size_t *out_n)
 			void *nb = realloc(buf, new_cap);
 
 			if (!nb) {
-				perror("ls: realloc failed");
-				ret = 1;
+				ret = app_fail_errno("realloc failed");
 				goto out;
 			}
 			buf = nb;
@@ -374,8 +370,7 @@ static int collect_names(int fd, bool all, char ***out_names, size_t *out_n)
 		}
 		r = getdents64(fd, buf + len, cap - len);
 		if (r < 0) {
-			perror("ls: getdents64 failed");
-			ret = 1;
+			ret = app_fail_errno("getdents64 failed");
 			goto out;
 		}
 		if (r == 0)
@@ -399,8 +394,7 @@ static int collect_names(int fd, bool all, char ***out_names, size_t *out_n)
 			char **nn = realloc(names, nc * sizeof(*names));
 
 			if (!nn) {
-				perror("ls: realloc failed");
-				ret = 1;
+				ret = app_fail_errno("realloc failed");
 				goto out;
 			}
 			names = nn;
@@ -408,8 +402,7 @@ static int collect_names(int fd, bool all, char ***out_names, size_t *out_n)
 		}
 		names[n] = dup_name(nm);
 		if (!names[n]) {
-			perror("ls: malloc failed");
-			ret = 1;
+			ret = app_fail_errno("malloc failed");
 			goto out;
 		}
 		n++;
@@ -471,13 +464,11 @@ static int ls_one(const char *path, const struct ls_args *args)
 	struct stat st;
 
 	if (fd < 0) {
-		perror("ls: open failed");
-		return 1;
+		return app_fail_errno("open failed");
 	}
 
 	if (fstat(fd, &st)) {
-		perror("ls: stat failed");
-		return 1;
+		return app_fail_errno("stat failed");
 	}
 
 	if (S_ISDIR(st.st_mode)) {
@@ -495,18 +486,9 @@ done:
 	return ret;
 }
 
-static void print_help(const char *argv0)
+static void print_help(void)
 {
-	const char *slash = NULL;
-
-	for (const char *p = argv0; *p; p++) {
-		if (*p == '/')
-			slash = p;
-	}
-	if (slash)
-		argv0 = slash + 1;
-
-	printf("Usage: %s [OPTION]... [FILE]...\n", argv0);
+	printf("Usage: %s [OPTION]... [FILE]...\n", app_progname());
 	printf("List directory contents.\n\n");
 	printf("  -a, --all                  do not ignore entries starting with .\n");
 	printf("  -h, --human-readable       with -l, print sizes in powers of 1024 (e.g. 1K 234M)\n");
@@ -514,85 +496,67 @@ static void print_help(const char *argv0)
 	printf("      --help                 display this help and exit\n");
 }
 
-static int parse_args(int argc, char *argv[], struct ls_args *a)
+static const struct app_option ls_opts[] = {
+	{ 'a', 'a', "all", APP_OPT_NO_ARG },
+	{ 'l', 'l', NULL, APP_OPT_NO_ARG },
+	{ 'h', 'h', "human-readable", APP_OPT_NO_ARG },
+	{ APP_OPT_HELP, 0, "help", APP_OPT_NO_ARG },
+	APP_OPTION_END,
+};
+
+static int parse_args(struct app_optctx *ctx, struct ls_args *a)
 {
-	bool operands_only = false;
+	int opt;
 
 	memset(a, 0, sizeof(*a));
-	for (int i = 1; i < argc; ++i) {
-		if (!operands_only && argv[i][0] == '-' && argv[i][1] != '\0') {
-			if (!strcmp(argv[i], "--")) {
-				operands_only = true;
-				continue;
-			}
-			if (!strcmp(argv[i], "--help")) {
-				a->want_help = true;
-				continue;
-			}
-			if (!strcmp(argv[i], "--all")) {
-				a->all = true;
-				continue;
-			}
-			if (!strcmp(argv[i], "--human-readable")) {
-				a->human_readable = true;
-				continue;
-			}
-			if (argv[i][1] == '-') {
-				fprintf(stderr,
-					"ls: unrecognized option '%s'\n",
-					argv[i]);
-				return 1;
-			}
-			for (const char *s = argv[i] + 1; *s; s++) {
-				if (*s == 'a')
-					a->all = true;
-				else if (*s == 'l')
-					a->long_format = true;
-				else if (*s == 'h')
-					a->human_readable = true;
-				else {
-					fprintf(stderr,
-						"ls: unknown option -%c\n", *s);
-					return 1;
-				}
-			}
-			continue;
+	while ((opt = app_optparse(ctx, ls_opts)) != 0) {
+		switch (opt) {
+		case '?':
+		case ':':
+			return APP_EXIT_USAGE;
+		case APP_OPT_HELP:
+			print_help();
+			exit(APP_EXIT_OK);
+		case 'a':
+			a->all = true;
+			break;
+		case 'l':
+			a->long_format = true;
+			break;
+		case 'h':
+			a->human_readable = true;
+			break;
 		}
-		if (a->npaths >= (int)(sizeof(a->path_indices) /
-				       sizeof(a->path_indices[0]))) {
-			fprintf(stderr, "ls: too many paths\n");
-			return 1;
-		}
-		a->path_indices[a->npaths++] = i;
 	}
 
-	return 0;
+	if (app_operand_count(ctx) > 256)
+		return app_fail("too many paths");
+
+	return APP_EXIT_OK;
 }
 
 int main(int argc, char *argv[])
 {
 	struct ls_args opt;
+	struct app_optctx ctx;
 	int err;
 
-	err = parse_args(argc, argv, &opt);
+	app_init(argc, argv);
+	app_optctx_init(&ctx, argc, argv);
+	err = parse_args(&ctx, &opt);
 	if (err)
 		return err;
 
-	if (opt.want_help) {
-		print_help(argc > 0 ? argv[0] : "ls");
-		return 0;
-	}
-
-	if (opt.npaths == 0)
+	if (app_operand_count(&ctx) == 0)
 		return ls_one(".", &opt);
 
-	if (opt.npaths == 1)
-		return ls_one(argv[opt.path_indices[0]], &opt);
+	if (app_operand_count(&ctx) == 1)
+		return ls_one(app_operand(&ctx, 0), &opt);
 
 	bool has_error = false;
 
-	for (int j = 0; j < opt.npaths; j++) {
-		const char *p = argv[opt.path_indices[j]];
+	for (int j = 0; j < app_operand_count(&ctx); j++) {
+		const char *p = app_operand(&ctx, j);
 
 		printf("%s:\n", p);
 		err = ls_one(p, &opt);
@@ -600,5 +564,5 @@ int main(int argc, char *argv[])
 			has_error = true;
 	}
 
-	return has_error ? 2 : 0;
+	return has_error ? APP_EXIT_USAGE : APP_EXIT_OK;
 }

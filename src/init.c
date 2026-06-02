@@ -2,8 +2,29 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+static const char *logo[] = {
+	"______   _______     ___  ____   ",
+	"|_   _ \\ |_   __ \\   |_  ||_  _|  ",
+	"  | |_) |  | |__) |    | |_/ /     ",
+	"  |  __'.  |  __ /     |  __'.     ",
+	" _| |__) |_| |  \\ \\_  _| |  \\ \\_  ",
+	"|_______/|____| |___||____||____|  ",
+	"					  ",
+	"BRK (Barely Running Kernel) v0.0.1",
+	"",
+	"This is free software; see the source for copying conditions.  There is NO",
+	"warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.",
+};
+
+static void print_logo(void)
+{
+	for (size_t i = 0; i < sizeof(logo) / sizeof(logo[0]); i++)
+		puts(logo[i]);
+}
+
 int main(void)
 {
+	print_logo();
 	while (1) {
 		pid_t cpid = fork();
 		if (cpid < 0) {
@@ -21,7 +42,7 @@ int main(void)
 		while (1) {
 			pid_t wpid = wait(0);
 			if (wpid == cpid) {
-				printf("\npress any key restart shell\n");
+				printf("\n\nPress any key to restart shell\n");
 				getchar();
 				break;
 			}

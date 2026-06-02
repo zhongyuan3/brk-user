@@ -1,18 +1,20 @@
-#include <stdio.h>
+#include <apputil.h>
 #include <unistd.h>
+
+static const char usage[] = "Usage: link <target> <linkname>";
 
 int main(int argc, char *argv[])
 {
-	if (argc != 3) {
-		fprintf(stderr, "Usage: link <target> <linkname>\n");
-		return 1;
-	}
+	struct app_optctx ctx;
 
-	int err = link(argv[1], argv[2]);
-	if (err) {
-		perror("link");
-		return 1;
-	}
+	app_init(argc, argv);
+	app_optctx_init(&ctx, argc, argv);
+	app_require_operands(&ctx, 2, usage);
+	if (app_operand_count(&ctx) != 2)
+		app_usage(usage);
 
-	return 0;
+	if (link(app_operand(&ctx, 0), app_operand(&ctx, 1)) != 0)
+		return app_fail_errno("link failed");
+
+	return APP_EXIT_OK;
 }

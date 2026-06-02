@@ -1,78 +1,45 @@
+#include <apputil.h>
 #include <fcntl.h>
-#include <stdio.h>
-#include <string.h>
 #include <unistd.h>
 
-struct cp_args {
-	const char *src;
-	const char *dest;
+static const char usage[] = "Usage: cp <src> <dest>";
+
+static const struct app_option opts[] = {
+	{ APP_OPT_HELP, 0, "help", APP_OPT_NO_ARG },
+	APP_OPTION_END,
 };
-
-static void help(int exit_status)
-{
-	fprintf(stderr, "Usage: cp <src> <dest>\n");
-	_exit(exit_status);
-}
-
-static void usage(void)
-{
-	help(2);
-}
-
-static int parse_args(int argc, char *argv[], struct cp_args *args)
-{
-	memset(args, 0, sizeof(*args));
-
-	if (argc < 2)
-		usage();
-
-	for (int i = 1; i < argc; i++) {
-		if (argv[i][0] != '-') {
-			if (!args->src)
-				args->src = argv[i];
-			else if (!args->dest)
-				args->dest = argv[i];
-			else
-				return 1;
-			continue;
-		}
-		if (!strcmp(argv[i], "--help")) {
-			help(0);
-			return 0;
-		}
-		return 1;
-	}
-	return 0;
-}
 
 static int cp(const char *src, const char *dest)
 {
 	char buf[1024];
 	int ret = 0;
 	int fd_src = open(src, O_RDONLY);
-	if (fd_src < 0) {
-		perror("cp: open failed");
-		return 1;
-	}
+
+	if (fd_src < 0)
+		return app_fail_errno("open failed");
+
 	int fd_dest = open(dest, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+
 	if (fd_dest < 0) {
-		perror("cp: open failed");
-		return 1;
+		close(fd_src);
+		return app_fail_errno("open failed");
 	}
 
 	while (1) {
 		ssize_t rcnt = read(fd_src, buf, sizeof(buf));
+
 		if (rcnt < 0) {
-			perror("cp: read failed");
-			ret = 1;
+			app_error_errno("read failed");
+			ret = APP_EXIT_FAIL;
 			break;
 		}
 		if (rcnt < 1)
 			break;
 		ssize_t wcnt = write(fd_dest, buf, rcnt);
+
 		if (wcnt < 0) {
-			perror("cp: write failed");
-			ret = 1;
+			app_error_errno("write failed");
+			ret = APP_EXIT_FAIL;
 			break;
 		}
 	}
@@ -84,10 +51,22 @@ static int cp(const char *src, const char *dest)
 
 int main(int argc, char *argv[])
 {
-	struct cp_args args;
-	int err = parse_args(argc, argv, &args);
-	if (err)
-		return err;
+	struct app_optctx ctx;
+	int opt;
 
-	return cp(args.src, args.dest);
+	app_init(argc, argv);
+	app_optctx_init(&ctx, argc, argv);
+
+	while ((opt = app_optparse(&ctx, opts)) != 0) {
+		if (opt == '?' || opt == ':')
+			return APP_EXIT_USAGE;
+		if (opt == APP_OPT_HELP)
+			app_help_exit(usage);
+	}
+
+	app_require_operands(&ctx, 2, usage);
+	if (app_operand_count(&ctx) > 2)
+		return app_fail("extra operand");
+
+	return cp(app_operand(&ctx, 0), app_operand(&ctx, 1));
 }
