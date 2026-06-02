@@ -48,6 +48,9 @@ void _exit(int status) __attribute__((noreturn));
 
 unsigned int sleep(unsigned int seconds);
 
+void sync(void);
+int fsync(int fd);
+
 extern char **environ;
 
 #endif
