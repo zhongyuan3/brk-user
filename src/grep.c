@@ -1,5 +1,5 @@
+#include <apputil.h>
 #include <fcntl.h>
-#include <stdio.h>
 #include <string.h>
 #include <unistd.h>
 
@@ -8,21 +8,25 @@
 static char buf[BUF_SIZE];
 static char line_buf[BUF_SIZE];
 
-static void print_help(void)
-{
-	puts("Usage: grep [OPTION] PATTERN [FILE]");
-	puts("Search lines in FILE (or stdin) for PATTERN.");
-	puts("");
-	puts("Options:");
-	puts("  -n       print line numbers before each matching line");
-	puts("  --help   display this help and exit");
-	puts("");
-	puts("Pattern (subset):");
-	puts("  ^        match start of line (only at beginning of pattern)");
-	puts("  $        match end of line (only at end of pattern)");
-	puts("  .        any single character");
-	puts("  *        previous atom (literal or .) zero or more times");
-}
+static const char help[] =
+	"Usage: grep [OPTION] PATTERN [FILE]\n"
+	"Search lines in FILE (or stdin) for PATTERN.\n"
+	"\n"
+	"Options:\n"
+	"  -n       print line numbers before each matching line\n"
+	"  --help   display this help and exit\n"
+	"\n"
+	"Pattern (subset):\n"
+	"  ^        match start of line (only at beginning of pattern)\n"
+	"  $        match end of line (only at end of pattern)\n"
+	"  .        any single character\n"
+	"  *        previous atom (literal or .) zero or more times\n";
+
+static const struct app_option opts[] = {
+	{ 'n', 'n', NULL, APP_OPT_NO_ARG },
+	{ APP_OPT_HELP, 0, "help", APP_OPT_NO_ARG },
+	APP_OPTION_END,
+};
 
 static int atom_match(char atom, char c)
 {
@@ -31,11 +35,6 @@ static int atom_match(char atom, char c)
 	return atom == c;
 }
 
-/*
- * Match eff_pat against the substring beginning at s; s_end is one past
- * last character. When must_end, a full pattern match must consume up to
- * s_end (line end anchor).
- */
 static int rec_match(const char *eff_pat, const char *s, const char *s_end,
 		     int must_end)
 {
@@ -84,9 +83,8 @@ static int line_matches(const char *line, size_t line_len, const char *pattern)
 		must_end = 1;
 		len--;
 	}
-	if (len >= sizeof(eff)) {
+	if (len >= sizeof(eff))
 		len = sizeof(eff) - 1;
-	}
 	memcpy(eff, p, len);
 	eff[len] = '\0';
 
@@ -111,10 +109,8 @@ static int grep_file(int fd, const char *pattern, int print_line_no)
 
 	while (1) {
 		rcnt = read(fd, buf, sizeof(buf));
-		if (rcnt < 0) {
-			perror("grep: read error");
-			return 1;
-		}
+		if (rcnt < 0)
+			return app_fail_errno("read error");
 
 		if (rcnt < 1)
 			break;
@@ -135,10 +131,8 @@ static int grep_file(int fd, const char *pattern, int print_line_no)
 
 				line_pos = 0;
 				line_number++;
-			} else {
-				if (line_pos < BUF_SIZE - 1) {
-					line_buf[line_pos++] = buf[i];
-				}
+			} else if (line_pos < BUF_SIZE - 1) {
+				line_buf[line_pos++] = buf[i];
 			}
 		}
 	}
@@ -154,50 +148,49 @@ static int grep_file(int fd, const char *pattern, int print_line_no)
 		}
 	}
 
-	return found ? 0 : 1;
+	return found ? APP_EXIT_OK : APP_EXIT_FAIL;
 }
 
 int main(int argc, char *argv[])
 {
+	struct app_optctx ctx;
+	int opt;
 	int print_line_no = 0;
-	int i = 1;
 
-	while (i < argc) {
-		if (strcmp(argv[i], "--help") == 0) {
-			print_help();
-			return 0;
-		}
-		if (strcmp(argv[i], "-n") == 0) {
+	app_init(argc, argv);
+	app_optctx_init(&ctx, argc, argv);
+
+	while ((opt = app_optparse(&ctx, opts)) != 0) {
+		if (opt == '?' || opt == ':')
+			return APP_EXIT_USAGE;
+		if (opt == APP_OPT_HELP)
+			app_help_exit(help);
+		if (opt == 'n')
 			print_line_no = 1;
-			i++;
-			continue;
-		}
-		break;
 	}
 
-	if (i >= argc) {
-		fputs("grep: missing pattern\n", stderr);
+	if (app_operand_count(&ctx) < 1) {
+		app_error("missing pattern");
 		fputs("Try 'grep --help' for more information.\n", stderr);
-		return 2;
+		return APP_EXIT_USAGE;
 	}
+	if (app_operand_count(&ctx) > 2)
+		return app_fail("too many arguments");
 
-	const char *pattern = argv[i++];
-	const char *path = (i < argc) ? argv[i++] : NULL;
-
-	if (i < argc) {
-		fputs("grep: too many arguments\n", stderr);
-		return 2;
-	}
+	const char *pattern = app_operand(&ctx, 0);
+	const char *path = app_operand_count(&ctx) > 1 ? app_operand(&ctx, 1) :
+							 NULL;
 
 	if (!path)
 		return grep_file(STDIN_FILENO, pattern, print_line_no);
 
 	int fd = open(path, O_RDONLY);
-	if (fd < 0) {
-		perror("grep: open failed");
-		return 1;
-	}
+
+	if (fd < 0)
+		return app_fail_errno("open failed");
+
 	int ret = grep_file(fd, pattern, print_line_no);
+
 	close(fd);
 	return ret;
 }

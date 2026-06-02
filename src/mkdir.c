@@ -1,21 +1,21 @@
-#include <stdio.h>
+#include <apputil.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
+static const char usage[] = "Usage: mkdir DIR...";
+
 int main(int argc, char *argv[])
 {
-	if (argc < 2) {
-		fprintf(stderr, "Usage: mkdir files...\n");
-		return 1;
+	struct app_optctx ctx;
+
+	app_init(argc, argv);
+	app_optctx_init(&ctx, argc, argv);
+	app_require_operands(&ctx, 1, usage);
+
+	for (int i = 0; i < app_operand_count(&ctx); i++) {
+		if (mkdir(app_operand(&ctx, i), 0) != 0)
+			return app_fail_errno("mkdir failed");
 	}
 
-	for (int i = 1; i < argc; ++i) {
-		int err = mkdir(argv[i], 0);
-		if (err) {
-			perror("mkdir");
-			return 1;
-		}
-	}
-
-	return 0;
+	return APP_EXIT_OK;
 }
