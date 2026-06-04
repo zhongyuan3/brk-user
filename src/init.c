@@ -1,9 +1,16 @@
+#include <signal.h>
 #include <stdio.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
+static void handle_sigint(int sig)
+{
+	(void)sig;
+}
+
 int main(void)
 {
+	signal(SIGINT, handle_sigint);
 	while (1) {
 		pid_t cpid = fork();
 		if (cpid < 0) {
@@ -21,7 +28,7 @@ int main(void)
 		while (1) {
 			pid_t wpid = wait(0);
 			if (wpid == cpid) {
-				printf("\n\nPress any key to restart shell\n");
+				printf("\nPress any key to restart shell\n");
 				getchar();
 				break;
 			}
