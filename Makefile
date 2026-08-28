@@ -36,7 +36,7 @@ else
 $(error invalid XLEN '$(XLEN)' (expected 32 or 64))
 endif
 
-BUILD_DIR := build-$(XLEN)
+BUILD_DIR := build/$(XLEN)
 BINDIR := $(BUILD_DIR)/bin
 
 
