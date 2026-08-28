@@ -23,12 +23,26 @@ AR := $(CROSS_COMPILE)ar
 RANLIB := $(CROSS_COMPILE)ranlib
 CPP := $(CC) -E
 
-BUILD_DIR := build
-BINDIR := $(BUILD_DIR)/bin
+
+
 
 CFLAGS := -O2 -ggdb -gdwarf-2 -Wall -Wextra -Werror
-CFLAGS += -Wno-unused-parameter -Wno-unknown-attributes -Wno-main
+XLEN ?= 64
+ifeq ($(XLEN),32)
+CFLAGS += -march=rv32gc -mabi=ilp32 -mcmodel=medany
+else ifeq ($(XLEN),64)
 CFLAGS += -march=rv64gc -mabi=lp64d -mcmodel=medlow
+else
+$(error invalid XLEN '$(XLEN)' (expected 32 or 64))
+endif
+
+BUILD_DIR := build-$(XLEN)
+BINDIR := $(BUILD_DIR)/bin
+
+
+
+CFLAGS += -Wno-unused-parameter -Wno-unknown-attributes -Wno-main
+
 CFLAGS += -ffreestanding -nostdlib -fno-common
 CFLAGS += -fno-omit-frame-pointer -fno-stack-protector
 CFLAGS += -fno-pie -no-pie
@@ -88,10 +102,10 @@ $(BUILD_DIR)/sh/%.o: sh/%.c | $(BUILD_DIR)/sh
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 $(BINDIR)/sh: $(SH_OBJS) $(LIBUSER_A) $(USER_LD) | $(BINDIR)
-	$(CC) $(CFLAGS) -o $@ $(SH_OBJS) $(LIBUSER_A) $(USER_LDFLAGS)
+	$(CC) $(CFLAGS) -o $@ $(SH_OBJS) $(LIBUSER_A) $(USER_LDFLAGS) -lgcc
 
 $(BINDIR)/%: $(BUILD_DIR)/%.o $(LIBUSER_A) $(USER_LD) | $(BINDIR)
-	$(CC) $(CFLAGS) -o $@ $< $(LIBUSER_A) $(USER_LDFLAGS)
+	$(CC) $(CFLAGS) -o $@ $< $(LIBUSER_A) $(USER_LDFLAGS) -lgcc
 
 clean:
 	$(RM) -rf $(BUILD_DIR)

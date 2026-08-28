@@ -33,7 +33,7 @@ static int wc(int fd, const char *name)
 		}
 	}
 
-	printf("%lu %lu %lu %s\n", line_cnt, word_cnt, char_cnt, name);
+	printf("%zu %zu %zu %s\n", line_cnt, word_cnt, char_cnt, name);
 	return APP_EXIT_OK;
 }
 
