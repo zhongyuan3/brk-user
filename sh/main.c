@@ -2,6 +2,7 @@
 #include "sh_lexer.h"
 #include "sh_parser.h"
 #include "sh_pipeline.h"
+#include <signal.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -174,6 +175,14 @@ static int run_interactive(void)
 
 int main(int argc, char **argv)
 {
+	/*
+	 * The tty core delivers SIGINT/SIGQUIT to the whole foreground
+	 * process group.  The shell stays in that group (no job control), so
+	 * it must not die together with the running command.
+	 */
+	signal(SIGINT, SIG_IGN);
+	signal(SIGQUIT, SIG_IGN);
+
 	if (argc >= 2 && strcmp(argv[1], "-c") == 0) {
 		if (argc < 3) {
 			usage(argv[0]);
