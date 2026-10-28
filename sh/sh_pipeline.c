@@ -1,6 +1,7 @@
 #include "sh_pipeline.h"
 #include <errno.h>
 #include <fcntl.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -88,6 +89,10 @@ static int apply_redirs_child(const struct sh_simple_cmd *c)
 
 static void run_child(const struct sh_simple_cmd *c)
 {
+	/* The shell ignores these; jobs must receive the defaults again. */
+	signal(SIGINT, SIG_DFL);
+	signal(SIGQUIT, SIG_DFL);
+
 	if (apply_redirs_child(c) < 0)
 		_exit(127);
 	execvp(c->argv[0], c->argv);
