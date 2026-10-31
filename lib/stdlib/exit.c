@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 
@@ -16,6 +17,7 @@ int atexit(void (*func)(void))
 
 void exit(int status)
 {
+	fflush(NULL);
 	while (atexit_count > 0)
 		atexit_funcs[--atexit_count]();
 	_exit(status);
