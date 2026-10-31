@@ -20,7 +20,7 @@ int execvpe(const char *file, char *const argv[], char *const envp[])
 		return -1;
 	}
 
-	char *path = "/bin:/usr/bin";
+	char *path = "/bin:/sbin:/usr/bin:/usr/sbin";
 	char *p = path;
 	char *e = NULL;
 
