@@ -42,6 +42,13 @@ static void mode_string(unsigned mode, char out[11])
 		out[8] = 'w';
 	if (mode & S_IXOTH)
 		out[9] = 'x';
+
+	if (mode & S_ISUID)
+		out[3] = (mode & S_IXUSR) ? 's' : 'S';
+	if (mode & S_ISGID)
+		out[6] = (mode & S_IXGRP) ? 's' : 'S';
+	if (mode & S_ISVTX)
+		out[9] = (mode & S_IXOTH) ? 't' : 'T';
 }
 
 int main(int argc, char *argv[])

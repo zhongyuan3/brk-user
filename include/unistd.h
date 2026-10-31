@@ -47,6 +47,9 @@ int getresgid(gid_t *rgid, gid_t *egid, gid_t *sgid);
 int setfsuid(uid_t uid);
 int setfsgid(gid_t gid);
 
+int getgroups(int size, gid_t list[]);
+int setgroups(int size, const gid_t list[]);
+
 int chown(const char *path, uid_t owner, gid_t group);
 int fchown(int fd, uid_t owner, gid_t group);
 int fchownat(int dirfd, const char *path, uid_t owner, gid_t group, int flags);

@@ -30,3 +30,8 @@ int getresgid(gid_t *rgid, gid_t *egid, gid_t *sgid)
 {
 	return syscall(SYS_getresgid, rgid, egid, sgid);
 }
+
+int getgroups(int size, gid_t list[])
+{
+	return (int)syscall(SYS_getgroups, size, list);
+}

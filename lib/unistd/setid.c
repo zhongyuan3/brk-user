@@ -40,3 +40,8 @@ int setfsgid(gid_t gid)
 {
 	return (int)syscall(SYS_setfsgid, gid);
 }
+
+int setgroups(int size, const gid_t list[])
+{
+	return (int)syscall(SYS_setgroups, size, list);
+}
