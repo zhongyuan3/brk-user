@@ -10,4 +10,6 @@
 
 #define PIPE_BUF 512
 
+#define NGROUPS_MAX 32
+
 #endif
