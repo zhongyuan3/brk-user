@@ -41,9 +41,5 @@ SECTIONS
     __bss_end = .;
   }
 
-#if __riscv_xlen == 32
-  . = ASSERT(. < 0x80000000, "User program overflow to kernel space!");
-#else
   . = ASSERT(. < 0x8000000000000000, "User program overflow to kernel space!");
-#endif
 }

@@ -27,16 +27,9 @@ CPP := $(CC) -E
 
 
 CFLAGS := -O2 -ggdb -gdwarf-2 -Wall -Wextra -Werror
-XLEN ?= 64
-ifeq ($(XLEN),32)
-CFLAGS += -march=rv32gc -mabi=ilp32 -mcmodel=medany
-else ifeq ($(XLEN),64)
 CFLAGS += -march=rv64gc -mabi=lp64d -mcmodel=medlow
-else
-$(error invalid XLEN '$(XLEN)' (expected 32 or 64))
-endif
 
-BUILD_DIR := build/$(XLEN)
+BUILD_DIR := build/64
 BINDIR := $(BUILD_DIR)/bin
 
 
@@ -61,14 +54,11 @@ LIBUSER_A := $(BUILD_DIR)/libuser.a
 USER_SINGLE_SRCS := $(wildcard src/*.c)
 USER_SINGLE_PROGS := $(basename $(notdir $(USER_SINGLE_SRCS)))
 
-SH_SRCS := $(sort $(wildcard src/sh/*.c))
-SH_OBJS := $(patsubst src/sh/%.c,$(BUILD_DIR)/sh/%.o,$(SH_SRCS))
-
-USER_PROGS := $(sort $(USER_SINGLE_PROGS) sh)
+USER_PROGS := $(sort $(USER_SINGLE_PROGS))
 USER_BINS := $(addprefix $(BINDIR)/,$(USER_PROGS))
 USER_SINGLE_OBJS := $(addprefix $(BUILD_DIR)/,$(addsuffix .o,$(USER_SINGLE_PROGS)))
 
-.SECONDARY: $(USER_SINGLE_OBJS) $(SH_OBJS)
+.SECONDARY: $(USER_SINGLE_OBJS)
 
 .PHONY: all clean
 
@@ -78,9 +68,6 @@ $(BUILD_DIR):
 	mkdir -p $@
 
 $(BINDIR): | $(BUILD_DIR)
-	mkdir -p $@
-
-$(BUILD_DIR)/sh: | $(BUILD_DIR)
 	mkdir -p $@
 
 $(USER_LD): $(USER_LD_SOURCE) | $(BUILD_DIR)
@@ -98,12 +85,6 @@ $(LIBUSER_A): $(LIB_OBJS)
 $(BUILD_DIR)/%.o: src/%.c | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-$(BUILD_DIR)/sh/%.o: src/sh/%.c | $(BUILD_DIR)/sh
-	$(CC) $(CFLAGS) -c -o $@ $<
-
-$(BINDIR)/sh: $(SH_OBJS) $(LIBUSER_A) $(USER_LD) | $(BINDIR)
-	$(CC) $(CFLAGS) -o $@ $(SH_OBJS) $(LIBUSER_A) $(USER_LDFLAGS) -lgcc
-
 $(BINDIR)/%: $(BUILD_DIR)/%.o $(LIBUSER_A) $(USER_LD) | $(BINDIR)
 	$(CC) $(CFLAGS) -o $@ $< $(LIBUSER_A) $(USER_LDFLAGS) -lgcc
 
@@ -112,4 +93,3 @@ clean:
 
 -include $(LIB_OBJS:.o=.d)
 -include $(addprefix $(BUILD_DIR)/,$(addsuffix .d,$(USER_SINGLE_PROGS)))
--include $(SH_OBJS:.o=.d)
