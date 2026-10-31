@@ -9,6 +9,14 @@
 #define STDOUT_FILENO 1
 #define STDERR_FILENO 2
 
+#define F_OK 0
+#define X_OK 1
+#define W_OK 2
+#define R_OK 4
+
+int access(const char *path, int mode);
+int faccessat(int dirfd, const char *path, int mode, int flags);
+
 ssize_t read(int fd, void *buf, size_t count);
 ssize_t write(int fd, const void *buf, size_t count);
 int close(int fd);
@@ -23,6 +31,25 @@ int execvpe(const char *file, char *const argv[], char *const envp[]);
 
 pid_t getpid(void);
 pid_t getppid(void);
+
+uid_t getuid(void);
+uid_t geteuid(void);
+gid_t getgid(void);
+gid_t getegid(void);
+int setuid(uid_t uid);
+int setgid(gid_t gid);
+int setreuid(uid_t ruid, uid_t euid);
+int setregid(gid_t rgid, gid_t egid);
+int setresuid(uid_t ruid, uid_t euid, uid_t suid);
+int getresuid(uid_t *ruid, uid_t *euid, uid_t *suid);
+int setresgid(gid_t rgid, gid_t egid, gid_t sgid);
+int getresgid(gid_t *rgid, gid_t *egid, gid_t *sgid);
+int setfsuid(uid_t uid);
+int setfsgid(gid_t gid);
+
+int chown(const char *path, uid_t owner, gid_t group);
+int fchown(int fd, uid_t owner, gid_t group);
+int fchownat(int dirfd, const char *path, uid_t owner, gid_t group, int flags);
 
 int chdir(const char *path);
 int fchdir(int fd);

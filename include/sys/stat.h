@@ -38,6 +38,10 @@
 #define S_IWOTH 00002
 #define S_IXOTH 00001
 
+/* utimensat() special tv_nsec values. */
+#define UTIME_NOW ((1l << 30) - 1l)
+#define UTIME_OMIT ((1l << 30) - 2l)
+
 struct stat {
 	unsigned long st_dev; /* Device.  */
 	unsigned long st_ino; /* File serial number.  */
@@ -69,5 +73,10 @@ int mknodat(int dirfd, const char *path, mode_t mode, dev_t dev);
 int fstat(int fd, struct stat *buf);
 int stat(const char *path, struct stat *buf);
 int lstat(const char *path, struct stat *buf);
+
+int chmod(const char *path, mode_t mode);
+int fchmod(int fd, mode_t mode);
+int fchmodat(int dirfd, const char *path, mode_t mode, int flags);
+mode_t umask(mode_t mask);
 
 #endif
