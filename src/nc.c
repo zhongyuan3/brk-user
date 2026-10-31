@@ -1,6 +1,7 @@
 #include <apputil.h>
 #include <arpa/inet.h>
 #include <errno.h>
+#include <netdb.h>
 #include <netinet/in.h>
 #include <poll.h>
 #include <stdbool.h>
@@ -323,10 +324,15 @@ int main(int argc, char *argv[])
 	unsigned long port;
 	const char *host = app_operand(&ctx, 0);
 
-	if (!strcmp(host, "localhost"))
+	if (!strcmp(host, "localhost")) {
 		addr.s_addr = INADDR_LOOPBACK;
-	else if (!inet_aton(host, &addr))
-		return app_fail("invalid IPv4 address '%s'", host);
+	} else {
+		struct hostent *he = gethostbyname(host);
+
+		if (!he)
+			return app_fail("cannot resolve '%s'", host);
+		memcpy(&addr.s_addr, he->h_addr, 4);
+	}
 	if (app_parse_ulong(app_operand(&ctx, 1), &port, 1, 65535) != 0)
 		return APP_EXIT_FAIL;
 
