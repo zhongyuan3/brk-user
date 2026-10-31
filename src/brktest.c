@@ -1083,15 +1083,199 @@ static int test_caps(void)
 	return 0;
 }
 
+static int test_symlink(void)
+{
+	char dir[64], target[128], abs_target[128], rel[128], abs[128];
+	char dirlink[128], chain[128], dangling[128], subfile[128];
+	char subup[128], loop_a[128], loop_b[128], exec_link[128];
+	char sub[64];
+	char buf[64];
+	struct stat st;
+	pid_t pid;
+	int status, fd, n;
+
+	snprintf(dir, sizeof(dir), "/tmp/brktest_symlink_%ld", (long)getpid());
+	snprintf(target, sizeof(target), "%s/target", dir);
+	snprintf(abs_target, sizeof(abs_target), "%s/abs_target", dir);
+	snprintf(rel, sizeof(rel), "%s/rel", dir);
+	snprintf(abs, sizeof(abs), "%s/abs", dir);
+	snprintf(dirlink, sizeof(dirlink), "%s/dirlink", dir);
+	snprintf(chain, sizeof(chain), "%s/chain", dir);
+	snprintf(dangling, sizeof(dangling), "%s/dangling", dir);
+	snprintf(subfile, sizeof(subfile), "%s/sub/file", dir);
+	snprintf(subup, sizeof(subup), "%s/sub/up", dir);
+	snprintf(loop_a, sizeof(loop_a), "%s/loop_a", dir);
+	snprintf(loop_b, sizeof(loop_b), "%s/loop_b", dir);
+	snprintf(exec_link, sizeof(exec_link), "%s/exec", dir);
+
+	unlink(rel);
+	unlink(abs);
+	unlink(dirlink);
+	unlink(chain);
+	unlink(dangling);
+	unlink(subup);
+	unlink(loop_a);
+	unlink(loop_b);
+	unlink(exec_link);
+	unlink(subfile);
+	unlink(target);
+	unlink(abs_target);
+	rmdir(dir);
+
+	mkdir("/tmp", 0755);
+	if (mkdir(dir, 0755) != 0)
+		return perm_fail("mkdir symlink test dir failed");
+
+	snprintf(sub, sizeof(sub), "%s/sub", dir);
+	if (mkdir(sub, 0755) != 0)
+		return perm_fail("mkdir symlink sub dir failed");
+
+	fd = open(target, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+	if (fd < 0)
+		return perm_fail("create symlink target failed");
+	write(fd, "hello", 5);
+	close(fd);
+
+	fd = open(subfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+	if (fd < 0)
+		return perm_fail("create sub file failed");
+	write(fd, "world", 5);
+	close(fd);
+
+	if (symlink("target", rel) != 0 || symlink(target, abs) != 0 ||
+	    symlink("sub", dirlink) != 0 || symlink("rel", chain) != 0 ||
+	    symlink("missing", dangling) != 0 ||
+	    symlink("../target", subup) != 0 ||
+	    symlink("loop_b", loop_a) != 0 || symlink("loop_a", loop_b) != 0 ||
+	    symlink("/bin/true", exec_link) != 0)
+		return perm_fail("create symlink failed");
+
+	if (stat(rel, &st) != 0 || !S_ISREG(st.st_mode) || st.st_size != 5)
+		return perm_fail("stat did not follow symlink");
+	if (lstat(rel, &st) != 0 || !S_ISLNK(st.st_mode))
+		return perm_fail("lstat did not return symlink");
+
+	n = (int)readlink(rel, buf, sizeof(buf) - 1);
+	if (n < 0)
+		return perm_fail("readlink failed");
+	buf[n] = '\0';
+	if (strcmp(buf, "target"))
+		return perm_fail("readlink returned wrong target");
+
+	fd = open(rel, O_RDONLY);
+	if (fd < 0)
+		return perm_fail("open symlink failed");
+	n = (int)read(fd, buf, sizeof(buf));
+	close(fd);
+	if (n != 5 || strncmp(buf, "hello", 5))
+		return perm_fail("read through symlink failed");
+
+	fd = open(chain, O_RDONLY);
+	if (fd < 0)
+		return perm_fail("open symlink chain failed");
+	close(fd);
+
+	fd = open(abs, O_RDONLY);
+	if (fd < 0)
+		return perm_fail("open absolute symlink failed");
+	close(fd);
+
+	fd = open("dirlink/file", O_RDONLY);
+	if (fd >= 0) {
+		close(fd);
+		return perm_fail("relative path was resolved against cwd");
+	}
+
+	if (chdir(dir) != 0)
+		return perm_fail("chdir symlink dir failed");
+	fd = open("dirlink/file", O_RDONLY);
+	if (fd < 0)
+		return perm_fail("intermediate symlink lookup failed");
+	n = (int)read(fd, buf, sizeof(buf));
+	close(fd);
+	if (n != 5 || strncmp(buf, "world", 5))
+		return perm_fail("read through directory symlink failed");
+
+	fd = open("sub/up", O_RDONLY);
+	if (fd < 0)
+		return perm_fail("relative symlink with .. failed");
+	close(fd);
+	if (chdir("/") != 0)
+		return perm_fail("chdir / failed");
+
+	if (open(dangling, O_RDONLY) >= 0)
+		return perm_fail("open dangling symlink succeeded");
+	if (errno != ENOENT)
+		return perm_fail("open dangling symlink: wrong errno");
+	if (lstat(dangling, &st) != 0 || !S_ISLNK(st.st_mode))
+		return perm_fail("lstat dangling symlink failed");
+
+	if (stat(loop_a, &st) == 0)
+		return perm_fail("symlink loop did not fail");
+	if (errno != ELOOP)
+		return perm_fail("symlink loop: wrong errno");
+
+	fd = open(rel, O_RDONLY | O_NOFOLLOW);
+	if (fd >= 0) {
+		close(fd);
+		return perm_fail("O_NOFOLLOW opened symlink");
+	}
+	if (errno != ELOOP)
+		return perm_fail("O_NOFOLLOW: wrong errno");
+
+	if (chmod(rel, 0600) != 0)
+		return perm_fail("chmod through symlink failed");
+	if (stat(target, &st) != 0 || (st.st_mode & 0777) != 0600)
+		return perm_fail("chmod did not follow symlink");
+	if (lstat(rel, &st) != 0 || (st.st_mode & 0777) != 0777)
+		return perm_fail("chmod changed symlink mode");
+
+	pid = fork();
+	if (pid < 0)
+		return perm_fail("fork for symlink exec failed");
+	if (pid == 0) {
+		char *argv[] = { "true", NULL };
+
+		execve(exec_link, argv, NULL);
+		_exit(77);
+	}
+	if (waitpid(pid, &status, 0) < 0)
+		return perm_fail("waitpid for symlink exec failed");
+	if (!WIFEXITED(status) || WEXITSTATUS(status) != 0)
+		return perm_fail("exec through symlink failed");
+
+	if (unlink(rel) != 0)
+		return perm_fail("unlink symlink failed");
+	if (stat(target, &st) != 0 || !S_ISREG(st.st_mode))
+		return perm_fail("unlink removed the target");
+
+	unlink(abs);
+	unlink(dirlink);
+	unlink(chain);
+	unlink(dangling);
+	unlink(loop_a);
+	unlink(loop_b);
+	unlink(exec_link);
+	unlink(subup);
+	unlink(subfile);
+	unlink(target);
+	rmdir(sub);
+	rmdir(dir);
+	printf("symlink lookup ok\n");
+	return 0;
+}
+
 struct test_suite {
 	const char *name;
 	int (*run)(void);
 };
 
 static const struct test_suite suites[] = {
-	{ "fork", test_fork }, { "kill", test_kill }, { "sig", test_signal },
-	{ "meta", test_meta }, { "perm", test_perm }, { "group", test_group },
-	{ "auth", test_auth }, { "caps", test_caps },
+	{ "fork", test_fork },	     { "kill", test_kill },
+	{ "sig", test_signal },	     { "meta", test_meta },
+	{ "perm", test_perm },	     { "group", test_group },
+	{ "auth", test_auth },	     { "caps", test_caps },
+	{ "symlink", test_symlink },
 };
 
 #define NR_SUITES (sizeof(suites) / sizeof(suites[0]))
@@ -1109,6 +1293,7 @@ static void usage(const char *prog)
 		"  group  supplementary groups and group permissions\n"
 		"  auth   password hashes and user/group database\n"
 		"  caps   process capabilities and setuid exec rules\n"
+		"  symlink symlink following, lstat, NOFOLLOW and loops\n"
 		"  all    run every suite (default)\n",
 		prog);
 }
