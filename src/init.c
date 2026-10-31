@@ -71,20 +71,54 @@ static void chown_tree(const char *path)
 
 static void setup_users(void)
 {
+	static const char *const root_dirs[] = {
+		"/boot", "/lib", "/lib64", "/mnt",  "/media", "/opt",
+		"/srv",	 "/sys", "/run",   "/root", "/tmp",
+	};
+
 	chown_tree("/bin");
 	chown("/bin", 0, 0);
 	chmod("/bin", 0755);
+
+	chown_tree("/sbin");
+	chown("/sbin", 0, 0);
+	chmod("/sbin", 0755);
 
 	chown_tree("/etc");
 	chown("/etc", 0, 0);
 	chmod("/etc", 0755);
 
+	chown_tree("/usr");
+	chown("/usr", 0, 0);
+	chmod("/usr", 0755);
+
+	chown_tree("/var");
+	chown("/var", 0, 0);
+	chmod("/var", 0755);
+
+	for (size_t i = 0; i < sizeof(root_dirs) / sizeof(root_dirs[0]); i++) {
+		chown(root_dirs[i], 0, 0);
+		chmod(root_dirs[i], 0755);
+	}
+
 	mkdir("/root", 0700);
-	chown("/root", 0, 0);
 	chmod("/root", 0700);
+
+	mkdir("/tmp", 01777);
+	chmod("/tmp", 01777);
+	mkdir("/var/tmp", 01777);
+	chown("/var/tmp", 0, 0);
+	chmod("/var/tmp", 01777);
+	mkdir("/run/lock", 01777);
+	chown("/run/lock", 0, 0);
+	chmod("/run/lock", 01777);
+
+	symlink("/run", "/var/run");
+	symlink("/run/lock", "/var/lock");
 
 	mkdir("/home", 0755);
 	chown("/home", 0, 0);
+	chmod("/home", 0755);
 	mkdir("/home/user", 0755);
 	chown("/home/user", 1000, 1000);
 	chmod("/home/user", 0755);

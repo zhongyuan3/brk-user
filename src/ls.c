@@ -1,6 +1,9 @@
 #include <apputil.h>
+#include <brk/limits.h>
 #include <dirent.h>
 #include <fcntl.h>
+#include <grp.h>
+#include <pwd.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -88,6 +91,13 @@ static void mode_string(unsigned mode, char out[11])
 		out[8] = 'w';
 	if (mode & S_IXOTH)
 		out[9] = 'x';
+
+	if (mode & S_ISUID)
+		out[3] = (mode & S_IXUSR) ? 's' : 'S';
+	if (mode & S_ISGID)
+		out[6] = (mode & S_IXGRP) ? 's' : 'S';
+	if (mode & S_ISVTX)
+		out[9] = (mode & S_IXOTH) ? 't' : 'T';
 }
 
 /* GNU-style -h: 1024-based; <10 one decimal, else integer in current unit. */
@@ -156,17 +166,87 @@ static void format_size_field(long size, bool human_readable, char *buf,
 		snprintf(buf, buflen, "%ld", size);
 }
 
-static void print_long_line(const char *name, const struct stat *st,
-			    bool human_readable, int wnlink, int wuid, int wgid,
-			    int wsize)
+/* Howard Hinnant's civil_from_days, same conversion used by date(1). */
+static void civil_from_days(long z, int *year, unsigned int *month,
+			    unsigned int *day)
+{
+	z += 719468;
+	long era = (z >= 0 ? z : z - 146096) / 146097;
+	unsigned int doe = (unsigned int)(z - era * 146097);
+	unsigned int yoe =
+		(doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+	int y = (int)yoe + (int)era * 400;
+	unsigned int doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+	unsigned int mp = (5 * doy + 2) / 153;
+	unsigned int d = doy - (153 * mp + 2) / 5 + 1;
+	unsigned int m = mp < 10 ? mp + 3 : mp - 9;
+
+	*year = y + (m <= 2);
+	*month = m;
+	*day = d;
+}
+
+static void format_time(long sec, char *buf, size_t buflen)
+{
+	long days = sec / 86400;
+	long rem = sec % 86400;
+	int year;
+	unsigned int month, day;
+
+	if (rem < 0) {
+		rem += 86400;
+		days--;
+	}
+
+	civil_from_days(days, &year, &month, &day);
+	snprintf(buf, buflen, "%04d-%02u-%02u %02ld:%02ld:%02ld", year, month,
+		 day, rem / 3600, (rem % 3600) / 60, rem % 60);
+}
+
+static void format_user(uid_t uid, char *buf, size_t buflen)
+{
+	struct passwd *pw = getpwuid(uid);
+
+	if (pw)
+		snprintf(buf, buflen, "%s", pw->pw_name);
+	else
+		snprintf(buf, buflen, "%u", (unsigned int)uid);
+}
+
+static void format_group(gid_t gid, char *buf, size_t buflen)
+{
+	struct group *gr = getgrgid(gid);
+
+	if (gr)
+		snprintf(buf, buflen, "%s", gr->gr_name);
+	else
+		snprintf(buf, buflen, "%u", (unsigned int)gid);
+}
+
+static void print_long_line(const char *path, const char *name,
+			    const struct stat *st, bool human_readable,
+			    int wnlink, int wuser, int wgroup, int wsize,
+			    const char *user, const char *group,
+			    const char *timestr)
 {
 	char mode[11];
 	char szbuf[32];
 
 	mode_string(st->st_mode, mode);
 	format_size_field(st->st_size, human_readable, szbuf, sizeof(szbuf));
-	printf("%s %*u %*u %*u %*s %s\n", mode, wnlink, st->st_nlink, wuid,
-	       st->st_uid, wgid, st->st_gid, wsize, szbuf, name);
+	printf("%s %*u %-*s %-*s %*s %s %s", mode, wnlink, st->st_nlink, wuser,
+	       user, wgroup, group, wsize, szbuf, timestr, name);
+
+	if (S_ISLNK(st->st_mode)) {
+		char target[PATH_MAX];
+		ssize_t n = readlink(path, target, sizeof(target) - 1);
+
+		if (n >= 0) {
+			target[n] = '\0';
+			printf(" -> %s", target);
+		}
+	}
+	putchar('\n');
 }
 
 static int ls_long(const char *path, char **names, size_t n,
@@ -175,11 +255,15 @@ static int ls_long(const char *path, char **names, size_t n,
 	static char path_buf[512];
 	size_t path_len = strlen(path);
 	struct stat *sts = NULL;
+	char (*users)[32] = NULL;
+	char (*groups)[32] = NULL;
+	char (*times)[32] = NULL;
 	int wnlink = 1;
-	int wuid = 1;
-	int wgid = 1;
+	int wuser = 1;
+	int wgroup = 1;
 	int wsize = 1;
 	char szbuf[32];
+	int ret = 1;
 
 	memcpy(path_buf, path, path_len);
 	char *sep;
@@ -191,18 +275,26 @@ static int ls_long(const char *path, char **names, size_t n,
 	}
 	size_t pb_len = sizeof(path_buf) - (size_t)(sep - path_buf);
 
-	sts = calloc(n, sizeof(*sts));
-	if (!sts) {
-		return app_fail_errno("calloc failed");
-		return 1;
+	if (n) {
+		sts = calloc(n, sizeof(*sts));
+		users = calloc(n, sizeof(*users));
+		groups = calloc(n, sizeof(*groups));
+		times = calloc(n, sizeof(*times));
+		if (!sts || !users || !groups || !times) {
+			app_fail_errno("calloc failed");
+			goto out;
+		}
 	}
 
 	for (size_t i = 0; i < n; i++) {
 		strlcpy(sep, names[i], pb_len);
-		if (stat(path_buf, &sts[i]) != 0) {
-			free(sts);
-			return app_fail_errno("stat failed");
+		if (lstat(path_buf, &sts[i]) != 0) {
+			app_fail_errno("lstat failed");
+			goto out;
 		}
+		format_user(sts[i].st_uid, users[i], 32);
+		format_group(sts[i].st_gid, groups[i], 32);
+		format_time(sts[i].st_mtime, times[i], 32);
 	}
 
 	for (size_t i = 0; i < n; i++) {
@@ -212,12 +304,12 @@ static int ls_long(const char *path, char **names, size_t n,
 		w = uint_field_width(st->st_nlink);
 		if (w > wnlink)
 			wnlink = w;
-		w = uint_field_width(st->st_uid);
-		if (w > wuid)
-			wuid = w;
-		w = uint_field_width(st->st_gid);
-		if (w > wgid)
-			wgid = w;
+		w = (int)strlen(users[i]);
+		if (w > wuser)
+			wuser = w;
+		w = (int)strlen(groups[i]);
+		if (w > wgroup)
+			wgroup = w;
 		format_size_field(st->st_size, human_readable, szbuf,
 				  sizeof(szbuf));
 		w = (int)strlen(szbuf);
@@ -239,12 +331,20 @@ static int ls_long(const char *path, char **names, size_t n,
 	total_k = (n512 * 512ULL + 1023ULL) / 1024ULL;
 	printf("total %llu\n", (unsigned long long)total_k);
 
-	for (size_t i = 0; i < n; i++)
-		print_long_line(names[i], &sts[i], human_readable, wnlink, wuid,
-				wgid, wsize);
+	for (size_t i = 0; i < n; i++) {
+		strlcpy(sep, names[i], pb_len);
+		print_long_line(path_buf, names[i], &sts[i], human_readable,
+				wnlink, wuser, wgroup, wsize, users[i],
+				groups[i], times[i]);
+	}
+	ret = 0;
 
+out:
 	free(sts);
-	return 0;
+	free(users);
+	free(groups);
+	free(times);
+	return ret;
 }
 
 /*
@@ -459,29 +559,47 @@ done:
 
 static int ls_one(const char *path, const struct ls_args *args)
 {
-	int fd = open(path, O_RDONLY);
+	int fd;
 	int ret = 0;
 	struct stat st;
 
-	if (fd < 0) {
-		return app_fail_errno("open failed");
+	if (args->long_format) {
+		if (lstat(path, &st) != 0)
+			return app_fail_errno("lstat failed");
+
+		if (S_ISDIR(st.st_mode)) {
+			fd = open(path, O_RDONLY);
+			if (fd < 0)
+				return app_fail_errno("open failed");
+			ret = ls_dir(fd, path, args);
+			close(fd);
+			return ret;
+		}
+
+		char user[32], group[32], timestr[32];
+
+		format_user(st.st_uid, user, sizeof(user));
+		format_group(st.st_gid, group, sizeof(group));
+		format_time(st.st_mtime, timestr, sizeof(timestr));
+		print_long_line(path, path, &st, args->human_readable, 1, 1, 1,
+				1, user, group, timestr);
+		return 0;
 	}
 
+	fd = open(path, O_RDONLY);
+	if (fd < 0)
+		return app_fail_errno("open failed");
+
 	if (fstat(fd, &st)) {
+		close(fd);
 		return app_fail_errno("stat failed");
 	}
 
 	if (S_ISDIR(st.st_mode)) {
 		ret = ls_dir(fd, path, args);
-		goto done;
-	}
-
-	if (args->long_format)
-		print_long_line(path, &st, args->human_readable, 1, 1, 1, 1);
-	else
+	} else {
 		puts(path);
-
-done:
+	}
 	close(fd);
 	return ret;
 }
@@ -492,7 +610,7 @@ static void print_help(void)
 	printf("List directory contents.\n\n");
 	printf("  -a, --all                  do not ignore entries starting with .\n");
 	printf("  -h, --human-readable       with -l, print sizes in powers of 1024 (e.g. 1K 234M)\n");
-	printf("  -l                         use a long listing format\n");
+	printf("  -l                         long format: mode, links, owner, group, size, mtime, name\n");
 	printf("      --help                 display this help and exit\n");
 }
 

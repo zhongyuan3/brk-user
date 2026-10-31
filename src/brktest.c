@@ -723,12 +723,12 @@ static int test_perm(void)
 	if (link("/bin/true", execok) != 0)
 		return perm_fail("hardlink executable failed");
 
-	if (perm_copy("/bin/brktest", suidtest) != 0)
+	if (perm_copy("/usr/bin/brktest", suidtest) != 0)
 		return perm_fail("copy setuid test binary failed");
 	if (chmod(suidtest, 04755) != 0)
 		return perm_fail("chmod setuid test binary failed");
 
-	if (perm_copy("/bin/brktest", sgidtest) != 0)
+	if (perm_copy("/usr/bin/brktest", sgidtest) != 0)
 		return perm_fail("copy setgid test binary failed");
 	if (chown(sgidtest, 0, 2000) != 0)
 		return perm_fail("chown setgid test binary failed");
@@ -1045,7 +1045,7 @@ static int test_caps(void)
 
 		char *argv[] = { "brktest", "-check-nocaps", NULL };
 
-		execve("/bin/brktest", argv, NULL);
+		execve("/usr/bin/brktest", argv, NULL);
 		_exit(8);
 	}
 	if (waitpid(pid, &status, 0) < 0)
@@ -1053,7 +1053,7 @@ static int test_caps(void)
 	if (!WIFEXITED(status) || WEXITSTATUS(status) != 0)
 		return perm_fail("capability drop test failed");
 
-	if (perm_copy("/bin/brktest", caps_suid) != 0 ||
+	if (perm_copy("/usr/bin/brktest", caps_suid) != 0 ||
 	    chown(caps_suid, 0, 0) != 0 || chmod(caps_suid, 04755) != 0)
 		return perm_fail("prepare setuid capability test failed");
 
