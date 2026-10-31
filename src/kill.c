@@ -1,53 +1,124 @@
 #include <apputil.h>
 #include <signal.h>
+#include <string.h>
+#include <strings.h>
 #include <unistd.h>
 
-static const char usage[] = "Usage: kill [-SIGNUM] PID...\n"
-			    "  Send signal SIGNUM (default: TERM) to each PID.";
+static const char usage[] =
+	"Usage: kill [-SIGNAL] PID...\n"
+	"       kill -l [SIGNAL]\n"
+	"Send a signal (default: TERM) to each PID.\n"
+	"SIGNAL may be a number or a name such as TERM, KILL or USR1.";
 
-static const struct app_option opts[] = {
-	{ APP_OPT_HELP, 0, "help", APP_OPT_NO_ARG },
-	APP_OPTION_END,
+struct sig_name {
+	const char *name;
+	int num;
 };
+
+static const struct sig_name signals[] = {
+	{ "HUP", SIGHUP },   { "INT", SIGINT },	    { "QUIT", SIGQUIT },
+	{ "ILL", SIGILL },   { "TRAP", SIGTRAP },   { "ABRT", SIGABRT },
+	{ "BUS", SIGBUS },   { "FPE", SIGFPE },	    { "KILL", SIGKILL },
+	{ "USR1", SIGUSR1 }, { "SEGV", SIGSEGV },   { "USR2", SIGUSR2 },
+	{ "PIPE", SIGPIPE }, { "ALRM", SIGALRM },   { "TERM", SIGTERM },
+	{ "CHLD", SIGCHLD }, { "CONT", SIGCONT },   { "STOP", SIGSTOP },
+	{ "TSTP", SIGTSTP }, { "WINCH", SIGWINCH },
+};
+
+static int parse_signal_name(const char *s)
+{
+	for (size_t i = 0; i < sizeof(signals) / sizeof(signals[0]); i++) {
+		if (!strcasecmp(s, signals[i].name))
+			return signals[i].num;
+	}
+	return -1;
+}
+
+static const char *signal_name(int num)
+{
+	for (size_t i = 0; i < sizeof(signals) / sizeof(signals[0]); i++) {
+		if (signals[i].num == num)
+			return signals[i].name;
+	}
+	return NULL;
+}
+
+static bool all_digits(const char *s)
+{
+	if (!*s)
+		return false;
+	for (; *s; s++) {
+		if (*s < '0' || *s > '9')
+			return false;
+	}
+	return true;
+}
+
+static void list_signals(void)
+{
+	for (size_t i = 0; i < sizeof(signals) / sizeof(signals[0]); i++)
+		printf("%2d) SIG%s\n", signals[i].num, signals[i].name);
+}
 
 int main(int argc, char *argv[])
 {
-	struct app_optctx ctx;
-	int opt;
 	int sig = SIGTERM;
-	int first = 0;
+	int arg = 1;
 
 	app_init(argc, argv);
-	app_optctx_init(&ctx, argc, argv);
 
-	while ((opt = app_optparse(&ctx, opts)) != 0) {
-		if (opt == '?' || opt == ':')
-			return APP_EXIT_USAGE;
-		if (opt == APP_OPT_HELP)
-			app_help_exit(usage);
+	if (arg < argc && !strcmp(argv[arg], "-l")) {
+		arg++;
+		if (arg < argc) {
+			if (all_digits(argv[arg])) {
+				long n;
+
+				if (app_parse_long(argv[arg], &n, 0,
+						   NSIG - 1) != 0)
+					return APP_EXIT_FAIL;
+				const char *nm = signal_name((int)n);
+
+				if (nm)
+					printf("%s\n", nm);
+				else
+					printf("%ld\n", n);
+			} else {
+				int num = parse_signal_name(argv[arg]);
+
+				if (num < 0)
+					return app_fail("unknown signal '%s'",
+							argv[arg]);
+				printf("%d\n", num);
+			}
+		} else {
+			list_signals();
+		}
+		return APP_EXIT_OK;
 	}
 
-	app_require_operands(&ctx, 1, usage);
-
-	if (app_operand(&ctx, 0)[0] == '-') {
+	if (arg < argc && argv[arg][0] == '-' && argv[arg][1]) {
+		const char *s = argv[arg] + 1;
 		long n;
+		int named = parse_signal_name(s);
 
-		if (app_parse_long(app_operand(&ctx, 0) + 1, &n, 1, NSIG - 1) !=
-		    0)
+		if (named > 0) {
+			sig = named;
+		} else if (app_parse_long(s, &n, 0, NSIG - 1) == 0) {
+			sig = (int)n;
+		} else {
 			return APP_EXIT_FAIL;
-		sig = (int)n;
-		first = 1;
+		}
+		arg++;
 	}
 
-	if (app_operand_count(&ctx) - first < 1)
+	if (arg >= argc)
 		app_usage(usage);
 
-	for (int i = first; i < app_operand_count(&ctx); i++) {
+	for (; arg < argc; arg++) {
 		pid_t pid;
 
-		if (app_parse_pid(app_operand(&ctx, i), &pid) != 0)
+		if (app_parse_pid(argv[arg], &pid) != 0)
 			return APP_EXIT_FAIL;
-
 		if (kill(pid, sig) != 0)
 			return app_fail_errno("kill failed");
 	}

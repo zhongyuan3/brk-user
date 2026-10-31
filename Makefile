@@ -61,8 +61,8 @@ LIBUSER_A := $(BUILD_DIR)/libuser.a
 USER_SINGLE_SRCS := $(wildcard src/*.c)
 USER_SINGLE_PROGS := $(basename $(notdir $(USER_SINGLE_SRCS)))
 
-SH_SRCS := $(sort $(wildcard sh/*.c))
-SH_OBJS := $(patsubst sh/%.c,$(BUILD_DIR)/sh/%.o,$(SH_SRCS))
+SH_SRCS := $(sort $(wildcard src/sh/*.c))
+SH_OBJS := $(patsubst src/sh/%.c,$(BUILD_DIR)/sh/%.o,$(SH_SRCS))
 
 USER_PROGS := $(sort $(USER_SINGLE_PROGS) sh)
 USER_BINS := $(addprefix $(BINDIR)/,$(USER_PROGS))
@@ -98,7 +98,7 @@ $(LIBUSER_A): $(LIB_OBJS)
 $(BUILD_DIR)/%.o: src/%.c | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-$(BUILD_DIR)/sh/%.o: sh/%.c | $(BUILD_DIR)/sh
+$(BUILD_DIR)/sh/%.o: src/sh/%.c | $(BUILD_DIR)/sh
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 $(BINDIR)/sh: $(SH_OBJS) $(LIBUSER_A) $(USER_LD) | $(BINDIR)

@@ -39,27 +39,22 @@ static int missing_arg(const struct app_option *opt)
 	return ':';
 }
 
-static const char *next_arg(struct app_optctx *ctx, const char *embedded)
-{
-	if (embedded && embedded[0])
-		return embedded;
-
-	if (ctx->index + 1 >= ctx->argc)
-		return NULL;
-
-	ctx->index++;
-	return ctx->argv[ctx->index];
-}
-
 static int finish_option(struct app_optctx *ctx, const struct app_option *opt,
 			 const char *arg_embed)
 {
 	if (opt->arg == APP_OPT_REQUIRED_ARG) {
-		ctx->arg = next_arg(ctx, arg_embed);
-		if (!ctx->arg)
-			return missing_arg(opt);
+		if (arg_embed) {
+			ctx->arg = arg_embed;
+			ctx->index++;
+		} else {
+			if (ctx->index + 1 >= ctx->argc)
+				return missing_arg(opt);
+			ctx->arg = ctx->argv[ctx->index + 1];
+			ctx->index += 2;
+		}
 	} else {
 		ctx->arg = NULL;
+		ctx->index++;
 	}
 
 	return opt->id;
@@ -84,14 +79,12 @@ static int parse_long(struct app_optctx *ctx, const struct app_option *opts,
 			return bad_option(arg);
 		if (opt->arg != APP_OPT_REQUIRED_ARG)
 			return bad_option(arg);
-		ctx->index++;
 		return finish_option(ctx, opt, eq + 1);
 	}
 
 	opt = find_long(opts, arg);
 	if (!opt)
 		return bad_option(arg);
-	ctx->index++;
 	return finish_option(ctx, opt, NULL);
 }
 
@@ -113,9 +106,8 @@ static int parse_short(struct app_optctx *ctx, const struct app_option *opts)
 
 	ctx->short_pos++;
 	if (opt->arg == APP_OPT_REQUIRED_ARG) {
-		const char *arg = cluster + 1;
+		const char *arg = cluster[1] ? cluster + 1 : NULL;
 
-		ctx->index++;
 		ctx->short_pos = 0;
 		return finish_option(ctx, opt, arg);
 	}

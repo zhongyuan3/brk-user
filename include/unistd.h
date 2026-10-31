@@ -31,8 +31,12 @@ char *getcwd(char *buf, size_t size);
 int link(const char *oldpath, const char *newpath);
 int linkat(int olddirfd, const char *oldpath, int newdirfd, const char *newpath,
 	   int flags);
+int symlink(const char *target, const char *linkpath);
+ssize_t readlink(const char *path, char *buf, size_t bufsiz);
 int unlink(const char *path);
 int unlinkat(int dirfd, const char *path, int flags);
+int rename(const char *oldpath, const char *newpath);
+int rmdir(const char *path);
 
 int pipe(int pipefd[2]);
 int pipe2(int pipefd[2], int flags);

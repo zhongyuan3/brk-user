@@ -96,5 +96,7 @@ void app_help_print(FILE *fp, const char *help)
 void app_help_exit(const char *help)
 {
 	app_help_print(stdout, help);
+	if (help && help[0] && help[strlen(help) - 1] != '\n')
+		fputc('\n', stdout);
 	exit(APP_EXIT_OK);
 }
