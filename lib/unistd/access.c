@@ -8,6 +8,5 @@ int access(const char *path, int mode)
 
 int faccessat(int dirfd, const char *path, int mode, int flags)
 {
-	(void)flags;
-	return syscall(SYS_faccessat, dirfd, path, mode);
+	return syscall(SYS_faccessat2, dirfd, path, mode, flags);
 }
