@@ -1,7 +1,11 @@
+#include <arpa/inet.h>
 #include <brk/limits.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <grp.h>
+#include <netdb.h>
+#include <netinet/in.h>
+#include <poll.h>
 #include <pwd.h>
 #include <pwutil.h>
 #include <shadow.h>
@@ -11,6 +15,8 @@
 #include <string.h>
 #include <sys/capability.h>
 #include <sys/ioctl.h>
+#include <sys/select.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/statfs.h>
 #include <sys/time.h>
@@ -1265,6 +1271,148 @@ static int test_symlink(void)
 	return 0;
 }
 
+static int test_net(void)
+{
+	struct in_addr in;
+	char *text;
+	struct hostent *he;
+
+	if (!inet_aton("127.0.0.1", &in))
+		return perm_fail("inet_aton failed");
+	text = inet_ntoa(in);
+	if (strcmp(text, "127.0.0.1"))
+		return perm_fail("inet_ntoa failed");
+	if (ntohs(htons(0x1234)) != 0x1234 ||
+	    ntohl(htonl(0x12345678)) != 0x12345678)
+		return perm_fail("byte-order helpers failed");
+
+	he = gethostbyname("10.0.2.2");
+	if (!he || he->h_length != 4)
+		return perm_fail("gethostbyname numeric address failed");
+
+	/* TCP: listener, connect, accept4, poll, send/recv, getsockname. */
+	int lfd = socket(AF_INET, SOCK_STREAM, 0);
+	struct sockaddr_in sa = {
+		.sin_family = AF_INET,
+		.sin_port = 0,
+		.sin_addr.s_addr = INADDR_LOOPBACK,
+	};
+
+	if (lfd < 0 || bind(lfd, (struct sockaddr *)&sa, sizeof(sa)) != 0 ||
+	    listen(lfd, 1) != 0)
+		return perm_fail("TCP listener setup failed");
+
+	socklen_t alen = sizeof(sa);
+	if (getsockname(lfd, (struct sockaddr *)&sa, &alen) != 0)
+		return perm_fail("getsockname failed");
+	unsigned short port = ntohs(sa.sin_port);
+	if (!port)
+		return perm_fail("getsockname returned port 0");
+
+	pid_t pid = fork();
+	if (pid < 0)
+		return perm_fail("fork for TCP test failed");
+	if (pid == 0) {
+		int cfd = socket(AF_INET, SOCK_STREAM, 0);
+		char buf[8];
+
+		if (cfd < 0 ||
+		    connect(cfd, (struct sockaddr *)&sa, sizeof(sa)) != 0)
+			_exit(1);
+		if (send(cfd, "ping", 4, 0) != 4)
+			_exit(2);
+		if (recv(cfd, buf, 4, 0) != 4 || memcmp(buf, "pong", 4))
+			_exit(3);
+		close(cfd);
+		_exit(0);
+	}
+
+	struct pollfd pfd = { .fd = lfd, .events = POLLIN };
+	if (poll(&pfd, 1, 3000) != 1)
+		return perm_fail("TCP listener poll failed");
+	int cfd = accept4(lfd, NULL, NULL, SOCK_NONBLOCK);
+	if (cfd < 0)
+		return perm_fail("accept4 failed");
+
+	pfd.fd = cfd;
+	pfd.events = POLLIN;
+	if (poll(&pfd, 1, 3000) != 1)
+		return perm_fail("TCP accept poll failed");
+	char buf[8];
+	if (recv(cfd, buf, 4, 0) != 4 || memcmp(buf, "ping", 4))
+		return perm_fail("TCP server recv failed");
+	if (send(cfd, "pong", 4, 0) != 4)
+		return perm_fail("TCP server send failed");
+	close(cfd);
+	close(lfd);
+
+	int status;
+	if (waitpid(pid, &status, 0) < 0 || !WIFEXITED(status) ||
+	    WEXITSTATUS(status) != 0)
+		return perm_fail("TCP loopback test failed");
+
+	/* UDP: select, sendto/recvfrom. */
+	int ufd = socket(AF_INET, SOCK_DGRAM, 0);
+	struct sockaddr_in usa = {
+		.sin_family = AF_INET,
+		.sin_port = 0,
+		.sin_addr.s_addr = INADDR_LOOPBACK,
+	};
+
+	if (ufd < 0 || bind(ufd, (struct sockaddr *)&usa, sizeof(usa)) != 0)
+		return perm_fail("UDP bind failed");
+	alen = sizeof(usa);
+	if (getsockname(ufd, (struct sockaddr *)&usa, &alen) != 0)
+		return perm_fail("UDP getsockname failed");
+
+	pid = fork();
+	if (pid < 0)
+		return perm_fail("fork for UDP test failed");
+	if (pid == 0) {
+		close(ufd);
+		int cfd = socket(AF_INET, SOCK_DGRAM, 0);
+		char rbuf[8];
+
+		if (cfd < 0)
+			_exit(1);
+		if (sendto(cfd, "u", 1, 0, (struct sockaddr *)&usa,
+			   sizeof(usa)) < 0) {
+			printf("UDP sendto errno %d\n", errno);
+			_exit(2);
+		}
+		if (recv(cfd, rbuf, 1, 0) != 1 || rbuf[0] != 'v')
+			_exit(3);
+		close(cfd);
+		_exit(0);
+	}
+
+	fd_set rfds;
+	struct timeval tv = { .tv_sec = 3, .tv_usec = 0 };
+	struct sockaddr_in peer;
+	socklen_t plen = sizeof(peer);
+
+	FD_ZERO(&rfds);
+	FD_SET(ufd, &rfds);
+	if (select(ufd + 1, &rfds, NULL, NULL, &tv) != 1)
+		return perm_fail("UDP select failed");
+	if (recvfrom(ufd, buf, 1, 0, (struct sockaddr *)&peer, &plen) != 1 ||
+	    buf[0] != 'u')
+		return perm_fail("UDP recvfrom failed");
+	if (sendto(ufd, "v", 1, 0, (struct sockaddr *)&peer, plen) != 1) {
+		printf("UDP sendto errno %d plen %u\n", errno,
+		       (unsigned int)plen);
+		return perm_fail("UDP sendto failed");
+	}
+	close(ufd);
+
+	if (waitpid(pid, &status, 0) < 0 || !WIFEXITED(status) ||
+	    WEXITSTATUS(status) != 0)
+		return perm_fail("UDP loopback test failed");
+
+	printf("network sockets ok (tcp port %u)\n", port);
+	return 0;
+}
+
 struct test_suite {
 	const char *name;
 	int (*run)(void);
@@ -1275,7 +1423,7 @@ static const struct test_suite suites[] = {
 	{ "sig", test_signal },	     { "meta", test_meta },
 	{ "perm", test_perm },	     { "group", test_group },
 	{ "auth", test_auth },	     { "caps", test_caps },
-	{ "symlink", test_symlink },
+	{ "symlink", test_symlink }, { "net", test_net },
 };
 
 #define NR_SUITES (sizeof(suites) / sizeof(suites[0]))
@@ -1294,6 +1442,7 @@ static void usage(const char *prog)
 		"  auth   password hashes and user/group database\n"
 		"  caps   process capabilities and setuid exec rules\n"
 		"  symlink symlink following, lstat, NOFOLLOW and loops\n"
+		"  net    TCP/UDP loopback sockets and inet helpers\n"
 		"  all    run every suite (default)\n",
 		prog);
 }
