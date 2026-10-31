@@ -24,6 +24,12 @@ static int eval_unary(const char *op, const char *arg)
 		return arg[0] == '\0';
 	if (!strcmp(op, "-n"))
 		return arg[0] != '\0';
+	if (!strcmp(op, "-r"))
+		return access(arg, R_OK) == 0;
+	if (!strcmp(op, "-w"))
+		return access(arg, W_OK) == 0;
+	if (!strcmp(op, "-x"))
+		return access(arg, X_OK) == 0;
 
 	if (stat(arg, &st) != 0)
 		return 0;
@@ -36,12 +42,6 @@ static int eval_unary(const char *op, const char *arg)
 		return S_ISDIR(st.st_mode);
 	if (!strcmp(op, "-s"))
 		return st.st_size > 0;
-	if (!strcmp(op, "-r"))
-		return (st.st_mode & S_IRUSR) != 0;
-	if (!strcmp(op, "-w"))
-		return (st.st_mode & S_IWUSR) != 0;
-	if (!strcmp(op, "-x"))
-		return (st.st_mode & S_IXUSR) != 0;
 	return 0;
 }
 

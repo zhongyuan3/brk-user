@@ -8,6 +8,16 @@ struct timespec {
 	long tv_nsec;
 };
 
+struct utimbuf {
+	time_t actime;
+	time_t modtime;
+};
+
+int utime(const char *path, const struct utimbuf *times);
+int utimes(const char *path, const struct timeval times[2]);
+int utimensat(int dirfd, const char *path, const struct timespec times[2],
+	      int flags);
+
 struct tm {
 	int tm_sec; /* Seconds.	[0-60] (1 leap second) */
 	int tm_min; /* Minutes.	[0-59] */
