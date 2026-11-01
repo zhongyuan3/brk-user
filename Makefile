@@ -60,9 +60,19 @@ USER_SINGLE_OBJS := $(addprefix $(BUILD_DIR)/,$(addsuffix .o,$(USER_SINGLE_PROGS
 
 .SECONDARY: $(USER_SINGLE_OBJS)
 
-.PHONY: all clean
+HOSTCC ?= cc
+CC_HOST := $(BUILD_DIR)/cc-host
+
+.PHONY: all clean cc-host
 
 all: $(USER_BINS)
+
+# Build the compiler for the host as well.  This is only a development aid:
+# it lets you generate and inspect RISC-V ELF files without booting BRK.
+cc-host: $(CC_HOST)
+
+$(CC_HOST): src/cc.c | $(BUILD_DIR)
+	$(HOSTCC) -std=gnu11 -O2 -Wall -Wextra -Werror -o $@ $<
 
 $(BUILD_DIR):
 	mkdir -p $@
