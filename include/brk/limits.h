@@ -1,15 +1,9 @@
 #ifndef BRK_LIMITS_H
 #define BRK_LIMITS_H
 
-#define PATH_MAX 512
-#define NAME_MAX 255
+#include <uapi/limits.h>
 
-#define OPEN_MAX 64
-
-#define ARG_MAX 16384
-
-#define PIPE_BUF 4096
-
+/* POSIX limit not part of the syscall ABI. */
 #define NGROUPS_MAX 32
 
 #endif

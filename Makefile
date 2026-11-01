@@ -32,6 +32,11 @@ CFLAGS += -march=rv64gc -mabi=lp64d -mcmodel=medlow
 BUILD_DIR := build/64
 BINDIR := $(BUILD_DIR)/bin
 
+KERNEL_ROOT ?= ../brk
+UAPI_SRC := $(KERNEL_ROOT)/src/include/uapi
+UAPI_DIR := $(BUILD_DIR)/include/uapi
+UAPI_STAMP := $(UAPI_DIR)/.stamp
+
 
 
 CFLAGS += -Wno-unused-parameter -Wno-unknown-attributes -Wno-main
@@ -40,6 +45,7 @@ CFLAGS += -ffreestanding -nostdlib -fno-common
 CFLAGS += -fno-omit-frame-pointer -fno-stack-protector
 CFLAGS += -fno-pie -no-pie
 CFLAGS += -I./include
+CFLAGS += -I$(BUILD_DIR)/include
 CFLAGS += -MMD -MP
 
 USER_LD_SOURCE := src/user.ld.S
@@ -77,13 +83,21 @@ $(CC_HOST): src/cc.c | $(BUILD_DIR)
 $(BUILD_DIR):
 	mkdir -p $@
 
+# Copy the kernel's UAPI headers into a private include root.  Only uapi/ is
+# exposed; kernel-internal <brk/...> headers stay invisible to userland.
+$(UAPI_STAMP): $(UAPI_SRC) $(wildcard $(UAPI_SRC)/*.h) | $(BUILD_DIR)
+	$(RM) -rf $(UAPI_DIR)
+	mkdir -p $(UAPI_DIR)
+	cp $(UAPI_SRC)/*.h $(UAPI_DIR)/
+	touch $@
+
 $(BINDIR): | $(BUILD_DIR)
 	mkdir -p $@
 
 $(USER_LD): $(USER_LD_SOURCE) | $(BUILD_DIR)
 	$(CPP) $(CFLAGS) -P -o $@ $<
 
-$(BUILD_DIR)/lib/%.o: lib/%.c | $(BUILD_DIR)
+$(BUILD_DIR)/lib/%.o: lib/%.c | $(BUILD_DIR) $(UAPI_STAMP)
 	mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
@@ -92,7 +106,7 @@ $(LIBUSER_A): $(LIB_OBJS)
 	$(AR) rcs $@ $^
 	$(RANLIB) $@
 
-$(BUILD_DIR)/%.o: src/%.c | $(BUILD_DIR)
+$(BUILD_DIR)/%.o: src/%.c | $(BUILD_DIR) $(UAPI_STAMP)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 $(BINDIR)/%: $(BUILD_DIR)/%.o $(LIBUSER_A) $(USER_LD) | $(BINDIR)
