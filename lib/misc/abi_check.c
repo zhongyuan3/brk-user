@@ -1,4 +1,6 @@
+#include <limits.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <dirent.h>
 #include <poll.h>
 #include <signal.h>
@@ -19,6 +21,16 @@
  * UAPI headers or the userland mapping fails the build on the side that is
  * wrong.
  */
+
+_Static_assert(CHAR_BIT == 8, "CHAR_BIT mismatch");
+_Static_assert(sizeof(int8_t) == 1, "int8_t ABI changed");
+_Static_assert(sizeof(int16_t) == 2, "int16_t ABI changed");
+_Static_assert(sizeof(int32_t) == 4, "int32_t ABI changed");
+_Static_assert(sizeof(int64_t) == 8, "int64_t ABI changed");
+_Static_assert(sizeof(intptr_t) == sizeof(void *), "intptr_t ABI changed");
+_Static_assert(sizeof(size_t) == sizeof(void *), "size_t ABI changed");
+_Static_assert(_Alignof(max_align_t) >= _Alignof(long double),
+	       "max_align_t alignment changed");
 
 _Static_assert(sizeof(struct stat) == 128, "struct stat ABI changed");
 _Static_assert(offsetof(struct stat, st_ino) == 8, "struct stat ABI changed");
