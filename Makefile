@@ -41,7 +41,9 @@ UAPI_STAMP := $(UAPI_DIR)/.stamp
 
 CFLAGS += -Wno-unused-parameter -Wno-unknown-attributes -Wno-main
 
-CFLAGS += -ffreestanding -nostdlib -fno-common
+# Userland is freestanding and self-contained: standard headers come from
+# ./include, never from the compiler's system include directories.
+CFLAGS += -ffreestanding -nostdlib -nostdinc -fno-common
 CFLAGS += -fno-omit-frame-pointer -fno-stack-protector
 CFLAGS += -fno-pie -no-pie
 CFLAGS += -I./include
