@@ -1,106 +1,97 @@
-ifndef CROSS_COMPILE
-CROSS_COMPILE := $(shell \
-if riscv64-unknown-elf-objdump -i 2>&1 | grep 'elf64-big' > /dev/null 2>&1; \
-then echo 'riscv64-unknown-elf-'; \
-elif riscv64-elf-objdump -i 2>&1 | grep 'elf64-big' > /dev/null 2>&1; \
-then echo 'riscv64-elf-'; \
-elif riscv64-none-elf-objdump -i 2>&1 | grep 'elf64-big' > /dev/null 2>&1; \
-then echo 'riscv64-none-elf-'; \
-elif riscv64-linux-gnu-objdump -i 2>&1 | grep 'elf64-big' > /dev/null 2>&1; \
-then echo 'riscv64-linux-gnu-'; \
-elif riscv64-unknown-linux-gnu-objdump -i 2>&1 | grep 'elf64-big' > /dev/null 2>&1; \
-then echo 'riscv64-unknown-linux-gnu-'; \
-else echo "***" 1>&2; \
-echo "*** Error: Cross compiler not found" 1>&2; \
-echo "***" 1>&2; \
-exit 1; \
-fi)
-endif
-
-CC := $(CROSS_COMPILE)gcc
-LD := $(CROSS_COMPILE)ld
-AR := $(CROSS_COMPILE)ar
-RANLIB := $(CROSS_COMPILE)ranlib
-CPP := $(CC) -E
-
-
-
-
-CFLAGS := -O2 -ggdb -gdwarf-2 -Wall -Wextra -Werror
-CFLAGS += -march=rv64gc -mabi=lp64d -mcmodel=medlow
-
-BUILD_DIR := build/64
-BINDIR := $(BUILD_DIR)/bin
+BUILD_ROOT ?= build
+BINDIR := $(BUILD_ROOT)/bin
 
 KERNEL_ROOT ?= ../brk
 UAPI_SRC := $(KERNEL_ROOT)/src/include/uapi
-UAPI_DIR := $(BUILD_DIR)/include/uapi
+UAPI_DIR := $(BUILD_ROOT)/include/uapi
 UAPI_STAMP := $(UAPI_DIR)/.stamp
+UAPI_HEADERS := $(wildcard $(UAPI_SRC)/*.h)
 
+CROSS_COMPILE ?=
 
+CC := $(CROSS_COMPILE)gcc
+CPP := $(CC) -E
+AR := $(CROSS_COMPILE)ar
+RANLIB := $(CROSS_COMPILE)ranlib
+HOSTCC ?= cc
 
-CFLAGS += -Wno-unused-parameter -Wno-unknown-attributes -Wno-main
-
-# Userland is freestanding and self-contained: standard headers come from
-# ./include, never from the compiler's system include directories.
-CFLAGS += -ffreestanding -nostdlib -nostdinc -fno-common
-CFLAGS += -fno-omit-frame-pointer -fno-stack-protector
-CFLAGS += -fno-pie -no-pie
-CFLAGS += -I./include
-CFLAGS += -I$(BUILD_DIR)/include
+CFLAGS := -std=gnu11
+CFLAGS += -O2
+CFLAGS += -Wall -Wextra -Werror
+CFLAGS += -march=rv64gc
+CFLAGS += -ffreestanding -nostdinc
+CFLAGS += -fno-stack-protector
+CFLAGS += -fno-pie
+CFLAGS += -I./include -I$(BUILD_ROOT)/include
 CFLAGS += -MMD -MP
 
-USER_LD_SOURCE := src/user.ld.S
-USER_LD := $(BUILD_DIR)/user.ld
+LDFLAGS := -nostdlib -no-pie -z max-page-size=4096 -static
+LDLIBS := -lgcc
 
-USER_LDFLAGS := -z max-page-size=4096 -static -T $(USER_LD)
+HOST_CFLAGS ?= -std=gnu11 -O2 -Wall -Wextra -Werror
+
+USER_LD_SOURCE := src/user.ld.S
+USER_LD := $(BUILD_ROOT)/user.ld
 
 LIB_SRCS := $(sort $(wildcard lib/*/*.c))
-LIB_OBJS := $(patsubst lib/%.c,$(BUILD_DIR)/lib/%.o,$(LIB_SRCS))
-LIBUSER_A := $(BUILD_DIR)/libuser.a
+LIB_OBJS := $(patsubst lib/%.c,$(BUILD_ROOT)/lib/%.o,$(LIB_SRCS))
+LIBUSER_A := $(BUILD_ROOT)/libuser.a
 
-USER_SINGLE_SRCS := $(wildcard src/*.c)
-USER_SINGLE_PROGS := $(basename $(notdir $(USER_SINGLE_SRCS)))
-
-USER_PROGS := $(sort $(USER_SINGLE_PROGS))
+USER_SRCS := $(wildcard src/*.c)
+USER_PROGS := $(sort $(basename $(notdir $(USER_SRCS))))
 USER_BINS := $(addprefix $(BINDIR)/,$(USER_PROGS))
-USER_SINGLE_OBJS := $(addprefix $(BUILD_DIR)/,$(addsuffix .o,$(USER_SINGLE_PROGS)))
+USER_OBJS := $(addprefix $(BUILD_ROOT)/,$(addsuffix .o,$(USER_PROGS)))
+DEPS := $(LIB_OBJS:.o=.d) $(USER_OBJS:.o=.d)
 
-.SECONDARY: $(USER_SINGLE_OBJS)
+# Keep object files around for debugging and incremental rebuilds.
+.SECONDARY: $(LIB_OBJS) $(USER_OBJS)
 
-HOSTCC ?= cc
-CC_HOST := $(BUILD_DIR)/cc-host
+CC_HOST := $(BUILD_ROOT)/cc-host
 
-.PHONY: all clean cc-host
+.PHONY: all lib cc-host clean help
 
 all: $(USER_BINS)
 
-# Build the compiler for the host as well.  This is only a development aid:
-# it lets you generate and inspect RISC-V ELF files without booting BRK.
+lib: $(LIBUSER_A)
+
 cc-host: $(CC_HOST)
 
-$(CC_HOST): src/cc.c | $(BUILD_DIR)
-	$(HOSTCC) -std=gnu11 -O2 -Wall -Wextra -Werror -o $@ $<
+help:
+	@echo "Targets:"
+	@echo "  all          Build all user programs (default)"
+	@echo "  lib          Build libuser.a only"
+	@echo "  cc-host      Build the host-side cc helper"
+	@echo "  clean        Remove $(BUILD_ROOT)"
+	@echo "  help         Show this help"
+	@echo ""
+	@echo "Configurable variables:"
+	@echo "  CROSS_COMPILE=<prefix>"
+	@echo "  BUILD_ROOT=<path>       default: build"
+	@echo "  KERNEL_ROOT=<path>      default: ../brk"
+	@echo "  HOSTCC=<cc>             default: cc"
 
-$(BUILD_DIR):
+$(BUILD_ROOT):
 	mkdir -p $@
 
-# Copy the kernel's UAPI headers into a private include root.  Only uapi/ is
-# exposed; kernel-internal <brk/...> headers stay invisible to userland.
-$(UAPI_STAMP): $(UAPI_SRC) $(wildcard $(UAPI_SRC)/*.h) | $(BUILD_DIR)
+$(BINDIR): | $(BUILD_ROOT)
+	mkdir -p $@
+
+# Copy only the kernel UAPI headers into a private include root.  Kernel
+# implementation headers under src/include/brk/ stay invisible to userland.
+$(UAPI_STAMP): $(UAPI_SRC) $(UAPI_HEADERS) | $(BUILD_ROOT)
 	$(RM) -rf $(UAPI_DIR)
 	mkdir -p $(UAPI_DIR)
-	cp $(UAPI_SRC)/*.h $(UAPI_DIR)/
+	cp $(UAPI_HEADERS) $(UAPI_DIR)/
 	touch $@
 
-$(BINDIR): | $(BUILD_DIR)
-	mkdir -p $@
-
-$(USER_LD): $(USER_LD_SOURCE) | $(BUILD_DIR)
+$(USER_LD): $(USER_LD_SOURCE) | $(BUILD_ROOT)
 	$(CPP) $(CFLAGS) -P -o $@ $<
 
-$(BUILD_DIR)/lib/%.o: lib/%.c | $(BUILD_DIR) $(UAPI_STAMP)
-	mkdir -p $(dir $@)
+$(BUILD_ROOT)/lib/%.o: lib/%.c | $(UAPI_STAMP)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+$(BUILD_ROOT)/%.o: src/%.c | $(UAPI_STAMP)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 $(LIBUSER_A): $(LIB_OBJS)
@@ -108,14 +99,13 @@ $(LIBUSER_A): $(LIB_OBJS)
 	$(AR) rcs $@ $^
 	$(RANLIB) $@
 
-$(BUILD_DIR)/%.o: src/%.c | $(BUILD_DIR) $(UAPI_STAMP)
-	$(CC) $(CFLAGS) -c -o $@ $<
+$(BINDIR)/%: $(BUILD_ROOT)/%.o $(LIBUSER_A) $(USER_LD) | $(BINDIR)
+	$(CC) $(CFLAGS) $(LDFLAGS) -T $(USER_LD) -o $@ $< $(LIBUSER_A) $(LDLIBS)
 
-$(BINDIR)/%: $(BUILD_DIR)/%.o $(LIBUSER_A) $(USER_LD) | $(BINDIR)
-	$(CC) $(CFLAGS) -o $@ $< $(LIBUSER_A) $(USER_LDFLAGS) -lgcc
+$(CC_HOST): src/cc.c | $(BUILD_ROOT)
+	$(HOSTCC) $(HOST_CFLAGS) -o $@ $<
 
 clean:
-	$(RM) -rf $(BUILD_DIR)
+	$(RM) -rf $(BUILD_ROOT)
 
--include $(LIB_OBJS:.o=.d)
--include $(addprefix $(BUILD_DIR)/,$(addsuffix .d,$(USER_SINGLE_PROGS)))
+-include $(DEPS)

@@ -357,6 +357,8 @@ static size_t col_max_width(size_t n, unsigned ncols, size_t nrows, unsigned c,
 {
 	size_t mw = 0;
 
+	(void)ncols;
+
 	for (size_t r = 0; r < nrows; r++) {
 		size_t idx = (size_t)c * nrows + r;
 

@@ -3,5 +3,6 @@
 
 int brk(void *addr)
 {
+	(void)addr;
 	return __syscall_ret(-ENOMEM); /* deprecated */
 }
