@@ -1,3 +1,4 @@
+#include <brk/bits.h>
 #include <stdalign.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -94,13 +95,13 @@ static size_t tlsf_region_cache_bytes;
 
 static int tlsf_fls(size_t size)
 {
-	return (int)(sizeof(unsigned long long) * 8 - 1 -
-		     __builtin_clzll((unsigned long long)size));
+	return (int)(sizeof(uint64_t) * 8 - 1 -
+		     brk_clz64((uint64_t)size));
 }
 
 static int tlsf_ffs64(uint64_t word)
 {
-	return __builtin_ctzll(word);
+	return brk_ctz64(word);
 }
 
 static int tlsf_mapping_insert(size_t size, int *fl, int *sl)
