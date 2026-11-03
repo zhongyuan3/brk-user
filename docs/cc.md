@@ -249,7 +249,7 @@ jal x0, target
 
 ```sh
 make -C brk-user cc-host
-./brk-user/build/64/cc-host -I brk-user/include \
+./brk-user/build/cc-host -I brk-user/include \
     -o /tmp/hello.elf brk-user/tests/hello.c
 riscv64-unknown-elf-readelf -h -l /tmp/hello.elf
 ```

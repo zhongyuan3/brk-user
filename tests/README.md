@@ -1,6 +1,6 @@
 # cc tests
 
-这些源文件会被 `brk/scripts/mkrootfs.sh` 复制到镜像的 `/home/tests/`。
+这些源文件会被 `brk-user/scripts/mkrootfs.sh` 复制到镜像的 `/home/tests/`。
 
 启动 BRK 后可以这样运行：
 
