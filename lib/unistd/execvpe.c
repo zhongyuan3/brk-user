@@ -2,11 +2,10 @@
 #include <errno.h>
 #include <limits.h>
 #include <stddef.h>
+#include <stdlib.h>
 #include <string.h>
 #include <syscall.h>
 #include <unistd.h>
-
-char **environ = NULL;
 
 int execvpe(const char *file, char *const argv[], char *const envp[])
 {
@@ -20,24 +19,52 @@ int execvpe(const char *file, char *const argv[], char *const envp[])
 		return -1;
 	}
 
-	char *path = "/bin:/sbin:/usr/bin:/usr/sbin";
-	char *p = path;
-	char *e = NULL;
+	const char *path = getenv("PATH");
 
-	for (; *p; p = e + 1) {
-		e = strchr(p, ':');
+	if (!path)
+		path = "/bin:/sbin:/usr/bin:/usr/sbin";
+
+	const char *p = path;
+
+	for (;;) {
+		const char *e = strchr(p, ':');
+		size_t len;
+		size_t start;
+
 		if (!e)
 			e = p + strlen(p);
-		size_t len = e - p;
-		if (len + file_len + 2 >= PATH_MAX) {
-			errno = ENAMETOOLONG;
-			continue;
+		len = (size_t)(e - p);
+
+		if (len == 0) {
+			start = 2;
+			if (file_len + start + 1 >= PATH_MAX) {
+				errno = ENAMETOOLONG;
+				if (!*e)
+					break;
+				p = e + 1;
+				continue;
+			}
+			path_buf[0] = '.';
+			path_buf[1] = '/';
+		} else {
+			start = len + 1;
+			if (file_len + start + 1 >= PATH_MAX) {
+				errno = ENAMETOOLONG;
+				if (!*e)
+					break;
+				p = e + 1;
+				continue;
+			}
+			memcpy(path_buf, p, len);
+			path_buf[len] = '/';
 		}
-		memcpy(path_buf, p, len);
-		path_buf[len] = '/';
-		memcpy(path_buf + len + 1, file, file_len);
-		path_buf[len + file_len + 1] = '\0';
+		memcpy(path_buf + start, file, file_len);
+		path_buf[start + file_len] = '\0';
 		execve(path_buf, argv, envp);
+
+		if (!*e)
+			break;
+		p = e + 1;
 	}
 
 	return -1;

@@ -8,6 +8,10 @@ void *calloc(size_t nmemb, size_t size);
 void *realloc(void *ptr, size_t size);
 void free(void *ptr);
 
+char *getenv(const char *name);
+int setenv(const char *name, const char *value, int overwrite);
+int unsetenv(const char *name);
+
 void exit(int status) __attribute__((noreturn));
 int atexit(void (*func)(void));
 
