@@ -1,6 +1,27 @@
 BUILD_ROOT ?= build
 BINDIR := $(BUILD_ROOT)/bin
 
+ifndef CROSS_COMPILE
+# Prefer the bare-metal toolchain.  Some riscv64-linux-gnu libgcc builds use
+# Zcb instructions (e.g. c.lbu), which the QEMU rv64 CPU does not implement.
+CROSS_COMPILE := $(shell \
+if riscv64-unknown-elf-objdump -i 2>&1 | grep 'elf64-big' > /dev/null 2>&1; \
+then echo 'riscv64-unknown-elf-'; \
+elif riscv64-elf-objdump -i 2>&1 | grep 'elf64-big' > /dev/null 2>&1; \
+then echo 'riscv64-elf-'; \
+elif riscv64-none-elf-objdump -i 2>&1 | grep 'elf64-big' > /dev/null 2>&1; \
+then echo 'riscv64-none-elf-'; \
+elif riscv64-linux-gnu-objdump -i 2>&1 | grep 'elf64-big' > /dev/null 2>&1; \
+then echo 'riscv64-linux-gnu-'; \
+elif riscv64-unknown-linux-gnu-objdump -i 2>&1 | grep 'elf64-big' > /dev/null 2>&1; \
+then echo 'riscv64-unknown-linux-gnu-'; \
+else echo "***" 1>&2; \
+echo "*** Error: Cross compiler not found" 1>&2; \
+echo "***" 1>&2; \
+exit 1; \
+fi)
+endif
+
 KERNEL_ROOT ?= ../brk
 UAPI_SRC := $(KERNEL_ROOT)/src/include/uapi
 UAPI_DIR := $(BUILD_ROOT)/include/uapi
@@ -26,7 +47,10 @@ CFLAGS += -I./include -I$(BUILD_ROOT)/include
 CFLAGS += -MMD -MP
 
 LDFLAGS := -nostdlib -no-pie -z max-page-size=4096 -static
-LDLIBS := -lgcc
+# Userland provides its own compiler helpers; override with -lgcc only as a
+# fallback if a future toolchain emits an unimplemented helper.
+LIBGCC ?=
+LDLIBS := $(LIBGCC)
 
 HOST_CFLAGS ?= -std=gnu11 -O2 -Wall -Wextra -Werror
 

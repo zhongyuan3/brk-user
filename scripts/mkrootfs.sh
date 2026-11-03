@@ -48,7 +48,8 @@ fi
 }
 
 make -C "$USER_ROOT" KERNEL_ROOT="$KERNEL_ROOT" BUILD_ROOT="$BUILD_ROOT" \
-	${CROSS_COMPILE:+CROSS_COMPILE="$CROSS_COMPILE"}
+	${CROSS_COMPILE:+CROSS_COMPILE="$CROSS_COMPILE"} \
+	${LIBGCC:+LIBGCC="$LIBGCC"}
 
 if [[ ! -x $BIN_DIR/init ]]; then
 	echo "${0##*/}: userland binaries not found under $BIN_DIR" >&2

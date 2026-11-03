@@ -1,25 +1,26 @@
 #include <arpa/inet.h>
+#include <brk/bits.h>
 #include <stdio.h>
 #include <string.h>
 
 uint32_t htonl(uint32_t hostlong)
 {
-	return __builtin_bswap32(hostlong);
+	return brk_bswap32(hostlong);
 }
 
 uint16_t htons(uint16_t hostshort)
 {
-	return __builtin_bswap16(hostshort);
+	return brk_bswap16(hostshort);
 }
 
 uint32_t ntohl(uint32_t netlong)
 {
-	return __builtin_bswap32(netlong);
+	return brk_bswap32(netlong);
 }
 
 uint16_t ntohs(uint16_t netshort)
 {
-	return __builtin_bswap16(netshort);
+	return brk_bswap16(netshort);
 }
 
 static int parse_octet(const char **pp, unsigned int *out)
