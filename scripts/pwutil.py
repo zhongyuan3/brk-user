@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate, verify, parse and update BRK $sha256$ password hashes.
 
-The target implementation in lib/crypto/pw.c hashes the concatenation of
+The target implementation in src/libbrkc/crypto/pw.c hashes the concatenation of
 the salt and the password:
 
     hex(SHA256(salt + password))

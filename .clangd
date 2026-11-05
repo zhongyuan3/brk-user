@@ -1,2 +1,2 @@
 Style:
-    AngledHeaders: ["include/.*"]
+    AngledHeaders: ["src/include/.*"]

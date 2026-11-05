@@ -1,4 +1,5 @@
 BUILD_ROOT ?= build
+OBJDIR := $(BUILD_ROOT)/obj
 BINDIR := $(BUILD_ROOT)/bin
 
 ifndef CROSS_COMPILE
@@ -28,8 +29,6 @@ UAPI_DIR := $(BUILD_ROOT)/include/uapi
 UAPI_STAMP := $(UAPI_DIR)/.stamp
 UAPI_HEADERS := $(wildcard $(UAPI_SRC)/*.h)
 
-CROSS_COMPILE ?=
-
 CC := $(CROSS_COMPILE)gcc
 CPP := $(CC) -E
 AR := $(CROSS_COMPILE)ar
@@ -43,7 +42,7 @@ CFLAGS += -march=rv64gc
 CFLAGS += -ffreestanding -nostdinc
 CFLAGS += -fno-stack-protector
 CFLAGS += -fno-pie
-CFLAGS += -I./include -I$(BUILD_ROOT)/include
+CFLAGS += -I./src/include -I$(BUILD_ROOT)/include
 CFLAGS += -MMD -MP
 
 LDFLAGS := -nostdlib -no-pie -z max-page-size=4096 -static
@@ -57,22 +56,40 @@ HOST_CFLAGS ?= -std=gnu11 -O2 -Wall -Wextra -Werror
 USER_LD_SOURCE := src/user.ld.S
 USER_LD := $(BUILD_ROOT)/user.ld
 
-LIB_SRCS := $(sort $(wildcard lib/*/*.c))
-LIB_OBJS := $(patsubst lib/%.c,$(BUILD_ROOT)/lib/%.o,$(LIB_SRCS))
+# libbrkc and libbrkcmd sources form libuser.a.  Command sources do not.
+LIB_SRCS := $(sort $(foreach d,src/libbrkc src/libbrkcmd,\
+	$(shell find $(d) -name '*.c' -print)))
+LIB_OBJS := $(patsubst src/%.c,$(OBJDIR)/%.o,$(LIB_SRCS))
 LIBUSER_A := $(BUILD_ROOT)/libuser.a
 
-USER_SRCS := $(wildcard src/*.c)
-USER_PROGS := $(sort $(basename $(notdir $(USER_SRCS))))
+# User commands live under src/cmds.  A command is either a single source file
+# (src/cmds/foo.c) or a directory of sources (src/cmds/foo/**/*.c), which keeps
+# multi-file commands easy to navigate.
+CMDS_DIR := src/cmds
+USER_SINGLE_SRCS := $(sort $(wildcard $(CMDS_DIR)/*.c))
+USER_SINGLE_PROGS := $(basename $(notdir $(USER_SINGLE_SRCS)))
+SRC_DIRS := $(patsubst %/,%,$(wildcard $(CMDS_DIR)/*/))
+USER_DIRS := $(SRC_DIRS)
+USER_DIR_PROGS := $(notdir $(USER_DIRS))
+USER_DIR_SRCS := $(sort $(foreach d,$(USER_DIRS),\
+	$(shell find $(d) -name '*.c' -print)))
+
+USER_PROGS := $(sort $(USER_SINGLE_PROGS) $(USER_DIR_PROGS))
 USER_BINS := $(addprefix $(BINDIR)/,$(USER_PROGS))
-USER_OBJS := $(addprefix $(BUILD_ROOT)/,$(addsuffix .o,$(USER_PROGS)))
+USER_OBJS := $(patsubst src/%.c,$(OBJDIR)/%.o,\
+	$(USER_SINGLE_SRCS) $(USER_DIR_SRCS))
 DEPS := $(LIB_OBJS:.o=.d) $(USER_OBJS:.o=.d)
 
 # Keep object files around for debugging and incremental rebuilds.
 .SECONDARY: $(LIB_OBJS) $(USER_OBJS)
 
 CC_HOST := $(BUILD_ROOT)/cc-host
+CC_HOST_OBJDIR := $(BUILD_ROOT)/cc-host-obj
+CC_HOST_SRCS := $(sort $(wildcard $(CMDS_DIR)/cc/*.c))
+CC_HOST_OBJS := $(patsubst src/%.c,$(CC_HOST_OBJDIR)/%.o,$(CC_HOST_SRCS))
+DEPS += $(CC_HOST_OBJS:.o=.d)
 
-.PHONY: all lib cc-host clean help
+.PHONY: all lib cc-host clean help list-progs
 
 all: $(USER_BINS)
 
@@ -80,13 +97,24 @@ lib: $(LIBUSER_A)
 
 cc-host: $(CC_HOST)
 
+list-progs:
+	@printf '%s\n' $(USER_PROGS)
+
 help:
 	@echo "Targets:"
 	@echo "  all          Build all user programs (default)"
 	@echo "  lib          Build libuser.a only"
 	@echo "  cc-host      Build the host-side cc helper"
+	@echo "  list-progs   Print the names of all user programs"
 	@echo "  clean        Remove $(BUILD_ROOT)"
 	@echo "  help         Show this help"
+	@echo ""
+	@echo "Layout:"
+	@echo "  src/cmds/*.c         single-file commands"
+	@echo "  src/cmds/<command>/  multi-file commands"
+	@echo "  src/libbrkc/         BRK C library"
+	@echo "  src/libbrkcmd/       BRK command helpers"
+	@echo "  src/include/         public headers"
 	@echo ""
 	@echo "Configurable variables:"
 	@echo "  CROSS_COMPILE=<prefix>"
@@ -111,23 +139,34 @@ $(UAPI_STAMP): $(UAPI_SRC) $(UAPI_HEADERS) | $(BUILD_ROOT)
 $(USER_LD): $(USER_LD_SOURCE) | $(BUILD_ROOT)
 	$(CPP) $(CFLAGS) -P -o $@ $<
 
-$(BUILD_ROOT)/lib/%.o: lib/%.c | $(UAPI_STAMP)
+$(OBJDIR)/%.o: src/%.c | $(UAPI_STAMP)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-$(BUILD_ROOT)/%.o: src/%.c | $(UAPI_STAMP)
-	$(CC) $(CFLAGS) -c -o $@ $<
+$(CC_HOST_OBJDIR)/%.o: src/%.c
+	@mkdir -p $(dir $@)
+	$(HOSTCC) $(HOST_CFLAGS) -MMD -MP -c -o $@ $<
 
 $(LIBUSER_A): $(LIB_OBJS)
 	$(RM) $@
 	$(AR) rcs $@ $^
 	$(RANLIB) $@
 
-$(BINDIR)/%: $(BUILD_ROOT)/%.o $(LIBUSER_A) $(USER_LD) | $(BINDIR)
-	$(CC) $(CFLAGS) $(LDFLAGS) -T $(USER_LD) -o $@ $< $(LIBUSER_A) $(LDLIBS)
+define ADD_SINGLE_PROGRAM
+$(BINDIR)/$(1): $(OBJDIR)/cmds/$(1).o $(LIBUSER_A) $(USER_LD) | $(BINDIR)
+	$(CC) $(CFLAGS) $(LDFLAGS) -T $(USER_LD) -o $$@ $$< $(LIBUSER_A) $(LDLIBS)
+endef
 
-$(CC_HOST): src/cc.c | $(BUILD_ROOT)
-	$(HOSTCC) $(HOST_CFLAGS) -o $@ $<
+define ADD_DIR_PROGRAM
+$(BINDIR)/$(1): $(patsubst src/%.c,$(OBJDIR)/%.o,$(filter $(CMDS_DIR)/$(1)/%,$(USER_DIR_SRCS))) $(LIBUSER_A) $(USER_LD) | $(BINDIR)
+	$(CC) $(CFLAGS) $(LDFLAGS) -T $(USER_LD) -o $$@ $$(filter $(OBJDIR)/%.o,$$^) $(LIBUSER_A) $(LDLIBS)
+endef
+
+$(foreach p,$(USER_SINGLE_PROGS),$(eval $(call ADD_SINGLE_PROGRAM,$(p))))
+$(foreach p,$(USER_DIR_PROGS),$(eval $(call ADD_DIR_PROGRAM,$(p))))
+
+$(CC_HOST): $(CC_HOST_OBJS)
+	$(HOSTCC) $(HOST_CFLAGS) -o $@ $^
 
 clean:
 	$(RM) -rf $(BUILD_ROOT)
