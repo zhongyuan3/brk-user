@@ -1,6 +1,6 @@
 #!/bin/bash
 
-DEFAULT_DIRS=("./include" "./src" "./lib") 
+DEFAULT_DIRS=("./src")
 
 if [ $# -gt 0 ]; then
     target_dirs=("$@")

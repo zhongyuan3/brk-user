@@ -95,10 +95,9 @@ for name in "${USR_BINS[@]}"; do
 done
 
 mapfile -t bins < <(
-	cd "$USER_ROOT/src" || exit 1
-	for f in *.c; do
-		printf '%s\n' "${f%.c}"
-	done
+	make -C "$USER_ROOT" -s list-progs KERNEL_ROOT="$KERNEL_ROOT" \
+		BUILD_ROOT="$BUILD_ROOT" \
+		${CROSS_COMPILE:+CROSS_COMPILE="$CROSS_COMPILE"}
 )
 for name in "${bins[@]}"; do
 	case " ${SYSTEM_BINS[*]} ${USR_BINS[*]} " in
@@ -117,8 +116,8 @@ if [[ -d $USER_ROOT/tests ]]; then
 	"$BRKFS" cp -r "$USER_ROOT/tests" "/home/tests" "$IMG"
 fi
 
-if [[ -f $USER_ROOT/include/cc.h ]]; then
-	"$BRKFS" cp "$USER_ROOT/include/cc.h" "/usr/include/cc.h" "$IMG"
+if [[ -f $USER_ROOT/src/include/cc.h ]]; then
+	"$BRKFS" cp "$USER_ROOT/src/include/cc.h" "/usr/include/cc.h" "$IMG"
 fi
 
 for doc in README.md README.cn.md LICENSE; do

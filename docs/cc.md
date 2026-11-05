@@ -1,6 +1,6 @@
 # cc — BRK 用户态轻量 C 编译器
 
-`src/cc.c` 是一个运行在 BRK/RISC-V64 用户态的单文件 C 编译器。它不依赖目标机上的
+`src/cmds/cc/` 是一个运行在 BRK/RISC-V64 用户态的小型 C 编译器。它不依赖目标机上的
 `as`/`ld`，而是自己完成词法、预处理、语法、代码生成、链接和 ELF 写出。
 编译器自身仍然使用本仓库的 `libuser.a`，但**生成出来的程序不链接 libuser**，
 只依赖内核系统调用。
@@ -13,7 +13,7 @@
 make -C brk-user
 ```
 
-重新生成 rootfs（会把 `cc` 装到 `/bin/cc`，把 `include/cc.h` 装到
+重新生成 rootfs（会把 `cc` 装到 `/bin/cc`，把 `src/include/cc.h` 装到
 `/usr/include/cc.h`，并把 `tests/` 复制到 `/home/tests`）：
 
 ```sh
@@ -65,7 +65,7 @@ cc [-c] [-E] [-o output] [-I dir] [-D name[=value]] [-U name] input.c|input.o [.
 - `#` 字符串化、`##` token 粘贴
 - `#include` 后接宏名
 - 跨物理行的宏调用（宏调用需要在同一个逻辑行内）
-- 复杂的标准头文件（目标机只提供精简的 `include/cc.h`）
+- 复杂的标准头文件（目标机只提供精简的 `src/include/cc.h`）
 
 ## 支持的 C 子集
 
@@ -148,7 +148,7 @@ int putchar(int c);
 int puts(const char *s);
 ```
 
-`include/cc.h` 提供了这些原型以及 `NULL`、`EOF`、`O_*` 常量。
+`src/include/cc.h` 提供了这些原型以及 `NULL`、`EOF`、`O_*` 常量。
 
 ## 多文件与链接
 
@@ -221,17 +221,18 @@ cc a.c b.o -o prog
 
 ## 实现结构
 
-`src/cc.c` 从上到下大致分为：
+`src/cmds/cc/` 按阶段划分：
 
-1. **词法分析**：整数/字符/字符串字面量、标识符、运算符、注释、转义
-2. **预处理器**：宏表、include 搜索、条件编译、`#if` 表达式求值
-3. **类型与 AST**：`struct type`、`struct node`、成员/标签/typedef/枚举表
-4. **符号与作用域**：全局符号、局部作用域、参数槽位
-5. **指令编码**：`enc_r/enc_i/enc_s/enc_b/enc_u/enc_j` 及常用伪指令
-6. **重定位与标签**：函数调用、全局地址、数据中的绝对地址
-7. **代码生成**：栈式求值，表达式结果放在 `a0`，lvalue 地址放在 `a0`
-8. **链接器**：合并多个 unit 的 text/data/bss，解析符号并按名字回填重定位
-9. **ELF 写出**：合并成一个 `PT_LOAD`
+- `cc.h`：模块间共享的类型、符号表和函数声明
+- `util.c`：内存分配、错误处理和字节缓冲区
+- `lexer.c`：整数/字符/字符串字面量、标识符、运算符、注释、转义
+- `preprocess.c`：宏表、include 搜索、条件编译、`#if` 表达式求值
+- `types.c`：`struct type`、`struct node`、全局/局部符号和作用域
+- `emit.c`：`enc_r/enc_i/enc_s/enc_b/enc_u/enc_j`、伪指令、标签和重定位
+- `parser.c`：声明、初始化器、语句和表达式解析
+- `codegen.c`：栈式求值，表达式结果放在 `a0`，lvalue 地址放在 `a0`
+- `link.c`：合并多个 unit 的 text/data/bss，解析符号并回填重定位
+- `main.c`：命令行驱动和 ELF 输出入口
 
 为了避免 RISC-V `B-type` 分支只有 ±4KB 的问题，条件跳转统一生成为：
 
@@ -249,7 +250,7 @@ jal x0, target
 
 ```sh
 make -C brk-user cc-host
-./brk-user/build/cc-host -I brk-user/include \
+./brk-user/build/cc-host -I brk-user/src/include \
     -o /tmp/hello.elf brk-user/tests/hello.c
 riscv64-unknown-elf-readelf -h -l /tmp/hello.elf
 ```
