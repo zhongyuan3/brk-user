@@ -62,13 +62,13 @@ LIB_SRCS := $(sort $(foreach d,src/libbrkc src/libbrkcmd,\
 LIB_OBJS := $(patsubst src/%.c,$(OBJDIR)/%.o,$(LIB_SRCS))
 LIBUSER_A := $(BUILD_ROOT)/libuser.a
 
-# User commands live under src/cmds.  A command is either a single source file
-# (src/cmds/foo.c) or a directory of sources (src/cmds/foo/**/*.c), which keeps
+# User commands live under src/cmd.  A command is either a single source file
+# (src/cmd/foo.c) or a directory of sources (src/cmd/foo/**/*.c), which keeps
 # multi-file commands easy to navigate.
-CMDS_DIR := src/cmds
-USER_SINGLE_SRCS := $(sort $(wildcard $(CMDS_DIR)/*.c))
+CMD_DIR := src/cmd
+USER_SINGLE_SRCS := $(sort $(wildcard $(CMD_DIR)/*.c))
 USER_SINGLE_PROGS := $(basename $(notdir $(USER_SINGLE_SRCS)))
-SRC_DIRS := $(patsubst %/,%,$(wildcard $(CMDS_DIR)/*/))
+SRC_DIRS := $(patsubst %/,%,$(wildcard $(CMD_DIR)/*/))
 USER_DIRS := $(SRC_DIRS)
 USER_DIR_PROGS := $(notdir $(USER_DIRS))
 USER_DIR_SRCS := $(sort $(foreach d,$(USER_DIRS),\
@@ -85,7 +85,7 @@ DEPS := $(LIB_OBJS:.o=.d) $(USER_OBJS:.o=.d)
 
 CC_HOST := $(BUILD_ROOT)/cc-host
 CC_HOST_OBJDIR := $(BUILD_ROOT)/cc-host-obj
-CC_HOST_SRCS := $(sort $(wildcard $(CMDS_DIR)/cc/*.c))
+CC_HOST_SRCS := $(sort $(wildcard $(CMD_DIR)/cc/*.c))
 CC_HOST_OBJS := $(patsubst src/%.c,$(CC_HOST_OBJDIR)/%.o,$(CC_HOST_SRCS))
 DEPS += $(CC_HOST_OBJS:.o=.d)
 
@@ -110,8 +110,8 @@ help:
 	@echo "  help         Show this help"
 	@echo ""
 	@echo "Layout:"
-	@echo "  src/cmds/*.c         single-file commands"
-	@echo "  src/cmds/<command>/  multi-file commands"
+	@echo "  src/cmd/*.c         single-file commands"
+	@echo "  src/cmd/<command>/  multi-file commands"
 	@echo "  src/libbrkc/         BRK C library"
 	@echo "  src/libbrkcmd/       BRK command helpers"
 	@echo "  src/include/         public headers"
@@ -153,12 +153,12 @@ $(LIBUSER_A): $(LIB_OBJS)
 	$(RANLIB) $@
 
 define ADD_SINGLE_PROGRAM
-$(BINDIR)/$(1): $(OBJDIR)/cmds/$(1).o $(LIBUSER_A) $(USER_LD) | $(BINDIR)
+$(BINDIR)/$(1): $(OBJDIR)/cmd/$(1).o $(LIBUSER_A) $(USER_LD) | $(BINDIR)
 	$(CC) $(CFLAGS) $(LDFLAGS) -T $(USER_LD) -o $$@ $$< $(LIBUSER_A) $(LDLIBS)
 endef
 
 define ADD_DIR_PROGRAM
-$(BINDIR)/$(1): $(patsubst src/%.c,$(OBJDIR)/%.o,$(filter $(CMDS_DIR)/$(1)/%,$(USER_DIR_SRCS))) $(LIBUSER_A) $(USER_LD) | $(BINDIR)
+$(BINDIR)/$(1): $(patsubst src/%.c,$(OBJDIR)/%.o,$(filter $(CMD_DIR)/$(1)/%,$(USER_DIR_SRCS))) $(LIBUSER_A) $(USER_LD) | $(BINDIR)
 	$(CC) $(CFLAGS) $(LDFLAGS) -T $(USER_LD) -o $$@ $$(filter $(OBJDIR)/%.o,$$^) $(LIBUSER_A) $(LDLIBS)
 endef
 
