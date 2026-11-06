@@ -25,3 +25,23 @@ int msync(void *addr, size_t length, int flags)
 {
 	return syscall(SYS_msync, addr, length, flags);
 }
+
+int mlock(const void *addr, size_t length)
+{
+	return syscall(SYS_mlock, addr, length);
+}
+
+int munlock(const void *addr, size_t length)
+{
+	return syscall(SYS_munlock, addr, length);
+}
+
+int mlockall(int flags)
+{
+	return syscall(SYS_mlockall, flags);
+}
+
+int munlockall(void)
+{
+	return syscall(SYS_munlockall);
+}

@@ -10,6 +10,7 @@ void (*signal(int signum, void (*handler)(int)))(int);
 int sigaction(int signum, const struct sigaction *act,
 	      struct sigaction *oldact);
 int sigprocmask(int how, const sigset_t *set, sigset_t *oldset);
+int sigpending(sigset_t *set);
 int sigreturn(void);
 
 void __brk_signal_dispatch(int sig);

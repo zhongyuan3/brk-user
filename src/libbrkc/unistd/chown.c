@@ -15,3 +15,8 @@ int fchownat(int dirfd, const char *path, uid_t owner, gid_t group, int flags)
 {
 	return syscall(SYS_fchownat, dirfd, path, owner, group, flags);
 }
+
+int lchown(const char *path, uid_t owner, gid_t group)
+{
+	return syscall(SYS_lchown, path, owner, group);
+}

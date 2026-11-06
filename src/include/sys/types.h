@@ -15,6 +15,7 @@ typedef __kernel_off_t off_t;
 typedef __kernel_loff_t loff_t;
 typedef __kernel_pid_t pid_t;
 typedef __kernel_pid_t id_t;
+typedef int clockid_t;
 typedef __kernel_clock_t clock_t;
 typedef __kernel_suseconds_t suseconds_t;
 typedef __kernel_time_t time_t;
