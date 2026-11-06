@@ -14,12 +14,15 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
+#include <sys/mman.h>
+#include <sys/resource.h>
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/statvfs.h>
 #include <sys/time.h>
 #include <sys/types.h>
+#include <sys/uio.h>
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
@@ -940,6 +943,169 @@ static int test_auth(void)
 	return 0;
 }
 
+static int test_posix(void)
+{
+	char dir[64], file[128], fifo[128], link[128];
+	char wbuf1[] = "hello ";
+	char wbuf2[] = "world";
+	char rbuf1[8] = { 0 };
+	char rbuf2[8] = { 0 };
+	struct iovec iov[2];
+	struct timespec ts[2], now;
+	struct rusage ru;
+	struct pollfd pfd;
+	struct sigaction sa = { .sa_handler = on_sigusr1 };
+	fd_set rfds;
+	sigset_t set, pend;
+	struct stat st;
+	char *mem = NULL;
+	int fd = -1, p[2] = { -1, -1 };
+	int status;
+	pid_t pid;
+	int ret = -1;
+
+	snprintf(dir, sizeof(dir), "/tmp/brktest_posix_%ld", (long)getpid());
+	snprintf(file, sizeof(file), "%s/file", dir);
+	snprintf(fifo, sizeof(fifo), "%s/fifo", dir);
+	snprintf(link, sizeof(link), "%s/link", dir);
+
+	unlink(file);
+	unlink(fifo);
+	unlink(link);
+	rmdir(dir);
+
+	mkdir("/tmp", 0755);
+	if (mkdir(dir, 0755) != 0)
+		return perm_fail("mkdir posix test directory failed");
+
+	if (clock_gettime(CLOCK_REALTIME, &now) != 0 ||
+	    clock_gettime(CLOCK_MONOTONIC, &now) != 0 ||
+	    clock_getres(CLOCK_MONOTONIC, &now) != 0 || now.tv_nsec <= 0)
+		goto out;
+	(void)time(NULL);
+
+	ts[0].tv_sec = 0;
+	ts[0].tv_nsec = 1000000;
+	ts[1].tv_sec = 0;
+	ts[1].tv_nsec = 1000000;
+	if (clock_nanosleep(CLOCK_MONOTONIC, 0, &ts[0], NULL) != 0)
+		goto out;
+
+	if (getrusage(RUSAGE_SELF, &ru) != 0 ||
+	    getrusage(RUSAGE_CHILDREN, &ru) != 0)
+		goto out;
+
+	fd = open(file, O_RDWR | O_CREAT | O_TRUNC, 0644);
+	if (fd < 0)
+		goto out;
+
+	iov[0].iov_base = wbuf1;
+	iov[0].iov_len = 6;
+	iov[1].iov_base = wbuf2;
+	iov[1].iov_len = 5;
+	if (writev(fd, iov, 2) != 11 || lseek(fd, 0, SEEK_SET) != 0)
+		goto out;
+
+	iov[0].iov_base = rbuf1;
+	iov[0].iov_len = 6;
+	iov[1].iov_base = rbuf2;
+	iov[1].iov_len = 5;
+	if (readv(fd, iov, 2) != 11 || memcmp(rbuf1, "hello ", 6) ||
+	    memcmp(rbuf2, "world", 5))
+		goto out;
+
+	ts[0].tv_sec = 1234;
+	ts[0].tv_nsec = 0;
+	ts[1].tv_sec = 5678;
+	ts[1].tv_nsec = 0;
+	if (futimens(fd, ts) != 0 || fstat(fd, &st) != 0 || st.st_mtime != 5678)
+		goto out;
+
+	if (fstatat(AT_FDCWD, file, &st, 0) != 0 || st.st_size != 11)
+		goto out;
+
+	if (mkfifo(fifo, 0644) != 0 || stat(fifo, &st) != 0 ||
+	    !S_ISFIFO(st.st_mode))
+		goto out;
+
+	if (symlink(file, link) != 0 || lchown(link, 1000, 1000) != 0 ||
+	    lstat(link, &st) != 0 || st.st_uid != 1000 || st.st_gid != 1000)
+		goto out;
+
+	if (dup3(fd, 10, O_CLOEXEC) != 10)
+		goto out;
+	close(10);
+	close(fd);
+	fd = -1;
+
+	if (pipe(p) != 0 || write(p[1], "x", 1) != 1)
+		goto out;
+
+	FD_ZERO(&rfds);
+	FD_SET(p[0], &rfds);
+	ts[0].tv_sec = 0;
+	ts[0].tv_nsec = 0;
+	if (pselect(p[0] + 1, &rfds, NULL, NULL, &ts[0], NULL) != 1)
+		goto out;
+
+	pfd.fd = p[0];
+	pfd.events = POLLIN;
+	pfd.revents = 0;
+	if (ppoll(&pfd, 1, &ts[0], NULL) != 1 || !(pfd.revents & POLLIN))
+		goto out;
+
+	mem = malloc(4096);
+	if (!mem || mlock(mem, 4096) != 0 || munlock(mem, 4096) != 0 ||
+	    mlockall(MCL_CURRENT) != 0 || munlockall() != 0)
+		goto out;
+
+	if (sigaction(SIGUSR1, &sa, NULL) != 0)
+		goto out;
+	set = (sigset_t)1 << SIGUSR1;
+	if (sigprocmask(SIG_BLOCK, &set, NULL) != 0 || raise(SIGUSR1) != 0 ||
+	    sigpending(&pend) != 0 || !(pend & set))
+		goto out;
+	caught = 0;
+	if (sigprocmask(SIG_UNBLOCK, &set, NULL) != 0 || !caught)
+		goto out;
+
+	pid = fork();
+	if (pid < 0)
+		goto out;
+	if (pid == 0) {
+		if (sigaction(SIGUSR1, &sa, NULL) != 0)
+			_exit(1);
+		pause();
+		_exit(0);
+	}
+
+	ts[0].tv_sec = 0;
+	ts[0].tv_nsec = 50000000;
+	if (nanosleep(&ts[0], NULL) != 0 || kill(pid, SIGUSR1) != 0)
+		goto out;
+	if (waitpid(pid, &status, 0) != pid || !WIFEXITED(status) ||
+	    WEXITSTATUS(status) != 0)
+		goto out;
+
+	ret = 0;
+out:
+	if (fd >= 0)
+		close(fd);
+	if (p[0] >= 0)
+		close(p[0]);
+	if (p[1] >= 0)
+		close(p[1]);
+	free(mem);
+	unlink(file);
+	unlink(fifo);
+	unlink(link);
+	rmdir(dir);
+	if (ret)
+		return perm_fail("posix syscall test failed");
+	printf("posix syscall batch ok\n");
+	return 0;
+}
+
 static int test_symlink(void)
 {
 	char dir[64], target[128], abs_target[128], rel[128], abs[128];
@@ -1270,11 +1436,11 @@ struct test_suite {
 };
 
 static const struct test_suite suites[] = {
-	{ "fork", test_fork },	{ "kill", test_kill },
-	{ "sig", test_signal }, { "meta", test_meta },
-	{ "perm", test_perm },	{ "group", test_group },
-	{ "auth", test_auth },	{ "symlink", test_symlink },
-	{ "net", test_net },
+	{ "fork", test_fork },	     { "kill", test_kill },
+	{ "sig", test_signal },	     { "meta", test_meta },
+	{ "perm", test_perm },	     { "group", test_group },
+	{ "auth", test_auth },	     { "posix", test_posix },
+	{ "symlink", test_symlink }, { "net", test_net },
 };
 
 #define NR_SUITES (sizeof(suites) / sizeof(suites[0]))
@@ -1291,6 +1457,7 @@ static void usage(const char *prog)
 		"  perm   uid/gid credentials, DAC checks and umask\n"
 		"  group  supplementary groups and group permissions\n"
 		"  auth   password hashes and user/group database\n"
+		"  posix  clock, iovec, futimens, fstatat, mkfifo, pselect/ppoll\n"
 		"  symlink symlink following, lstat, NOFOLLOW and loops\n"
 		"  net    TCP/UDP loopback sockets and inet helpers\n"
 		"  all    run every suite (default)\n",

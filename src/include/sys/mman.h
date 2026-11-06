@@ -20,10 +20,17 @@
 #define MS_INVALIDATE 0x2
 #define MS_SYNC 0x4
 
+#define MCL_CURRENT 0x1
+#define MCL_FUTURE 0x2
+
 void *mmap(void *addr, size_t length, int prot, int flags, int fd,
 	   off_t offset);
 int munmap(void *addr, size_t length);
 int mprotect(void *addr, size_t length, int prot);
 int msync(void *addr, size_t length, int flags);
+int mlock(const void *addr, size_t length);
+int munlock(const void *addr, size_t length);
+int mlockall(int flags);
+int munlockall(void);
 
 #endif

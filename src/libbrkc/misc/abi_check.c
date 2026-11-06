@@ -12,6 +12,7 @@
 #include <sys/statvfs.h>
 #include <sys/time.h>
 #include <sys/times.h>
+#include <sys/uio.h>
 #include <sys/utsname.h>
 #include <termios.h>
 
@@ -42,6 +43,7 @@ _Static_assert(offsetof(struct stat, st_atime) == 72,
 _Static_assert(sizeof(struct statvfs) == 88, "struct statvfs ABI changed");
 _Static_assert(sizeof(struct timespec) == 16, "struct timespec ABI changed");
 _Static_assert(sizeof(struct timeval) == 16, "struct timeval ABI changed");
+_Static_assert(sizeof(struct iovec) == 16, "struct iovec ABI changed");
 _Static_assert(sizeof(struct rusage) == 144, "struct rusage ABI changed");
 _Static_assert(sizeof(struct sigaction) == 24, "struct sigaction ABI changed");
 _Static_assert(sizeof(struct tms) == 32, "struct tms ABI changed");

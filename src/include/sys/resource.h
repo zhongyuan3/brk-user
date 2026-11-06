@@ -4,4 +4,6 @@
 #include <sys/time.h>
 #include <uapi/resource.h>
 
+int getrusage(int who, struct rusage *usage);
+
 #endif
