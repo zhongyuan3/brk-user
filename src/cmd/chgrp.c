@@ -55,7 +55,8 @@ static int chgrp_tree(const char *path, gid_t gid, bool recursive)
 	int ret = 0;
 
 	for (;;) {
-		ssize_t rcnt = getdents64(fd, dbuf + used, sizeof(dbuf) - used);
+		ssize_t rcnt =
+			posix_getdents(fd, dbuf + used, sizeof(dbuf) - used, 0);
 
 		if (rcnt < 0) {
 			if (errno == EINTR)
@@ -68,7 +69,7 @@ static int chgrp_tree(const char *path, gid_t gid, bool recursive)
 			break;
 		used += (size_t)rcnt;
 
-		struct dirent64 *d = (struct dirent64 *)dbuf;
+		struct posix_dent *d = (struct posix_dent *)dbuf;
 		size_t pos = 0;
 
 		while (pos < used) {
@@ -88,7 +89,7 @@ static int chgrp_tree(const char *path, gid_t gid, bool recursive)
 				}
 			}
 			pos += d->d_reclen;
-			d = (struct dirent64 *)((char *)d + d->d_reclen);
+			d = (struct posix_dent *)((char *)d + d->d_reclen);
 		}
 		used = 0;
 	}

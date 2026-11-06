@@ -115,19 +115,20 @@ static int copy_dir(const char *src, const char *dest, bool recursive)
 	}
 
 	for (;;) {
-		ssize_t rcnt = getdents64(fd, dbuf + used, sizeof(dbuf) - used);
+		ssize_t rcnt =
+			posix_getdents(fd, dbuf + used, sizeof(dbuf) - used, 0);
 
 		if (rcnt < 0) {
 			if (errno == EINTR)
 				continue;
-			brk_cmd_error_errno("getdents64 failed");
+			brk_cmd_error_errno("posix_getdents failed");
 			goto out;
 		}
 		if (rcnt == 0)
 			break;
 		used += (size_t)rcnt;
 
-		struct dirent64 *d = (struct dirent64 *)dbuf;
+		struct posix_dent *d = (struct posix_dent *)dbuf;
 		size_t pos = 0;
 
 		while (pos < used) {
@@ -145,7 +146,7 @@ static int copy_dir(const char *src, const char *dest, bool recursive)
 				copy_tree(sp, dp, recursive);
 			}
 			pos += d->d_reclen;
-			d = (struct dirent64 *)((char *)d + d->d_reclen);
+			d = (struct posix_dent *)((char *)d + d->d_reclen);
 		}
 		used = 0;
 	}

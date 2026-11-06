@@ -339,7 +339,7 @@ static int sh_complete_scan_dir(struct sh_match_list *list, const char *dir,
 		return 0;
 
 	for (;;) {
-		ssize_t n = getdents64(fd, dbuf, sizeof(dbuf));
+		ssize_t n = posix_getdents(fd, dbuf, sizeof(dbuf), 0);
 		size_t pos;
 
 		if (n < 0) {
@@ -351,7 +351,8 @@ static int sh_complete_scan_dir(struct sh_match_list *list, const char *dir,
 			break;
 
 		for (pos = 0; pos < (size_t)n;) {
-			struct dirent64 *d = (struct dirent64 *)(dbuf + pos);
+			struct posix_dent *d =
+				(struct posix_dent *)(dbuf + pos);
 			const char *name;
 			char full[SH_COMPLETE_PATH_MAX];
 			char match[SH_COMPLETE_PATH_MAX];

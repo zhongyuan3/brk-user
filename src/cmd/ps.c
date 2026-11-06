@@ -113,19 +113,20 @@ int main(int argc, char *argv[])
 		return brk_cmd_fail_errno("/proc");
 
 	for (;;) {
-		ssize_t n = getdents64(dfd, dbuf, sizeof(dbuf));
+		ssize_t n = posix_getdents(dfd, dbuf, sizeof(dbuf), 0);
 
 		if (n < 0) {
 			if (errno == EINTR)
 				continue;
-			ret = brk_cmd_fail_errno("getdents64 /proc");
+			ret = brk_cmd_fail_errno("posix_getdents /proc");
 			break;
 		}
 		if (n == 0)
 			break;
 
 		for (size_t pos = 0; pos < (size_t)n;) {
-			struct dirent64 *d = (struct dirent64 *)(dbuf + pos);
+			struct posix_dent *d =
+				(struct posix_dent *)(dbuf + pos);
 
 			if (d->d_reclen == 0)
 				break;

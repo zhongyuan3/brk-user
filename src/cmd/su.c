@@ -1,6 +1,4 @@
 #include <brk/cmd.h>
-#include <brk/limits.h>
-#include <grp.h>
 #include <pwd.h>
 #include <pwutil.h>
 #include <shadow.h>
@@ -12,18 +10,6 @@
 static const char usage[] =
 	"Usage: su [USER]\n"
 	"Run a shell with the identity of USER (default root).";
-
-static void init_groups(struct passwd *pw)
-{
-	gid_t groups[NGROUPS_MAX];
-	int ngroups = NGROUPS_MAX;
-
-	memset(groups, 0, sizeof(groups));
-	if (getgrouplist(pw->pw_name, pw->pw_gid, groups, &ngroups) < 0)
-		setgroups(0, NULL);
-	else
-		setgroups(ngroups, groups);
-}
 
 int main(int argc, char *argv[])
 {
@@ -59,8 +45,6 @@ int main(int argc, char *argv[])
 			return BRK_CMD_EXIT_FAIL;
 		}
 	}
-
-	init_groups(pw);
 
 	if (setgid(pw->pw_gid) != 0)
 		return brk_cmd_fail_errno("setgid failed");

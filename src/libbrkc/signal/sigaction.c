@@ -1,5 +1,6 @@
 #include <signal.h>
 #include <sys/syscall.h>
+#include <uapi/syscall_internal.h>
 #include <unistd.h>
 
 static void (*__brk_handlers[NSIG])(int);
@@ -57,8 +58,7 @@ int sigaction(int signum, const struct sigaction *act, struct sigaction *oldact)
 		}
 	}
 
-	if (syscall(SYS_rt_sigaction, signum, pass, oldact ? &kold : NULL,
-		    sizeof(sigset_t)) != 0)
+	if (syscall(SYS_sigaction, signum, pass, oldact ? &kold : NULL) != 0)
 		return -1;
 
 	if (oldact)
@@ -68,10 +68,10 @@ int sigaction(int signum, const struct sigaction *act, struct sigaction *oldact)
 
 int sigprocmask(int how, const sigset_t *set, sigset_t *oldset)
 {
-	return syscall(SYS_rt_sigprocmask, how, set, oldset, sizeof(sigset_t));
+	return syscall(SYS_sigprocmask, how, set, oldset);
 }
 
 int sigreturn(void)
 {
-	return syscall(SYS_rt_sigreturn);
+	return syscall(SYS_sigreturn);
 }

@@ -197,8 +197,8 @@ cc a.c b.o -o prog
 - 固定加载基址 `0x10000`，代码从文件偏移 `0x1000` 开始
 - 入口是编译器生成的 `__cc_start`
 - `__cc_start` 按内核约定接收 `a0=argc, a1=argv, a2=envp`，调用 `main` 后用
-  `SYS_exit(60)` 退出
-- 系统调用号使用 BRK 的通用编号：`read=0, write=1, open=2, close=3, exit=60`
+  `SYS_exit` 退出
+- 系统调用号使用 BRK 的 POSIX.1-2024 编号：`read=0, write=1, open=2, close=3, exit=49`
 
 `puts`、结构体拷贝和聚合初始化清零分别使用 `__cc_puts`、`__cc_memcpy`、
 `__cc_memset`。

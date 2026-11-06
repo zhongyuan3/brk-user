@@ -72,12 +72,13 @@ static int remove_path(const char *path, bool recursive, bool force)
 		return brk_cmd_fail_errno("cannot open directory");
 
 	for (;;) {
-		ssize_t rcnt = getdents64(fd, buf + used, sizeof(buf) - used);
+		ssize_t rcnt =
+			posix_getdents(fd, buf + used, sizeof(buf) - used, 0);
 
 		if (rcnt < 0) {
 			if (errno == EINTR)
 				continue;
-			brk_cmd_error_errno("getdents64 failed");
+			brk_cmd_error_errno("posix_getdents failed");
 			ret = -1;
 			break;
 		}
@@ -85,7 +86,7 @@ static int remove_path(const char *path, bool recursive, bool force)
 			break;
 		used += (size_t)rcnt;
 
-		struct dirent64 *d = (struct dirent64 *)buf;
+		struct posix_dent *d = (struct posix_dent *)buf;
 		size_t pos = 0;
 
 		while (pos < used) {
@@ -104,7 +105,7 @@ static int remove_path(const char *path, bool recursive, bool force)
 				}
 			}
 			pos += d->d_reclen;
-			d = (struct dirent64 *)((char *)d + d->d_reclen);
+			d = (struct posix_dent *)((char *)d + d->d_reclen);
 		}
 		used = 0;
 	}

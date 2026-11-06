@@ -1,6 +1,4 @@
 #include <brk/cmd.h>
-#include <brk/limits.h>
-#include <grp.h>
 #include <pwd.h>
 #include <pwutil.h>
 #include <shadow.h>
@@ -10,18 +8,6 @@
 
 static const char usage[] = "Usage: login [USER]\n"
 			    "Log in as USER and start a shell.";
-
-static void init_groups(struct passwd *pw)
-{
-	gid_t groups[NGROUPS_MAX];
-	int ngroups = NGROUPS_MAX;
-
-	memset(groups, 0, sizeof(groups));
-	if (getgrouplist(pw->pw_name, pw->pw_gid, groups, &ngroups) < 0)
-		setgroups(0, NULL);
-	else
-		setgroups(ngroups, groups);
-}
 
 static int login_as(const char *user)
 {
@@ -39,7 +25,6 @@ static int login_as(const char *user)
 	if (pw_verify(password, sp->sp_pwdp) != 0)
 		return -1;
 
-	init_groups(pw);
 	if (setgid(pw->pw_gid) != 0 || setuid(pw->pw_uid) != 0)
 		return -1;
 
