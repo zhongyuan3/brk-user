@@ -1,23 +1,22 @@
 #include <stdio.h>
-#include <sys/statfs.h>
+#include <sys/statvfs.h>
 
 int main(int argc, char *argv[])
 {
 	const char *path = argc > 1 ? argv[1] : "/";
-	struct statfs st;
+	struct statvfs st;
 
-	if (statfs(path, &st) < 0) {
-		perror("statfs");
+	if (statvfs(path, &st) < 0) {
+		perror("statvfs");
 		return 1;
 	}
 
 	printf("Filesystem %s\n", path);
-	printf("  type:       %ld\n", st.f_type);
-	printf("  block size: %ld\n", st.f_bsize);
-	printf("  blocks:     %ld total, %ld free, %ld available\n",
+	printf("  block size: %lu\n", st.f_bsize);
+	printf("  fragment size: %lu\n", st.f_frsize);
+	printf("  blocks:     %lu total, %lu free, %lu available\n",
 	       st.f_blocks, st.f_bfree, st.f_bavail);
-	printf("  inodes:     %ld total, %ld free\n", st.f_files,
-	       st.f_ffree);
-	printf("  namelen:    %ld\n", st.f_namelen);
+	printf("  inodes:     %lu total, %lu free\n", st.f_files, st.f_ffree);
+	printf("  namemax:    %lu\n", st.f_namemax);
 	return 0;
 }

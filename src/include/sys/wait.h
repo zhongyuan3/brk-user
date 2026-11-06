@@ -3,9 +3,12 @@
 
 #include <sys/resource.h>
 #include <sys/types.h>
+#include <uapi/signal.h>
 
-pid_t wait4(pid_t pid, int *wstatus, int options, struct rusage *rusage);
+typedef int idtype_t;
+
 pid_t wait(int *wstatus);
 pid_t waitpid(pid_t pid, int *wstatus, int options);
+int waitid(idtype_t idtype, id_t id, siginfo_t *infop, int options);
 
 #endif

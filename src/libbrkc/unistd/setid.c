@@ -30,18 +30,3 @@ int setresgid(gid_t rgid, gid_t egid, gid_t sgid)
 {
 	return syscall(SYS_setresgid, rgid, egid, sgid);
 }
-
-int setfsuid(uid_t uid)
-{
-	return (int)syscall(SYS_setfsuid, uid);
-}
-
-int setfsgid(gid_t gid)
-{
-	return (int)syscall(SYS_setfsgid, gid);
-}
-
-int setgroups(int size, const gid_t list[])
-{
-	return (int)syscall(SYS_setgroups, size, list);
-}

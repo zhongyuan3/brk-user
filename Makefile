@@ -52,6 +52,7 @@ LIBGCC ?=
 LDLIBS := $(LIBGCC)
 
 HOST_CFLAGS ?= -std=gnu11 -O2 -Wall -Wextra -Werror
+HOST_CFLAGS += -I$(BUILD_ROOT)/include
 
 USER_LD_SOURCE := src/user.ld.S
 USER_LD := $(BUILD_ROOT)/user.ld
@@ -143,7 +144,7 @@ $(OBJDIR)/%.o: src/%.c | $(UAPI_STAMP)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-$(CC_HOST_OBJDIR)/%.o: src/%.c
+$(CC_HOST_OBJDIR)/%.o: src/%.c $(UAPI_STAMP) | $(UAPI_STAMP)
 	@mkdir -p $(dir $@)
 	$(HOSTCC) $(HOST_CFLAGS) -MMD -MP -c -o $@ $<
 

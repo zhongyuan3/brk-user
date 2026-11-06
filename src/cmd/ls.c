@@ -470,9 +470,9 @@ static int collect_names(int fd, bool all, char ***out_names, size_t *out_n)
 			buf = nb;
 			cap = new_cap;
 		}
-		r = getdents64(fd, buf + len, cap - len);
+		r = posix_getdents(fd, buf + len, cap - len, 0);
 		if (r < 0) {
-			ret = brk_cmd_fail_errno("getdents64 failed");
+			ret = brk_cmd_fail_errno("posix_getdents failed");
 			goto out;
 		}
 		if (r == 0)
@@ -480,7 +480,7 @@ static int collect_names(int fd, bool all, char ***out_names, size_t *out_n)
 		len += (size_t)r;
 	}
 
-	struct dirent64 *p = (struct dirent64 *)buf;
+	struct posix_dent *p = (struct posix_dent *)buf;
 	size_t i = 0;
 
 	while (i < len) {
@@ -488,7 +488,7 @@ static int collect_names(int fd, bool all, char ***out_names, size_t *out_n)
 
 		if (!all && nm[0] == '.') {
 			i += p->d_reclen;
-			p = (struct dirent64 *)((uintptr_t)p + p->d_reclen);
+			p = (struct posix_dent *)((uintptr_t)p + p->d_reclen);
 			continue;
 		}
 		if (n + 1 > name_cap) {
@@ -509,7 +509,7 @@ static int collect_names(int fd, bool all, char ***out_names, size_t *out_n)
 		}
 		n++;
 		i += p->d_reclen;
-		p = (struct dirent64 *)((uintptr_t)p + p->d_reclen);
+		p = (struct posix_dent *)((uintptr_t)p + p->d_reclen);
 	}
 
 	*out_names = names;

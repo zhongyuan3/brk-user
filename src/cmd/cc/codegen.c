@@ -1,4 +1,5 @@
 #include "cc.h"
+#include <uapi/syscall.h>
 
 /* ------------------------------------------------------------------ */
 /* code generation                                                     */
@@ -207,7 +208,7 @@ static void gen_call(struct node *n)
 		i_li(A0, 1);
 		i_mv(A1, SP);
 		i_li(A2, 1);
-		i_li(17, 1); /* a7 = SYS_write */
+		i_li(17, SYS_write); /* a7 = SYS_write */
 		i_ecall();
 		i_addi(SP, SP, 16);
 		return;
@@ -241,7 +242,7 @@ static void gen_call(struct node *n)
 	if (builtin_ok && !strcmp(name, "exit")) {
 		if (n->nargs == 0)
 			i_li(A0, 0);
-		i_li(17, 60); /* a7 = SYS_exit */
+		i_li(17, SYS_exit); /* a7 = SYS_exit */
 		i_ecall();
 		emit32(enc_j(0x6f, X0, 0));
 		return;
@@ -252,13 +253,13 @@ static void gen_call(struct node *n)
 		int sysno;
 
 		if (!strcmp(name, "write"))
-			sysno = 1;
+			sysno = SYS_write;
 		else if (!strcmp(name, "read"))
-			sysno = 0;
+			sysno = SYS_read;
 		else if (!strcmp(name, "open"))
-			sysno = 2;
+			sysno = SYS_open;
 		else
-			sysno = 3;
+			sysno = SYS_close;
 		if (!strcmp(name, "open") && n->nargs < 3)
 			i_li(A2, 0);
 		i_li(17, sysno);
@@ -870,7 +871,7 @@ void gen_runtime(void)
 	i_li(A0, 1);
 	i_mv(A1, T0);
 	i_mv(A2, T1);
-	i_li(17, 1);
+	i_li(17, SYS_write);
 	i_ecall();
 	/* write(1, "\n", 1) */
 	i_addi(SP, SP, -16);
@@ -879,7 +880,7 @@ void gen_runtime(void)
 	i_li(A0, 1);
 	i_mv(A1, SP);
 	i_li(A2, 1);
-	i_li(17, 1);
+	i_li(17, SYS_write);
 	i_ecall();
 	i_addi(SP, SP, 16);
 	i_li(A0, 0);
@@ -940,7 +941,7 @@ void gen_start(struct sym *main_sym)
 	start_sym->defined = true;
 	start_sym->offset = code.len;
 	i_call_sym(main_sym);
-	i_li(17, 60);
+	i_li(17, SYS_exit);
 	i_ecall();
 	emit32(enc_j(0x6f, X0, 0));
 }

@@ -83,7 +83,7 @@ for d in bin sbin etc home root tmp boot dev proc sys run mnt media opt srv \
 done
 
 SYSTEM_BINS=(init)
-USR_BINS=(brktest cap clear df edit fallocate httpd httpget nc netstat stat
+USR_BINS=(brktest clear df edit fallocate httpd httpget nc netstat stat
 	  tput)
 
 for name in "${SYSTEM_BINS[@]}"; do

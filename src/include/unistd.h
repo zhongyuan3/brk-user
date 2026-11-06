@@ -44,11 +44,7 @@ int setresuid(uid_t ruid, uid_t euid, uid_t suid);
 int getresuid(uid_t *ruid, uid_t *euid, uid_t *suid);
 int setresgid(gid_t rgid, gid_t egid, gid_t sgid);
 int getresgid(gid_t *rgid, gid_t *egid, gid_t *sgid);
-int setfsuid(uid_t uid);
-int setfsgid(gid_t gid);
-
 int getgroups(int size, gid_t list[]);
-int setgroups(int size, const gid_t list[]);
 
 int chown(const char *path, uid_t owner, gid_t group);
 int fchown(int fd, uid_t owner, gid_t group);
@@ -70,11 +66,6 @@ int rmdir(const char *path);
 
 int pipe(int pipefd[2]);
 int pipe2(int pipefd[2], int flags);
-
-int brk(void *addr);
-void *sbrk(intptr_t increment);
-
-ssize_t getdents64(int fd, void *dirp, size_t count);
 
 pid_t fork(void);
 
