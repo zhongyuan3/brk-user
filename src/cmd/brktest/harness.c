@@ -1,4 +1,5 @@
 #include "harness.h"
+#include "util.h"
 
 #include <signal.h>
 #include <stdio.h>
@@ -79,6 +80,11 @@ int test_run_case(const struct test_suite *suite, const struct test_case *tc,
 		printf("[SKIP] %s.%s (requires root)\n", suite->name, tc->name);
 		return TEST_SKIP;
 	}
+	if ((tc->flags & TEST_DESTRUCTIVE) && !test_config.allow_destructive) {
+		printf("[SKIP] %s.%s (destructive; use --allow-destructive)\n",
+		       suite->name, tc->name);
+		return TEST_SKIP;
+	}
 
 	printf("[RUN ] %s.%s\n", suite->name, tc->name);
 	fflush(stdout);
@@ -92,6 +98,10 @@ int test_run_case(const struct test_suite *suite, const struct test_case *tc,
 			printf("[ OK ] %s.%s (%llums)\n", suite->name, tc->name,
 			       elapsed);
 			return TEST_PASS;
+		}
+		if (ret == TEST_SKIP_CODE) {
+			printf("[SKIP] %s.%s\n", suite->name, tc->name);
+			return TEST_SKIP;
 		}
 		printf("[FAIL] %s.%s (%llums)\n", suite->name, tc->name,
 		       elapsed);
@@ -113,7 +123,8 @@ int test_run_case(const struct test_suite *suite, const struct test_case *tc,
 		int ret = tc->run(ctx);
 
 		fflush(NULL);
-		_exit(ret == 0 ? 0 : 1);
+		_exit(ret == TEST_SKIP_CODE ? TEST_SKIP_CODE :
+		      ret ? 1 : 0);
 	}
 
 	status = wait_for_child(pid, timeout_ms, tc->flags & TEST_OWN_PGRP,
@@ -134,6 +145,10 @@ int test_run_case(const struct test_suite *suite, const struct test_case *tc,
 		printf("[FAIL] %s.%s (%llums, signal %d)\n", suite->name,
 		       tc->name, elapsed, WTERMSIG(status));
 		return TEST_FAIL;
+	}
+	if (WIFEXITED(status) && WEXITSTATUS(status) == TEST_SKIP_CODE) {
+		printf("[SKIP] %s.%s\n", suite->name, tc->name);
+		return TEST_SKIP;
 	}
 	if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
 		printf("[FAIL] %s.%s (%llums)\n", suite->name, tc->name,

@@ -39,6 +39,7 @@ struct test_config {
 	unsigned int timeout_ms;
 	bool verbose;
 	bool isolate;
+	bool allow_destructive;
 };
 
 extern struct test_config test_config;
