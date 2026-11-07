@@ -11,10 +11,18 @@ extern const struct test_suite brktest_fs_suite;
 extern const struct test_suite brktest_creds_suite;
 extern const struct test_suite brktest_posix_suite;
 extern const struct test_suite brktest_net_suite;
+extern const struct test_suite brktest_file_suite;
+extern const struct test_suite brktest_io_suite;
+extern const struct test_suite brktest_memory_suite;
+extern const struct test_suite brktest_time_suite;
+extern const struct test_suite brktest_sys_suite;
+extern const struct test_suite brktest_dev_suite;
 
 static const struct test_suite *const suites[] = {
 	&brktest_process_suite, &brktest_signal_suite, &brktest_fs_suite,
 	&brktest_creds_suite,	&brktest_posix_suite,  &brktest_net_suite,
+	&brktest_file_suite,	&brktest_io_suite,     &brktest_memory_suite,
+	&brktest_time_suite,	&brktest_sys_suite,    &brktest_dev_suite,
 };
 
 struct suite_alias {
@@ -47,6 +55,12 @@ static void usage(const char *prog)
 		"  creds    uid/gid, permissions and auth databases\n"
 		"  posix    POSIX syscall batch\n"
 		"  net      TCP/UDP loopback sockets and inet helpers\n"
+		"  file     regular file I/O, flags and directories\n"
+		"  io       pipes, vectors, poll/select and SIGPIPE\n"
+		"  memory   malloc, mmap, mprotect and copy-on-write\n"
+		"  time     POSIX clocks, sleeps and wall-clock changes\n"
+		"  sys      process identity, uname, rusage and /proc\n"
+		"  dev      devtmpfs nodes and basic device access\n"
 		"  all      run every suite (default)\n\n"
 		"Legacy aliases:\n"
 		"  fork kill sig meta perm group auth symlink posix net\n\n"
@@ -55,6 +69,7 @@ static void usage(const char *prog)
 		"  --seed N           random seed (default: pid)\n"
 		"  --timeout MS       per-case timeout (default: 10000)\n"
 		"  --no-isolate       run cases in the harness process\n"
+		"  --allow-destructive allow wall-clock changes and similar tests\n"
 		"  --verbose          verbose output\n"
 		"  -h, --help         show this help\n",
 		prog);
@@ -138,6 +153,8 @@ int main(int argc, char *argv[])
 			test_config.verbose = true;
 		} else if (!strcmp(argv[i], "--no-isolate")) {
 			test_config.isolate = false;
+		} else if (!strcmp(argv[i], "--allow-destructive")) {
+			test_config.allow_destructive = true;
 		} else if (!strcmp(argv[i], "--seed") && i + 1 < argc) {
 			test_config.seed = (unsigned int)strtoul(argv[++i], NULL,
 								 0);
