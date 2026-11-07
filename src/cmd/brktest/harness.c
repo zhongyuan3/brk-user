@@ -12,6 +12,9 @@
 
 struct test_config test_config = {
 	.timeout_ms = 10000,
+	.workers = 4,
+	.iterations = 5,
+	.duration_ms = 0,
 	.isolate = true,
 };
 

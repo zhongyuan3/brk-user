@@ -17,12 +17,24 @@ extern const struct test_suite brktest_memory_suite;
 extern const struct test_suite brktest_time_suite;
 extern const struct test_suite brktest_sys_suite;
 extern const struct test_suite brktest_dev_suite;
+extern const struct test_suite brktest_stress_process_suite;
+extern const struct test_suite brktest_stress_fd_suite;
+extern const struct test_suite brktest_stress_fs_suite;
+extern const struct test_suite brktest_stress_io_suite;
+extern const struct test_suite brktest_stress_memory_suite;
+extern const struct test_suite brktest_stress_net_suite;
+extern const struct test_suite brktest_stress_signal_suite;
+extern const struct test_suite brktest_stress_mixed_suite;
 
 static const struct test_suite *const suites[] = {
 	&brktest_process_suite, &brktest_signal_suite, &brktest_fs_suite,
 	&brktest_creds_suite,	&brktest_posix_suite,  &brktest_net_suite,
 	&brktest_file_suite,	&brktest_io_suite,     &brktest_memory_suite,
 	&brktest_time_suite,	&brktest_sys_suite,    &brktest_dev_suite,
+	&brktest_stress_process_suite, &brktest_stress_fd_suite,
+	&brktest_stress_fs_suite, &brktest_stress_io_suite,
+	&brktest_stress_memory_suite, &brktest_stress_net_suite,
+	&brktest_stress_signal_suite, &brktest_stress_mixed_suite,
 };
 
 struct suite_alias {
@@ -61,13 +73,18 @@ static void usage(const char *prog)
 		"  time     POSIX clocks, sleeps and wall-clock changes\n"
 		"  sys      process identity, uname, rusage and /proc\n"
 		"  dev      devtmpfs nodes and basic device access\n"
-		"  all      run every suite (default)\n\n"
+		"  functional  run functional suites only\n"
+		"  stress      run stress suites only\n"
+		"  all         run functional + short stress (default)\n\n"
 		"Legacy aliases:\n"
 		"  fork kill sig meta perm group auth symlink posix net\n\n"
 		"Options:\n"
 		"  --list             list suites and cases\n"
 		"  --seed N           random seed (default: pid)\n"
 		"  --timeout MS       per-case timeout (default: 10000)\n"
+		"  --workers N        stress workers (default: 4)\n"
+		"  --iterations N     stress iterations (default: 5)\n"
+		"  --duration SEC     stress duration hint (default: 0)\n"
 		"  --no-isolate       run cases in the harness process\n"
 		"  --allow-destructive allow wall-clock changes and similar tests\n"
 		"  --verbose          verbose output\n"
@@ -99,11 +116,42 @@ static void list_tests(void)
 	for (size_t i = 0; i < sizeof(suites) / sizeof(suites[0]); i++) {
 		const struct test_suite *suite = suites[i];
 
-		printf("%s: %s\n", suite->name, suite->description);
+		printf("%s%s: %s\n",
+		       (suite->flags & TEST_SUITE_STRESS) ? "[stress] " : "",
+		       suite->name, suite->description);
 		for (size_t j = 0; j < suite->nr_cases; j++)
 			printf("  %s.%s\n", suite->name,
 			       suite->cases[j].name);
 	}
+}
+
+static bool suite_is_stress(const struct test_suite *suite)
+{
+	return (suite->flags & TEST_SUITE_STRESS) != 0;
+}
+
+static int run_group(bool stress, struct test_ctx *ctx)
+{
+	int failures = 0;
+
+	for (size_t i = 0; i < sizeof(suites) / sizeof(suites[0]); i++) {
+		if (suite_is_stress(suites[i]) != stress)
+			continue;
+		if (test_run_suite(suites[i], ctx) != 0)
+			failures++;
+	}
+	return failures;
+}
+
+static int count_group(bool stress)
+{
+	int count = 0;
+
+	for (size_t i = 0; i < sizeof(suites) / sizeof(suites[0]); i++) {
+		if (suite_is_stress(suites[i]) == stress)
+			count++;
+	}
+	return count;
 }
 
 static int run_named_case(const struct test_suite *suite, const char *name,
@@ -161,6 +209,15 @@ int main(int argc, char *argv[])
 		} else if (!strcmp(argv[i], "--timeout") && i + 1 < argc) {
 			test_config.timeout_ms = (unsigned int)strtoul(
 				argv[++i], NULL, 0);
+		} else if (!strcmp(argv[i], "--workers") && i + 1 < argc) {
+			test_config.workers = (unsigned int)strtoul(argv[++i],
+								   NULL, 0);
+		} else if (!strcmp(argv[i], "--iterations") && i + 1 < argc) {
+			test_config.iterations = (unsigned int)strtoul(
+				argv[++i], NULL, 0);
+		} else if (!strcmp(argv[i], "--duration") && i + 1 < argc) {
+			test_config.duration_ms = (unsigned int)strtoul(
+				argv[++i], NULL, 0) * 1000;
 		} else if (argv[i][0] == '-') {
 			fprintf(stderr, "brktest: unknown option: %s\n\n",
 				argv[i]);
@@ -177,15 +234,23 @@ int main(int argc, char *argv[])
 	}
 
 	ctx.seed = test_config.seed;
-	printf("brktest: seed=%u, timeout=%ums, isolate=%s\n", ctx.seed,
-	       test_config.timeout_ms,
+	ctx.workers = test_config.workers ? test_config.workers : 1;
+	ctx.iterations = test_config.iterations ? test_config.iterations : 1;
+	ctx.duration_ms = test_config.duration_ms;
+	printf("brktest: seed=%u, timeout=%ums, workers=%u, iterations=%u, isolate=%s\n",
+	       ctx.seed, test_config.timeout_ms, ctx.workers, ctx.iterations,
 	       test_config.isolate ? "yes" : "no");
 
 	if (!strcmp(target, "all")) {
-		total = (int)(sizeof(suites) / sizeof(suites[0]));
-		for (size_t i = 0; i < sizeof(suites) / sizeof(suites[0]); i++)
-			if (test_run_suite(suites[i], &ctx) != 0)
-				failures++;
+		total = count_group(false) + count_group(true);
+		failures += run_group(false, &ctx);
+		failures += run_group(true, &ctx);
+	} else if (!strcmp(target, "functional")) {
+		total = count_group(false);
+		failures += run_group(false, &ctx);
+	} else if (!strcmp(target, "stress")) {
+		total = count_group(true);
+		failures += run_group(true, &ctx);
 	} else {
 		for (size_t i = 0;
 		     i < sizeof(aliases) / sizeof(aliases[0]); i++) {

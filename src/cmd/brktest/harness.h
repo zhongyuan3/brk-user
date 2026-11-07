@@ -6,6 +6,9 @@
 
 struct test_ctx {
 	unsigned int seed;
+	unsigned int workers;
+	unsigned int iterations;
+	unsigned int duration_ms;
 };
 
 struct test_case {
@@ -20,6 +23,7 @@ struct test_suite {
 	const char *description;
 	const struct test_case *cases;
 	size_t nr_cases;
+	unsigned int flags;
 };
 
 #define TEST_REQUIRE_ROOT (1u << 0)
@@ -27,6 +31,8 @@ struct test_suite {
 #define TEST_SLOW (1u << 2)
 /* Run the case in its own process group so timeout can kill descendants. */
 #define TEST_OWN_PGRP (1u << 3)
+
+#define TEST_SUITE_STRESS (1u << 0)
 
 enum test_result {
 	TEST_PASS = 0,
@@ -37,6 +43,9 @@ enum test_result {
 struct test_config {
 	unsigned int seed;
 	unsigned int timeout_ms;
+	unsigned int workers;
+	unsigned int iterations;
+	unsigned int duration_ms;
 	bool verbose;
 	bool isolate;
 	bool allow_destructive;
