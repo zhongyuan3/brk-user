@@ -40,6 +40,11 @@ enum test_result {
 	TEST_SKIP = 2,
 };
 
+enum test_format {
+	TEST_FORMAT_HUMAN = 0,
+	TEST_FORMAT_TAP,
+};
+
 struct test_config {
 	unsigned int seed;
 	unsigned int timeout_ms;
@@ -49,6 +54,7 @@ struct test_config {
 	bool verbose;
 	bool isolate;
 	bool allow_destructive;
+	enum test_format format;
 };
 
 extern struct test_config test_config;
@@ -56,5 +62,6 @@ extern struct test_config test_config;
 int test_run_case(const struct test_suite *suite, const struct test_case *tc,
 		  struct test_ctx *ctx);
 int test_run_suite(const struct test_suite *suite, struct test_ctx *ctx);
+unsigned int test_tap_total(void);
 
 #endif

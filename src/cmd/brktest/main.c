@@ -85,6 +85,7 @@ static void usage(const char *prog)
 		"  --workers N        stress workers (default: 4)\n"
 		"  --iterations N     stress iterations (default: 5)\n"
 		"  --duration SEC     stress duration hint (default: 0)\n"
+		"  --format human|tap output format (default: human)\n"
 		"  --no-isolate       run cases in the harness process\n"
 		"  --allow-destructive allow wall-clock changes and similar tests\n"
 		"  --verbose          verbose output\n"
@@ -169,10 +170,13 @@ static int run_named_case(const struct test_suite *suite, const char *name,
 
 static int run_alias(const struct suite_alias *alias, struct test_ctx *ctx)
 {
-	printf("\n=== %s ===\n", alias->name);
+	if (test_config.format == TEST_FORMAT_HUMAN)
+		printf("\n=== %s ===\n", alias->name);
 	int ret = run_named_case(alias->suite, alias->case_name, ctx);
 
-	printf("=== %s: %s ===\n", alias->name, ret ? "FAILED" : "ok");
+	if (test_config.format == TEST_FORMAT_HUMAN)
+		printf("=== %s: %s ===\n", alias->name,
+		       ret ? "FAILED" : "ok");
 	return ret;
 }
 
@@ -218,6 +222,20 @@ int main(int argc, char *argv[])
 		} else if (!strcmp(argv[i], "--duration") && i + 1 < argc) {
 			test_config.duration_ms = (unsigned int)strtoul(
 				argv[++i], NULL, 0) * 1000;
+		} else if (!strcmp(argv[i], "--format") && i + 1 < argc) {
+			const char *format = argv[++i];
+
+			if (!strcmp(format, "human"))
+				test_config.format = TEST_FORMAT_HUMAN;
+			else if (!strcmp(format, "tap"))
+				test_config.format = TEST_FORMAT_TAP;
+			else {
+				fprintf(stderr,
+					"brktest: unknown format: %s\n\n",
+					format);
+				usage(argv[0]);
+				return 1;
+			}
 		} else if (argv[i][0] == '-') {
 			fprintf(stderr, "brktest: unknown option: %s\n\n",
 				argv[i]);
@@ -237,9 +255,14 @@ int main(int argc, char *argv[])
 	ctx.workers = test_config.workers ? test_config.workers : 1;
 	ctx.iterations = test_config.iterations ? test_config.iterations : 1;
 	ctx.duration_ms = test_config.duration_ms;
-	printf("brktest: seed=%u, timeout=%ums, workers=%u, iterations=%u, isolate=%s\n",
-	       ctx.seed, test_config.timeout_ms, ctx.workers, ctx.iterations,
-	       test_config.isolate ? "yes" : "no");
+	if (test_config.format == TEST_FORMAT_TAP) {
+		printf("TAP version 13\n");
+	} else {
+		printf("brktest: seed=%u, timeout=%ums, workers=%u, iterations=%u, isolate=%s\n",
+		       ctx.seed, test_config.timeout_ms, ctx.workers,
+		       ctx.iterations,
+		       test_config.isolate ? "yes" : "no");
+	}
 
 	if (!strcmp(target, "all")) {
 		total = count_group(false) + count_group(true);
@@ -300,6 +323,11 @@ int main(int argc, char *argv[])
 	}
 
 done:
-	printf("\n%d suite(s), %d failed\n", total, failures);
+	if (test_config.format == TEST_FORMAT_TAP) {
+		printf("1..%u\n", test_tap_total());
+		printf("# %d suite(s), %d failed\n", total, failures);
+	} else {
+		printf("\n%d suite(s), %d failed\n", total, failures);
+	}
 	return failures ? 1 : 0;
 }
