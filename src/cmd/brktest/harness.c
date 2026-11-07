@@ -1,6 +1,7 @@
 #include "harness.h"
 #include "util.h"
 
+#include <fcntl.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,7 +17,20 @@ struct test_config test_config = {
 	.iterations = 5,
 	.duration_ms = 0,
 	.isolate = true,
+	.format = TEST_FORMAT_HUMAN,
 };
+
+static unsigned int tap_total;
+
+static bool tap_mode(void)
+{
+	return test_config.format == TEST_FORMAT_TAP;
+}
+
+unsigned int test_tap_total(void)
+{
+	return tap_total;
+}
 
 static unsigned long long now_ms(void)
 {
@@ -68,6 +82,45 @@ static int wait_for_child(pid_t pid, int timeout_ms, bool own_pgrp,
 	}
 }
 
+static void report_skip(const struct test_suite *suite,
+			const struct test_case *tc, const char *reason)
+{
+	tap_total++;
+	if (tap_mode()) {
+		printf("ok %u - %s.%s # SKIP %s\n", tap_total, suite->name,
+		       tc->name, reason);
+		return;
+	}
+	printf("[SKIP] %s.%s (%s)\n", suite->name, tc->name, reason);
+}
+
+static void report_result(const struct test_suite *suite,
+			  const struct test_case *tc, int result,
+			  unsigned long long elapsed, const char *detail)
+{
+	tap_total++;
+	if (tap_mode()) {
+		printf("%s %u - %s.%s\n",
+		       result == TEST_PASS ? "ok" : "not ok", tap_total,
+		       suite->name, tc->name);
+		if (detail)
+			printf("# %s.%s: %s\n", suite->name, tc->name,
+			       detail);
+		return;
+	}
+
+	if (result == TEST_PASS) {
+		printf("[ OK ] %s.%s (%llums)\n", suite->name, tc->name,
+		       elapsed);
+	} else if (detail) {
+		printf("[FAIL] %s.%s (%llums, %s)\n", suite->name, tc->name,
+		       elapsed, detail);
+	} else {
+		printf("[FAIL] %s.%s (%llums)\n", suite->name, tc->name,
+		       elapsed);
+	}
+}
+
 int test_run_case(const struct test_suite *suite, const struct test_case *tc,
 		  struct test_ctx *ctx)
 {
@@ -80,17 +133,18 @@ int test_run_case(const struct test_suite *suite, const struct test_case *tc,
 	pid_t pid;
 
 	if ((tc->flags & TEST_REQUIRE_ROOT) && geteuid() != 0) {
-		printf("[SKIP] %s.%s (requires root)\n", suite->name, tc->name);
+		report_skip(suite, tc, "requires root");
 		return TEST_SKIP;
 	}
 	if ((tc->flags & TEST_DESTRUCTIVE) && !test_config.allow_destructive) {
-		printf("[SKIP] %s.%s (destructive; use --allow-destructive)\n",
-		       suite->name, tc->name);
+		report_skip(suite, tc, "destructive; use --allow-destructive");
 		return TEST_SKIP;
 	}
 
-	printf("[RUN ] %s.%s\n", suite->name, tc->name);
-	fflush(stdout);
+	if (!tap_mode()) {
+		printf("[RUN ] %s.%s\n", suite->name, tc->name);
+		fflush(stdout);
+	}
 	start = now_ms();
 
 	if (!test_config.isolate) {
@@ -98,16 +152,14 @@ int test_run_case(const struct test_suite *suite, const struct test_case *tc,
 
 		elapsed = now_ms() - start;
 		if (ret == 0) {
-			printf("[ OK ] %s.%s (%llums)\n", suite->name, tc->name,
-			       elapsed);
+			report_result(suite, tc, TEST_PASS, elapsed, NULL);
 			return TEST_PASS;
 		}
 		if (ret == TEST_SKIP_CODE) {
-			printf("[SKIP] %s.%s\n", suite->name, tc->name);
+			report_skip(suite, tc, "test requested skip");
 			return TEST_SKIP;
 		}
-		printf("[FAIL] %s.%s (%llums)\n", suite->name, tc->name,
-		       elapsed);
+		report_result(suite, tc, TEST_FAIL, elapsed, NULL);
 		return TEST_FAIL;
 	}
 
@@ -123,6 +175,16 @@ int test_run_case(const struct test_suite *suite, const struct test_case *tc,
 		 */
 		if (tc->flags & TEST_OWN_PGRP)
 			(void)syscall(SYS_setpgid, 0, 0);
+		if (tap_mode()) {
+			int null = open("/dev/null", O_WRONLY);
+
+			if (null >= 0) {
+				dup2(null, STDOUT_FILENO);
+				dup2(null, STDERR_FILENO);
+				if (null > STDERR_FILENO)
+					close(null);
+			}
+		}
 		int ret = tc->run(ctx);
 
 		fflush(NULL);
@@ -135,31 +197,28 @@ int test_run_case(const struct test_suite *suite, const struct test_case *tc,
 	elapsed = now_ms() - start;
 
 	if (timed_out) {
-		printf("[FAIL] %s.%s (%llums, TIMEOUT after %ums)\n",
-		       suite->name, tc->name, elapsed, timeout_ms);
+		report_result(suite, tc, TEST_FAIL, elapsed, "TIMEOUT");
 		return TEST_FAIL;
 	}
 	if (status < 0) {
-		printf("[FAIL] %s.%s (%llums, waitpid failed)\n", suite->name,
-		       tc->name, elapsed);
+		report_result(suite, tc, TEST_FAIL, elapsed,
+			      "waitpid failed");
 		return TEST_FAIL;
 	}
 	if (WIFSIGNALED(status)) {
-		printf("[FAIL] %s.%s (%llums, signal %d)\n", suite->name,
-		       tc->name, elapsed, WTERMSIG(status));
+		report_result(suite, tc, TEST_FAIL, elapsed, "signalled");
 		return TEST_FAIL;
 	}
 	if (WIFEXITED(status) && WEXITSTATUS(status) == TEST_SKIP_CODE) {
-		printf("[SKIP] %s.%s\n", suite->name, tc->name);
+		report_skip(suite, tc, "test requested skip");
 		return TEST_SKIP;
 	}
 	if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
-		printf("[FAIL] %s.%s (%llums)\n", suite->name, tc->name,
-		       elapsed);
+		report_result(suite, tc, TEST_FAIL, elapsed, NULL);
 		return TEST_FAIL;
 	}
 
-	printf("[ OK ] %s.%s (%llums)\n", suite->name, tc->name, elapsed);
+	report_result(suite, tc, TEST_PASS, elapsed, NULL);
 	return TEST_PASS;
 }
 
@@ -169,7 +228,8 @@ int test_run_suite(const struct test_suite *suite, struct test_ctx *ctx)
 	unsigned int failed = 0;
 	unsigned int skipped = 0;
 
-	printf("\n=== %s ===\n", suite->name);
+	if (!tap_mode())
+		printf("\n=== %s ===\n", suite->name);
 	for (size_t i = 0; i < suite->nr_cases; i++) {
 		int ret = test_run_case(suite, &suite->cases[i], ctx);
 
@@ -179,6 +239,12 @@ int test_run_suite(const struct test_suite *suite, struct test_ctx *ctx)
 			skipped++;
 		else
 			failed++;
+	}
+
+	if (tap_mode()) {
+		printf("# %s: %u passed, %u failed, %u skipped\n", suite->name,
+		       passed, failed, skipped);
+		return failed ? -1 : 0;
 	}
 
 	printf("--- %s: %u passed, %u failed, %u skipped\n", suite->name,
