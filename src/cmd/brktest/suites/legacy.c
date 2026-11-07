@@ -27,6 +27,8 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "../harness.h"
+
 static volatile int caught;
 
 static void on_sigusr1(int sig)
@@ -1430,89 +1432,132 @@ static int test_net(void)
 	return 0;
 }
 
-struct test_suite {
-	const char *name;
-	int (*run)(void);
+static int case_fork(struct test_ctx *ctx)
+{
+	(void)ctx;
+	return test_fork();
+}
+
+static int case_kill(struct test_ctx *ctx)
+{
+	(void)ctx;
+	return test_kill();
+}
+
+static int case_signal(struct test_ctx *ctx)
+{
+	(void)ctx;
+	return test_signal();
+}
+
+static int case_meta(struct test_ctx *ctx)
+{
+	(void)ctx;
+	return test_meta();
+}
+
+static int case_perm(struct test_ctx *ctx)
+{
+	(void)ctx;
+	return test_perm();
+}
+
+static int case_group(struct test_ctx *ctx)
+{
+	(void)ctx;
+	return test_group();
+}
+
+static int case_auth(struct test_ctx *ctx)
+{
+	(void)ctx;
+	return test_auth();
+}
+
+static int case_posix(struct test_ctx *ctx)
+{
+	(void)ctx;
+	return test_posix();
+}
+
+static int case_symlink(struct test_ctx *ctx)
+{
+	(void)ctx;
+	return test_symlink();
+}
+
+static int case_net(struct test_ctx *ctx)
+{
+	(void)ctx;
+	return test_net();
+}
+
+static const struct test_case process_cases[] = {
+	{ "fork", case_fork, TEST_OWN_PGRP, 10000 },
+	{ "kill", case_kill, TEST_OWN_PGRP, 10000 },
 };
 
-static const struct test_suite suites[] = {
-	{ "fork", test_fork },	     { "kill", test_kill },
-	{ "sig", test_signal },	     { "meta", test_meta },
-	{ "perm", test_perm },	     { "group", test_group },
-	{ "auth", test_auth },	     { "posix", test_posix },
-	{ "symlink", test_symlink }, { "net", test_net },
+static const struct test_case signal_cases[] = {
+	{ "basic", case_signal, 0, 10000 },
 };
 
-#define NR_SUITES (sizeof(suites) / sizeof(suites[0]))
+static const struct test_case fs_cases[] = {
+	{ "meta", case_meta, 0, 10000 },
+	{ "symlink", case_symlink, 0, 10000 },
+};
 
-static void usage(const char *prog)
-{
-	fprintf(stderr,
-		"usage: %s [suite|all]\n\n"
-		"Suites:\n"
-		"  fork   process creation and wait\n"
-		"  kill   exit status and signal delivery\n"
-		"  sig    signal handlers, masks and SIGWINCH\n"
-		"  meta   chmod, utime, utimes, utimensat and statvfs\n"
-		"  perm   uid/gid credentials, DAC checks and umask\n"
-		"  group  supplementary groups and group permissions\n"
-		"  auth   password hashes and user/group database\n"
-		"  posix  clock, iovec, futimens, fstatat, mkfifo, pselect/ppoll\n"
-		"  symlink symlink following, lstat, NOFOLLOW and loops\n"
-		"  net    TCP/UDP loopback sockets and inet helpers\n"
-		"  all    run every suite (default)\n",
-		prog);
-}
+static const struct test_case creds_cases[] = {
+	{ "perm", case_perm, TEST_REQUIRE_ROOT | TEST_OWN_PGRP, 15000 },
+	{ "group", case_group, TEST_REQUIRE_ROOT | TEST_OWN_PGRP, 10000 },
+	{ "auth", case_auth, TEST_REQUIRE_ROOT | TEST_OWN_PGRP, 10000 },
+};
 
-static int run_suite(const struct test_suite *suite)
-{
-	int ret;
+static const struct test_case posix_cases[] = {
+	{ "batch", case_posix, TEST_OWN_PGRP, 20000 },
+};
 
-	printf("\n=== %s ===\n", suite->name);
-	ret = suite->run();
-	if (ret == 0) {
-		printf("=== %s: ok ===\n", suite->name);
-		return 0;
-	}
-	printf("=== %s: FAILED ===\n", suite->name);
-	return -1;
-}
+static const struct test_case net_cases[] = {
+	{ "loopback", case_net, TEST_OWN_PGRP, 20000 },
+};
 
-int main(int argc, char *argv[])
-{
-	const char *what = argc > 1 ? argv[1] : "all";
-	int failures = 0;
-	int total = 0;
+const struct test_suite brktest_process_suite = {
+	.name = "process",
+	.description = "process creation, exit status and signals",
+	.cases = process_cases,
+	.nr_cases = sizeof(process_cases) / sizeof(process_cases[0]),
+};
 
-	if (!strcmp(what, "-h") || !strcmp(what, "--help")) {
-		usage(argv[0]);
-		return 0;
-	}
+const struct test_suite brktest_signal_suite = {
+	.name = "signal",
+	.description = "signal handlers, masks and SIGWINCH",
+	.cases = signal_cases,
+	.nr_cases = sizeof(signal_cases) / sizeof(signal_cases[0]),
+};
 
-	if (!strcmp(what, "-check-euid"))
-		return (getuid() == 1000 && geteuid() == 0) ? 0 : 1;
-	if (!strcmp(what, "-check-egid"))
-		return (getgid() == 1000 && getegid() == 2000) ? 0 : 1;
-	if (!strcmp(what, "all")) {
-		total = (int)NR_SUITES;
-		for (size_t i = 0; i < NR_SUITES; i++)
-			if (run_suite(&suites[i]) != 0)
-				failures++;
-	} else {
-		for (size_t i = 0; i < NR_SUITES; i++) {
-			if (!strcmp(what, suites[i].name)) {
-				total = 1;
-				if (run_suite(&suites[i]) != 0)
-					failures++;
-				goto done;
-			}
-		}
-		fprintf(stderr, "%s: unknown suite: %s\n\n", argv[0], what);
-		usage(argv[0]);
-		return 1;
-	}
+const struct test_suite brktest_fs_suite = {
+	.name = "fs",
+	.description = "file metadata, links and symlinks",
+	.cases = fs_cases,
+	.nr_cases = sizeof(fs_cases) / sizeof(fs_cases[0]),
+};
 
-done:
-	printf("\n%d suite(s), %d failed\n", total, failures);
-	return failures ? 1 : 0;
-}
+const struct test_suite brktest_creds_suite = {
+	.name = "creds",
+	.description = "credentials, permissions and auth databases",
+	.cases = creds_cases,
+	.nr_cases = sizeof(creds_cases) / sizeof(creds_cases[0]),
+};
+
+const struct test_suite brktest_posix_suite = {
+	.name = "posix",
+	.description = "POSIX syscall batch",
+	.cases = posix_cases,
+	.nr_cases = sizeof(posix_cases) / sizeof(posix_cases[0]),
+};
+
+const struct test_suite brktest_net_suite = {
+	.name = "net",
+	.description = "TCP/UDP loopback sockets and inet helpers",
+	.cases = net_cases,
+	.nr_cases = sizeof(net_cases) / sizeof(net_cases[0]),
+};
