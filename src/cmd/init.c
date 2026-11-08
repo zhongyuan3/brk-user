@@ -152,7 +152,7 @@ int main(void)
 		while (1) {
 			pid_t wpid = wait(0);
 			if (wpid == cpid) {
-				printf("\nPress any key to restart shell\n");
+				printf("\nPress Enter to restart shell\n");
 				getchar();
 				break;
 			}
