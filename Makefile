@@ -2,6 +2,9 @@ BUILD_ROOT ?= build
 OBJDIR := $(BUILD_ROOT)/obj
 BINDIR := $(BUILD_ROOT)/bin
 
+# The hooks target only touches Git configuration and must not require a
+# cross compiler.
+ifneq ($(MAKECMDGOALS),hooks)
 ifndef CROSS_COMPILE
 # Prefer the bare-metal toolchain.  Some riscv64-linux-gnu libgcc builds use
 # Zcb instructions (e.g. c.lbu), which the QEMU rv64 CPU does not implement.
@@ -21,6 +24,7 @@ echo "*** Error: Cross compiler not found" 1>&2; \
 echo "***" 1>&2; \
 exit 1; \
 fi)
+endif
 endif
 
 KERNEL_ROOT ?= ../brk
@@ -90,7 +94,7 @@ CC_HOST_SRCS := $(sort $(wildcard $(CMD_DIR)/cc/*.c))
 CC_HOST_OBJS := $(patsubst src/%.c,$(CC_HOST_OBJDIR)/%.o,$(CC_HOST_SRCS))
 DEPS += $(CC_HOST_OBJS:.o=.d)
 
-.PHONY: all lib cc-host clean help list-progs
+.PHONY: all lib cc-host clean help hooks list-progs
 
 all: $(USER_BINS)
 
@@ -101,12 +105,17 @@ cc-host: $(CC_HOST)
 list-progs:
 	@printf '%s\n' $(USER_PROGS)
 
+hooks:
+	@git config core.hooksPath .githooks
+	@echo "  HOOK    core.hooksPath=.githooks"
+
 help:
 	@echo "Targets:"
 	@echo "  all          Build all user programs (default)"
 	@echo "  lib          Build libuser.a only"
 	@echo "  cc-host      Build the host-side cc helper"
 	@echo "  list-progs   Print the names of all user programs"
+	@echo "  hooks        Enable the Conventional Commit hook"
 	@echo "  clean        Remove $(BUILD_ROOT)"
 	@echo "  help         Show this help"
 	@echo ""
