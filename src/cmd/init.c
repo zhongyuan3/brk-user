@@ -9,11 +9,6 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-static void handle_sigint(int sig)
-{
-	(void)sig;
-}
-
 static int join_path(char *out, size_t size, const char *dir, const char *name)
 {
 	int n = snprintf(out, size, "%s/%s", dir, name);
@@ -130,11 +125,28 @@ static void setup_users(void)
 	chmod("/bin/passwd", 04755);
 }
 
+static void network_init(void)
+{
+	pid_t pid = fork();
+
+	if (pid == 0) {
+		char *argv[] = { "dhcp", "eth0", 0 };
+
+		execv("/bin/dhcp", argv);
+		_exit(127);
+	}
+	if (pid > 0)
+		waitpid(pid, NULL, 0);
+}
+
 int main(void)
 {
 	setup_users();
+	network_init();
 
-	signal(SIGINT, handle_sigint);
+	signal(SIGINT, SIG_IGN);
+	signal(SIGQUIT, SIG_IGN);
+
 	while (1) {
 		pid_t cpid = fork();
 		if (cpid < 0) {
@@ -151,11 +163,8 @@ int main(void)
 
 		while (1) {
 			pid_t wpid = wait(0);
-			if (wpid == cpid) {
-				printf("\nPress Enter to restart shell\n");
-				getchar();
+			if (wpid == cpid)
 				break;
-			}
 		}
 	}
 
