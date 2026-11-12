@@ -115,6 +115,39 @@ static void show_interface(int fd, const char *name)
 		printf("        ether %02x:%02x:%02x:%02x:%02x:%02x\n", mac[0],
 		       mac[1], mac[2], mac[3], mac[4], mac[5]);
 	}
+
+	struct ifstats stats = { 0 };
+
+	strncpy(stats.ifs_name, name, IFNAMSIZ - 1);
+	if (ioctl(fd, SIOCGIFSTATS, &stats) == 0)
+		printf("        RX packets %llu bytes %llu errors %llu dropped %llu\n"
+		       "        TX packets %llu bytes %llu errors %llu dropped %llu\n",
+		       (unsigned long long)stats.rx_packets,
+		       (unsigned long long)stats.rx_bytes,
+		       (unsigned long long)stats.rx_errors,
+		       (unsigned long long)stats.rx_dropped,
+		       (unsigned long long)stats.tx_packets,
+		       (unsigned long long)stats.tx_bytes,
+		       (unsigned long long)stats.tx_errors,
+		       (unsigned long long)stats.tx_dropped);
+}
+
+static void show_all_interfaces(int fd)
+{
+	struct ifreq reqs[8];
+	struct ifconf ifc = {
+		.ifc_len = sizeof(reqs),
+		.ifc_buf = (char *)reqs,
+	};
+
+	if (ioctl(fd, SIOCGIFCONF, &ifc) != 0) {
+		show_interface(fd, "lo");
+		show_interface(fd, "eth0");
+		return;
+	}
+
+	for (int i = 0; i < ifc.ifc_len / (int)sizeof(reqs[0]); i++)
+		show_interface(fd, reqs[i].ifr_name);
 }
 
 int main(int argc, char *argv[])
@@ -132,8 +165,7 @@ int main(int argc, char *argv[])
 	}
 
 	if (argc == 1) {
-		show_interface(fd, "lo");
-		show_interface(fd, "eth0");
+		show_all_interfaces(fd);
 		close(fd);
 		return 0;
 	}

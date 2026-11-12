@@ -302,7 +302,8 @@ int main(int argc, char *argv[])
 		close(fd);
 		return 1;
 	}
-	if (get_mac(fd, ifname, mac) != 0) {
+	if (get_mac(fd, ifname, mac) != 0 ||
+	    set_if_up(fd, ifname) != 0) {
 		perror("dhcp: interface");
 		close(fd);
 		return 1;
