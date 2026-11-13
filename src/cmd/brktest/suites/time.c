@@ -3,6 +3,8 @@
 
 #include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <sys/time.h>
 #include <time.h>
 #include <unistd.h>
@@ -36,14 +38,12 @@ static int case_clock_basic(struct test_ctx *ctx)
 	if (ts_to_ns(&boot) <= 0)
 		return test_fail_msg("time: boottime is not positive");
 
-	if (clock_getres(CLOCK_MONOTONIC, &res) != 0 ||
-	    ts_to_ns(&res) <= 0)
+	if (clock_getres(CLOCK_MONOTONIC, &res) != 0 || ts_to_ns(&res) <= 0)
 		return test_fail_msg("time: monotonic resolution is invalid");
 	if (clock_getres(CLOCK_PROCESS_CPUTIME_ID, &res) != 0 ||
 	    ts_to_ns(&res) <= 0)
 		return test_fail_msg("time: cpu resolution is invalid");
-	if (clock_getres(CLOCK_BOOTTIME, &res) != 0 ||
-	    ts_to_ns(&res) <= 0)
+	if (clock_getres(CLOCK_BOOTTIME, &res) != 0 || ts_to_ns(&res) <= 0)
 		return test_fail_msg("time: boottime resolution is invalid");
 	return 0;
 }
@@ -150,6 +150,60 @@ static int case_wall_set(struct test_ctx *ctx)
 	return 0;
 }
 
+static int case_tz_offset(struct test_ctx *ctx)
+{
+	static const struct {
+		const char *tz;
+		long want;
+	} cases[] = {
+		{ NULL, 0 },
+		{ "", 0 },
+		{ "UTC", 0 },
+		{ "GMT", 0 },
+		{ "UTC+8", 8 * 3600 },
+		{ "UTC-5", -5 * 3600 },
+		{ "UTC+05:30", 5 * 3600 + 30 * 60 },
+		{ "CST-8", 8 * 3600 },
+		{ "EST5", -5 * 3600 },
+		{ "Asia/Shanghai", 0 },
+		{ "UTC+99", 0 },
+	};
+	const char *old = getenv("TZ");
+	char *saved = old ? strdup(old) : NULL;
+
+	(void)ctx;
+
+	for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+		long got;
+
+		if (cases[i].tz) {
+			if (setenv("TZ", cases[i].tz, 1) != 0) {
+				free(saved);
+				return test_fail_msg("time: setenv TZ failed");
+			}
+		} else {
+			(void)unsetenv("TZ");
+		}
+
+		got = brk_tz_offset();
+		if (got != cases[i].want) {
+			free(saved);
+			return test_fail_msg("time: TZ=%s gave %ld, want %ld",
+					     cases[i].tz ? cases[i].tz :
+							   "(unset)",
+					     got, cases[i].want);
+		}
+	}
+
+	if (saved) {
+		(void)setenv("TZ", saved, 1);
+		free(saved);
+	} else {
+		(void)unsetenv("TZ");
+	}
+	return 0;
+}
+
 static const struct test_case time_cases[] = {
 	{ "clocks", case_clock_basic, TEST_OWN_PGRP, 10000 },
 	{ "nanosleep", case_nanosleep, TEST_OWN_PGRP, 10000 },
@@ -159,6 +213,7 @@ static const struct test_case time_cases[] = {
 	  10000 },
 	{ "wall_set", case_wall_set,
 	  TEST_REQUIRE_ROOT | TEST_DESTRUCTIVE | TEST_OWN_PGRP, 15000 },
+	{ "tz", case_tz_offset, 0, 10000 },
 };
 
 const struct test_suite brktest_time_suite = {

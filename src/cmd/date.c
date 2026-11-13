@@ -5,11 +5,13 @@
 #include <sys/time.h>
 #include <time.h>
 
-static const char usage[] = "Usage: date [-u] [+FORMAT]\n"
-			    "Print the current date and time (UTC).\n"
-			    "\n"
-			    "  +%s      print seconds since the epoch\n"
-			    "  --help   display this help and exit";
+static const char usage[] =
+	"Usage: date [-u] [+FORMAT]\n"
+	"Print the current date and time.\n"
+	"\n"
+	"  -u       use UTC instead of the TZ environment variable\n"
+	"  +%s      print seconds since the epoch\n"
+	"  --help   display this help and exit";
 
 /* Howard Hinnant's civil_from_days. */
 static void civil_from_days(long z, int *year, unsigned int *month,
@@ -35,14 +37,17 @@ int main(int argc, char *argv[])
 {
 	struct timeval tv;
 	bool epoch = false;
+	bool utc = false;
 	int arg = 1;
 
 	brk_cmd_init(argc, argv);
 
 	if (arg < argc && !strcmp(argv[arg], "--help"))
 		brk_cmd_help_exit(usage);
-	if (arg < argc && !strcmp(argv[arg], "-u"))
+	if (arg < argc && !strcmp(argv[arg], "-u")) {
+		utc = true;
 		arg++;
+	}
 	if (arg < argc && argv[arg][0] == '+') {
 		if (!strcmp(argv[arg], "+%s"))
 			epoch = true;
@@ -62,8 +67,10 @@ int main(int argc, char *argv[])
 		return BRK_CMD_EXIT_OK;
 	}
 
-	long days = tv.tv_sec / 86400;
-	long rem = tv.tv_sec % 86400;
+	long offset = utc ? 0 : brk_tz_offset();
+	long local = tv.tv_sec + offset;
+	long days = local / 86400;
+	long rem = local % 86400;
 
 	if (rem < 0) {
 		rem += 86400;
@@ -74,8 +81,16 @@ int main(int argc, char *argv[])
 	unsigned int month, day;
 	civil_from_days(days, &year, &month, &day);
 
-	printf("%04d-%02u-%02u %02ld:%02ld:%02ld UTC\n", year, month, day,
-	       rem / 3600, (rem % 3600) / 60, rem % 60);
+	printf("%04d-%02u-%02u %02ld:%02ld:%02ld", year, month, day, rem / 3600,
+	       (rem % 3600) / 60, rem % 60);
+	if (offset == 0) {
+		puts(" UTC");
+	} else {
+		long abs = offset < 0 ? -offset : offset;
+
+		printf(" UTC%c%02ld:%02ld\n", offset < 0 ? '-' : '+',
+		       abs / 3600, (abs % 3600) / 60);
+	}
 
 	return BRK_CMD_EXIT_OK;
 }

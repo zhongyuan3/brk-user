@@ -13,6 +13,7 @@
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/stat.h>
+#include <time.h>
 #include <unistd.h>
 
 struct ls_args {
@@ -200,10 +201,11 @@ static void civil_from_days(long z, int *year, unsigned int *month,
 	*day = d;
 }
 
-static void format_time(long sec, char *buf, size_t buflen)
+static void format_time(long sec, long offset, char *buf, size_t buflen)
 {
-	long days = sec / 86400;
-	long rem = sec % 86400;
+	long local = sec + offset;
+	long days = local / 86400;
+	long rem = local % 86400;
 	int year;
 	unsigned int month, day;
 
@@ -278,6 +280,7 @@ static int ls_long(const char *path, char **names, size_t n,
 	int wsize = 1;
 	char szbuf[32];
 	int ret = 1;
+	long tz_offset = brk_tz_offset();
 
 	memcpy(path_buf, path, path_len);
 	char *sep;
@@ -308,7 +311,7 @@ static int ls_long(const char *path, char **names, size_t n,
 		}
 		format_user(sts[i].st_uid, users[i], 32);
 		format_group(sts[i].st_gid, groups[i], 32);
-		format_time(sts[i].st_mtime, times[i], 32);
+		format_time(sts[i].st_mtime, tz_offset, times[i], 32);
 	}
 
 	for (size_t i = 0; i < n; i++) {
@@ -593,10 +596,11 @@ static int ls_one(const char *path, const struct ls_args *args)
 		}
 
 		char user[32], group[32], timestr[32];
+		long tz_offset = brk_tz_offset();
 
 		format_user(st.st_uid, user, sizeof(user));
 		format_group(st.st_gid, group, sizeof(group));
-		format_time(st.st_mtime, timestr, sizeof(timestr));
+		format_time(st.st_mtime, tz_offset, timestr, sizeof(timestr));
 		print_long_line(path, path, &st, args->human_readable, 1, 1, 1,
 				1, user, group, timestr);
 		return 0;

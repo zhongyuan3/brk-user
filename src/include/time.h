@@ -17,4 +17,6 @@ int utimensat(int dirfd, const char *path, const struct timespec times[2],
 
 int nanosleep(const struct timespec *req, struct timespec *rem);
 
+long brk_tz_offset(void);
+
 #endif
