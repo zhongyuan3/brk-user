@@ -4,6 +4,7 @@
 #include <fcntl.h>
 #include <signal.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
@@ -125,6 +126,35 @@ static void setup_users(void)
 	chmod("/bin/passwd", 04755);
 }
 
+static void set_default_env(const char *name, const char *value)
+{
+	const char *old = getenv(name);
+
+	if (old && old[0])
+		return;
+	if (setenv(name, value, 1) != 0)
+		perror(name);
+}
+
+static void setup_environment(void)
+{
+	char cwd[PATH_MAX];
+
+	set_default_env("PATH", "/bin:/sbin:/usr/bin:/usr/sbin");
+	set_default_env("HOME", "/root");
+	set_default_env("USER", "root");
+	set_default_env("LOGNAME", "root");
+	set_default_env("SHELL", "/bin/sh");
+	set_default_env("TERM", "vt100");
+
+	if (getcwd(cwd, sizeof(cwd) - 1)) {
+		cwd[sizeof(cwd) - 1] = '\0';
+		set_default_env("PWD", cwd);
+	} else {
+		set_default_env("PWD", "/");
+	}
+}
+
 static void network_init(void)
 {
 	pid_t pid = fork();
@@ -142,6 +172,7 @@ static void network_init(void)
 int main(void)
 {
 	setup_users();
+	setup_environment();
 	network_init();
 
 	signal(SIGINT, SIG_IGN);

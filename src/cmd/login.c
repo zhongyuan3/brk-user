@@ -3,6 +3,7 @@
 #include <pwutil.h>
 #include <shadow.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
@@ -14,6 +15,8 @@ static int login_as(const char *user)
 	struct passwd *pw = getpwnam(user);
 	struct spwd *sp = getspnam(user);
 	char password[128];
+	char term[64];
+	const char *old_term;
 
 	if (!pw || !sp)
 		return -1;
@@ -30,6 +33,15 @@ static int login_as(const char *user)
 
 	if (pw->pw_dir && pw->pw_dir[0])
 		(void)chdir(pw->pw_dir);
+
+	term[0] = '\0';
+	old_term = getenv("TERM");
+	if (old_term) {
+		strncpy(term, old_term, sizeof(term) - 1);
+		term[sizeof(term) - 1] = '\0';
+	}
+	if (brk_cmd_env_login(pw, term[0] ? term : NULL) != 0)
+		return -1;
 
 	const char *shell = (pw->pw_shell && pw->pw_shell[0]) ? pw->pw_shell :
 								"/bin/sh";

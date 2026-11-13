@@ -22,6 +22,11 @@ void brk_cmd_init(int argc, char *argv[]);
 const char *brk_cmd_progname(void);
 const char *brk_cmd_basename(const char *path);
 
+struct passwd;
+
+int brk_cmd_env_login(const struct passwd *pw, const char *term);
+int brk_cmd_env_user(const struct passwd *pw);
+
 void brk_cmd_error(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 void brk_cmd_error_errno(const char *msg);
 void brk_cmd_warn(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
