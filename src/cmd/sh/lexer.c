@@ -71,11 +71,48 @@ char *sh_buf_push(char *buf, size_t *len, size_t *cap, char c)
 	return buf;
 }
 
+static int append_value(char **buf, size_t *len, size_t *cap, const char *value)
+{
+	char *b = *buf;
+
+	if (!value)
+		return 0;
+
+	for (const char *p = value; *p; p++) {
+		b = sh_buf_push(b, len, cap, *p);
+		if (!b)
+			return -1;
+		*buf = b;
+	}
+	return 0;
+}
+
+static int append_long(char **buf, size_t *len, size_t *cap, long value)
+{
+	char text[32];
+	int n = snprintf(text, sizeof(text), "%ld", value);
+
+	if (n < 0 || (size_t)n >= sizeof(text))
+		return -1;
+	return append_value(buf, len, cap, text);
+}
+
+static int append_parameters(char **buf, size_t *len, size_t *cap)
+{
+	for (int i = 0; i < sh_argc; i++) {
+		if (i > 0 && append_value(buf, len, cap, " ") != 0)
+			return -1;
+		if (append_value(buf, len, cap, sh_argv[i]) != 0)
+			return -1;
+	}
+	return 0;
+}
+
 /*
- * Expand $NAME and ${NAME} from the process environment.  Returns 0 on
- * success, including the case where the variable is unset or empty.  *buf
- * may remain NULL when nothing was appended.  Returns -1 on allocation
- * failure.
+ * Expand $NAME, ${NAME}, special parameters and positional parameters.
+ * Returns 0 on success, including the case where the variable is unset or
+ * empty.  *buf may remain NULL when nothing was appended.  Returns -1 on
+ * allocation failure.
  */
 static int expand_variable(struct sh_lexer *lex, char **buf, size_t *len,
 			   size_t *cap, int *consumed)
@@ -83,9 +120,9 @@ static int expand_variable(struct sh_lexer *lex, char **buf, size_t *len,
 	char name[128];
 	size_t name_len = 0;
 	size_t save = lex->pos;
-	const char *value;
-	char *b = *buf;
 	int braced = 0;
+	int special = 0;
+	int index = -1;
 
 	*consumed = 0;
 	advance(lex); /* $ */
@@ -95,10 +132,54 @@ static int expand_variable(struct sh_lexer *lex, char **buf, size_t *len,
 		advance(lex);
 	}
 
-	if (!braced &&
-	    !(isalpha((unsigned char)peek(lex)) || peek(lex) == '_')) {
-		lex->pos = save;
-		return 0;
+	if (braced) {
+		char c = peek(lex);
+
+		if (c && strchr("?$#@*-!", c)) {
+			special = c;
+			advance(lex);
+			if (peek(lex) != '}') {
+				lex->pos = save;
+				return 0;
+			}
+			advance(lex);
+			goto expand;
+		}
+		if (isdigit((unsigned char)c)) {
+			index = 0;
+			while (isdigit((unsigned char)peek(lex))) {
+				if (index < 100000)
+					index = index * 10 + (peek(lex) - '0');
+				advance(lex);
+			}
+			if (peek(lex) != '}') {
+				lex->pos = save;
+				return 0;
+			}
+			advance(lex);
+			goto expand;
+		}
+		if (!isalpha((unsigned char)c) && c != '_') {
+			lex->pos = save;
+			return 0;
+		}
+	} else {
+		char c = peek(lex);
+
+		if (isdigit((unsigned char)c)) {
+			index = c - '0';
+			advance(lex);
+			goto expand;
+		}
+		if (c && strchr("?$#@*-!", c)) {
+			special = c;
+			advance(lex);
+			goto expand;
+		}
+		if (!isalpha((unsigned char)c) && c != '_') {
+			lex->pos = save;
+			return 0;
+		}
 	}
 
 	while (!at_eof(lex) &&
@@ -123,17 +204,48 @@ static int expand_variable(struct sh_lexer *lex, char **buf, size_t *len,
 	}
 	name[name_len] = '\0';
 
-	value = getenv(name);
-	if (value) {
-		for (const char *p = value; *p; p++) {
-			b = sh_buf_push(b, len, cap, *p);
-			if (!b)
+	if (append_value(buf, len, cap, getenv(name)) != 0)
+		return -1;
+	*consumed = 1;
+	return 0;
+
+expand:
+	if (index >= 0) {
+		const char *value = NULL;
+
+		if (index == 0)
+			value = sh_arg0;
+		else if (index <= sh_argc && sh_argv)
+			value = sh_argv[index - 1];
+		if (append_value(buf, len, cap, value) != 0)
+			return -1;
+	} else {
+		switch (special) {
+		case '?':
+			if (append_long(buf, len, cap, sh_last_status) != 0)
 				return -1;
-			*buf = b;
+			break;
+		case '$':
+			if (append_long(buf, len, cap, (long)getpid()) != 0)
+				return -1;
+			break;
+		case '#':
+			if (append_long(buf, len, cap, sh_argc) != 0)
+				return -1;
+			break;
+		case '@':
+		case '*':
+			if (append_parameters(buf, len, cap) != 0)
+				return -1;
+			break;
+		case '-':
+		case '!':
+			break;
+		default:
+			break;
 		}
 	}
 
-	*buf = b;
 	*consumed = 1;
 	return 0;
 }

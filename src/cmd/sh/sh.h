@@ -96,6 +96,10 @@ sh_err_t sh_parse_line(struct sh_lexer *lex, struct sh_pipeline *out,
 sh_err_t sh_pipeline_exec(const struct sh_pipeline *p, int *exit_status);
 
 extern char cwd[1024];
+extern int sh_last_status;
+extern int sh_argc;
+extern char **sh_argv;
+extern const char *sh_arg0;
 
 void sh_builtin_exit(struct sh_pipeline *p) __attribute__((noreturn));
 sh_err_t sh_builtin_cd(struct sh_pipeline *p);

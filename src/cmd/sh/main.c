@@ -4,6 +4,11 @@
 
 #define SH_PROMPT_MAX 1024
 
+int sh_last_status;
+int sh_argc;
+char **sh_argv;
+const char *sh_arg0 = "sh";
+
 static int sh_is_builtin(const char *name)
 {
 	return !strcmp(name, "exit") || !strcmp(name, "cd") ||
@@ -17,7 +22,7 @@ static int sh_is_special_builtin(const char *name)
 	       !strcmp(name, "unset");
 }
 
-static int run_line(const char *line, size_t len)
+static int run_line_inner(const char *line, size_t len)
 {
 	struct sh_lexer lex;
 	struct sh_pipeline pl;
@@ -144,6 +149,14 @@ static int run_line(const char *line, size_t len)
 	return cmd_exit;
 }
 
+static int run_line(const char *line, size_t len)
+{
+	int status = run_line_inner(line, len);
+
+	sh_last_status = status;
+	return status;
+}
+
 static void chomp_crlf(char *s)
 {
 	size_t n = strlen(s);
@@ -211,7 +224,10 @@ static int run_script(const char *path)
 
 static void usage(const char *argv0)
 {
-	fprintf(stderr, "usage: %s [-c command] [script-file]\n", argv0);
+	fprintf(stderr,
+		"usage: %s [-c command [name [args...]]] "
+		"[script-file [args...]]\n",
+		argv0);
 }
 
 static char sh_prompt_char(void)
@@ -323,6 +339,13 @@ static int sh_build_prompt(char *buf, size_t size)
 		case 'W':
 			prompt_append_cwd(buf, size, &len, 1);
 			break;
+		case '?': {
+			char status[16];
+
+			snprintf(status, sizeof(status), "%d", sh_last_status);
+			prompt_append(buf, size, &len, status);
+			break;
+		}
 		case '$':
 			prompt_append_char(buf, size, &len, sh_prompt_char());
 			break;
@@ -457,6 +480,27 @@ static int init_shell_cwd(void)
 	return 0;
 }
 
+static void init_params(int argc, char **argv)
+{
+	sh_arg0 = argc > 0 && argv[0] ? argv[0] : "sh";
+	sh_argc = 0;
+	sh_argv = NULL;
+
+	if (argc >= 2 && !strcmp(argv[1], "-c")) {
+		if (argc > 3) {
+			sh_arg0 = argv[3];
+			sh_argc = argc - 4;
+			if (sh_argc > 0)
+				sh_argv = &argv[4];
+		}
+	} else if (argc >= 2 && strcmp(argv[1], "-h")) {
+		sh_arg0 = argv[1];
+		sh_argc = argc - 2;
+		if (sh_argc > 0)
+			sh_argv = &argv[2];
+	}
+}
+
 int main(int argc, char **argv)
 {
 	int login_shell = argc > 0 && argv[0] && argv[0][0] == '-';
@@ -471,6 +515,8 @@ int main(int argc, char **argv)
 
 	if (init_shell_cwd() != 0)
 		return 1;
+
+	init_params(argc, argv);
 
 	if (login_shell)
 		run_login_profiles();

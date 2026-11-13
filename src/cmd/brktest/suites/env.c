@@ -329,32 +329,42 @@ static int write_script(const char *path, const char *content)
 	return failed ? -1 : 0;
 }
 
-static int run_shell_script(const char *script, char *const envp[],
-			    const char *cwd, int expected)
+static int run_shell_with_args(const char *script, char *const args[],
+			       size_t nargs, char *const envp[],
+			       const char *cwd, int expected)
 {
+	char **argv = calloc(nargs + 3, sizeof(*argv));
 	pid_t pid;
-	int status;
+	int ret;
+
+	if (!argv)
+		return test_fail_msg("env: out of memory");
+	argv[0] = (char *)"sh";
+	argv[1] = (char *)script;
+	for (size_t i = 0; i < nargs; i++)
+		argv[2 + i] = args[i];
 
 	pid = fork();
-	if (pid < 0)
+	if (pid < 0) {
+		free(argv);
 		return test_fail_msg("env: fork failed: %d", errno);
+	}
 	if (pid == 0) {
-		char *argv[] = { "sh", (char *)script, NULL };
-
 		if (cwd && chdir(cwd) != 0)
 			_exit(127);
 		execve("/bin/sh", argv, envp);
 		_exit(127);
 	}
 
-	if (waitpid(pid, &status, 0) != pid)
-		return test_fail_msg("env: waitpid failed: %d", errno);
-	if (!WIFEXITED(status))
-		return test_fail_msg("env: shell did not exit normally");
-	if (WEXITSTATUS(status) != expected)
-		return test_fail_msg("env: shell exited with %d, expected %d",
-				     WEXITSTATUS(status), expected);
-	return 0;
+	ret = wait_exit(pid, expected, script);
+	free(argv);
+	return ret;
+}
+
+static int run_shell_script(const char *script, char *const envp[],
+			    const char *cwd, int expected)
+{
+	return run_shell_with_args(script, NULL, 0, envp, cwd, expected);
 }
 
 static int case_export_unset(struct test_ctx *ctx)
@@ -632,6 +642,78 @@ static int case_prompt(struct test_ctx *ctx)
 	return 0;
 }
 
+static int case_params(struct test_ctx *ctx)
+{
+	char dir[256];
+	char script[300];
+	char *envp[] = { "PATH=/bin", NULL };
+	char *one[] = { "7" };
+	char *three[] = { "a", "b", "c" };
+	char *at[] = { "4" };
+	pid_t pid;
+
+	(void)ctx;
+	if (test_tmpdir(dir, sizeof(dir), "envparams") != 0)
+		return test_fail_msg("env: cannot create params directory");
+	if (snprintf(script, sizeof(script), "%s/script", dir) >=
+	    (int)sizeof(script))
+		return test_fail_msg("env: params path too long");
+
+	if (write_script(script, "/bin/false\nexit $?\n") != 0)
+		return test_fail_msg("env: cannot write status script");
+	if (run_shell_script(script, envp, "/", 1) != 0)
+		return -1;
+
+	if (write_script(script, "exit $1\n") != 0)
+		return test_fail_msg("env: cannot write $1 script");
+	if (run_shell_with_args(script, one, 1, envp, "/", 7) != 0)
+		return -1;
+
+	if (write_script(script, "exit $#\n") != 0)
+		return test_fail_msg("env: cannot write $# script");
+	if (run_shell_with_args(script, three, 3, envp, "/", 3) != 0)
+		return -1;
+
+	if (write_script(script, "/bin/test \"$$\" -gt 1\n") != 0)
+		return test_fail_msg("env: cannot write $$ script");
+	if (run_shell_script(script, envp, "/", 0) != 0)
+		return -1;
+
+	if (write_script(script, "exit $@\n") != 0)
+		return test_fail_msg("env: cannot write $@ script");
+	if (run_shell_with_args(script, at, 1, envp, "/", 4) != 0)
+		return -1;
+
+	pid = fork();
+	if (pid < 0)
+		return test_fail_msg("env: fork failed: %d", errno);
+	if (pid == 0) {
+		char *argv[] = { "sh", "-c", "exit $#", "name", "a", "b", NULL };
+
+		execve("/bin/sh", argv, envp);
+		_exit(127);
+	}
+	if (wait_exit(pid, 2, "-c params") != 0)
+		return -1;
+
+	pid = fork();
+	if (pid < 0)
+		return test_fail_msg("env: fork failed: %d", errno);
+	if (pid == 0) {
+		char *argv[] = { "sh", "-c", "/bin/test \"$0\" = name", "name",
+				 NULL };
+
+		execve("/bin/sh", argv, envp);
+		_exit(127);
+	}
+	if (wait_exit(pid, 0, "$0") != 0)
+		return -1;
+
+	(void)unlink(script);
+	(void)rmdir(dir);
+	return 0;
+}
+
 static const struct test_case env_cases[] = {
 	{ "basic", case_basic, 0, 10000 },
 	{ "clearenv", case_clearenv_putenv, 0, 10000 },
@@ -644,6 +726,7 @@ static const struct test_case env_cases[] = {
 	{ "locale", case_locale, 0, 10000 },
 	{ "profile", case_profile, 0, 10000 },
 	{ "prompt", case_prompt, 0, 10000 },
+	{ "params", case_params, 0, 10000 },
 };
 
 const struct test_suite brktest_env_suite = {
