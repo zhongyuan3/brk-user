@@ -523,6 +523,46 @@ static int case_cd_home(struct test_ctx *ctx)
 	return 0;
 }
 
+static int case_profile(struct test_ctx *ctx)
+{
+	char dir[256];
+	char home[300];
+	char profile[300];
+	char *envp[] = { home, "PATH=/bin", NULL };
+	pid_t pid;
+
+	(void)ctx;
+	if (test_tmpdir(dir, sizeof(dir), "envprofile") != 0)
+		return test_fail_msg("env: cannot create profile directory");
+	if (snprintf(home, sizeof(home), "HOME=%s", dir) >= (int)sizeof(home))
+		return test_fail_msg("env: profile home path too long");
+	if (snprintf(profile, sizeof(profile), "%s/.profile", dir) >=
+	    (int)sizeof(profile))
+		return test_fail_msg("env: profile path too long");
+	if (write_script(profile, "BRKTEST_PROFILE=7\n"
+				  "export BRKTEST_PROFILE\n") != 0)
+		return test_fail_msg("env: cannot write .profile");
+
+	pid = fork();
+	if (pid < 0)
+		return test_fail_msg("env: fork failed: %d", errno);
+	if (pid == 0) {
+		char *argv[] = { "-sh", "-c", "exit $BRKTEST_PROFILE", NULL };
+
+		if (chdir("/") != 0)
+			_exit(127);
+		execve("/bin/sh", argv, envp);
+		_exit(127);
+	}
+
+	if (wait_exit(pid, 7, "login profile") != 0)
+		return -1;
+
+	(void)unlink(profile);
+	(void)rmdir(dir);
+	return 0;
+}
+
 static const struct test_case env_cases[] = {
 	{ "basic", case_basic, 0, 10000 },
 	{ "clearenv", case_clearenv_putenv, 0, 10000 },
@@ -533,6 +573,7 @@ static const struct test_case env_cases[] = {
 	{ "home", case_cd_home, 0, 10000 },
 	{ "term", case_term, 0, 10000 },
 	{ "locale", case_locale, 0, 10000 },
+	{ "profile", case_profile, 0, 10000 },
 };
 
 const struct test_suite brktest_env_suite = {

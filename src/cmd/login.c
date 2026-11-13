@@ -45,7 +45,17 @@ static int login_as(const char *user)
 
 	const char *shell = (pw->pw_shell && pw->pw_shell[0]) ? pw->pw_shell :
 								"/bin/sh";
-	char *sh_argv[] = { (char *)shell, NULL };
+	char sh_name[256];
+	const char *base = strrchr(shell, '/');
+	const char *argv0 = shell;
+	int n;
+
+	base = base ? base + 1 : shell;
+	n = snprintf(sh_name, sizeof(sh_name), "-%s", base);
+	if (n > 0 && (size_t)n < sizeof(sh_name))
+		argv0 = sh_name;
+
+	char *sh_argv[] = { (char *)argv0, NULL };
 
 	execv(shell, sh_argv);
 	return -1;

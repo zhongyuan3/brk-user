@@ -148,6 +148,38 @@ static void chomp_crlf(char *s)
 		s[--n] = '\0';
 }
 
+static void run_profile(const char *path)
+{
+	FILE *f = fopen(path, "r");
+	char *line = NULL;
+	size_t cap = 0;
+
+	if (!f)
+		return;
+
+	while (getline(&line, &cap, f) != -1) {
+		chomp_crlf(line);
+		(void)run_line(line, strlen(line));
+	}
+	free(line);
+	fclose(f);
+}
+
+static void run_login_profiles(void)
+{
+	const char *home = getenv("HOME");
+	char path[1024];
+
+	run_profile("/etc/profile");
+	if (!home || !home[0])
+		return;
+
+	int n = snprintf(path, sizeof(path), "%s/.profile", home);
+
+	if (n > 0 && (size_t)n < sizeof(path))
+		run_profile(path);
+}
+
 static int run_script(const char *path)
 {
 	FILE *f = fopen(path, "r");
@@ -301,6 +333,8 @@ static int init_shell_cwd(void)
 
 int main(int argc, char **argv)
 {
+	int login_shell = argc > 0 && argv[0] && argv[0][0] == '-';
+
 	/*
 	 * The tty core delivers SIGINT/SIGQUIT to the whole foreground
 	 * process group.  The shell stays in that group (no job control), so
@@ -311,6 +345,9 @@ int main(int argc, char **argv)
 
 	if (init_shell_cwd() != 0)
 		return 1;
+
+	if (login_shell)
+		run_login_profiles();
 
 	if (argc >= 2 && strcmp(argv[1], "-c") == 0) {
 		if (argc < 3) {
