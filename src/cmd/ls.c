@@ -1,6 +1,7 @@
 #include <brk/cmd.h>
 #include <brk/limits.h>
 #include <dirent.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <grp.h>
 #include <pwd.h>
@@ -38,10 +39,23 @@ static int cmp_strp(const void *a, const void *b)
 	return strcmp(*x, *y);
 }
 
-/* Returns 0 and sets *cols on success; -1 if ioctl fails (caller: one name per line). */
+/* Returns 0 and sets *cols on success; -1 if no usable width is known. */
 static int get_term_cols(unsigned *cols)
 {
+	const char *value = getenv("COLUMNS");
 	struct winsize ws;
+
+	if (value && value[0]) {
+		char *end;
+		unsigned long v;
+
+		errno = 0;
+		v = strtoul(value, &end, 10);
+		if (!errno && *end == '\0' && v > 0 && v <= 0xffff) {
+			*cols = (unsigned)v;
+			return 0;
+		}
+	}
 
 	if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) != 0)
 		return -1;
