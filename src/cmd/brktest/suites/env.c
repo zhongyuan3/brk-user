@@ -3,6 +3,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <locale.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -400,6 +401,62 @@ static int case_export_unset(struct test_ctx *ctx)
 	return 0;
 }
 
+static int case_locale(struct test_ctx *ctx)
+{
+	const char *old_lang = getenv("LANG");
+	const char *old_all = getenv("LC_ALL");
+	char *saved_lang = old_lang ? strdup(old_lang) : NULL;
+	char *saved_all = old_all ? strdup(old_all) : NULL;
+	struct lconv *lc;
+
+	(void)ctx;
+
+	if (!setlocale(LC_ALL, NULL) || strcmp(setlocale(LC_ALL, NULL), "C"))
+		return test_fail_msg("env: initial locale is not C");
+	if (!setlocale(LC_ALL, "C") || !setlocale(LC_ALL, "POSIX"))
+		return test_fail_msg("env: cannot select the C locale");
+	if (setlocale(LC_ALL, "en_US.UTF-8") != NULL)
+		return test_fail_msg("env: unsupported locale was accepted");
+
+	(void)unsetenv("LC_ALL");
+	if (setenv("LANG", "C", 1) != 0)
+		return test_fail_msg("env: cannot set LANG");
+	if (!setlocale(LC_ALL, ""))
+		return test_fail_msg("env: LANG=C was not selected");
+
+	if (setenv("LANG", "en_US.UTF-8", 1) != 0)
+		return test_fail_msg("env: cannot set LANG");
+	if (setlocale(LC_ALL, "") != NULL)
+		return test_fail_msg("env: unsupported LANG was selected");
+
+	(void)unsetenv("LANG");
+	if (setenv("LC_CTYPE", "C", 1) != 0 ||
+	    setenv("LC_TIME", "en_US.UTF-8", 1) != 0)
+		return test_fail_msg("env: cannot set locale variables");
+	if (!setlocale(LC_CTYPE, ""))
+		return test_fail_msg("env: LC_CTYPE=C was not selected");
+	if (setlocale(LC_TIME, "") != NULL)
+		return test_fail_msg("env: unsupported LC_TIME was selected");
+
+	lc = localeconv();
+	if (!lc || strcmp(lc->decimal_point, ".") || lc->thousands_sep[0])
+		return test_fail_msg("env: C locale numeric format is wrong");
+
+	(void)unsetenv("LC_CTYPE");
+	(void)unsetenv("LC_TIME");
+	if (saved_lang)
+		(void)setenv("LANG", saved_lang, 1);
+	else
+		(void)unsetenv("LANG");
+	if (saved_all)
+		(void)setenv("LC_ALL", saved_all, 1);
+	else
+		(void)unsetenv("LC_ALL");
+	free(saved_lang);
+	free(saved_all);
+	return 0;
+}
+
 static int case_cd_home(struct test_ctx *ctx)
 {
 	char dir[256];
@@ -475,6 +532,7 @@ static const struct test_case env_cases[] = {
 	{ "shell", case_export_unset, 0, 10000 },
 	{ "home", case_cd_home, 0, 10000 },
 	{ "term", case_term, 0, 10000 },
+	{ "locale", case_locale, 0, 10000 },
 };
 
 const struct test_suite brktest_env_suite = {
