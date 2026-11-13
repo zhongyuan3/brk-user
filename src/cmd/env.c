@@ -60,7 +60,7 @@ int main(int argc, char *argv[])
 	}
 
 	if (ignore_env)
-		environ = NULL;
+		(void)clearenv();
 
 	int i = ctx.index;
 
@@ -80,6 +80,8 @@ int main(int argc, char *argv[])
 	}
 
 	execvp(argv[i], &argv[i]);
+	int saved_errno = errno;
+
 	brk_cmd_error_errno(argv[i]);
-	return 127;
+	return saved_errno == ENOENT ? 127 : 126;
 }
