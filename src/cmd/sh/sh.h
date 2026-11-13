@@ -74,6 +74,8 @@ struct sh_redir {
 struct sh_simple_cmd {
 	char **argv; /* NULL-terminated */
 	size_t argc;
+	char **assign; /* NULL-terminated NAME=VALUE list */
+	size_t nr_assign;
 	struct sh_redir *redir_list;
 };
 
@@ -100,7 +102,21 @@ sh_err_t sh_builtin_cd(struct sh_pipeline *p);
 void sh_builtin_pwd(void);
 int sh_builtin_alias(struct sh_pipeline *p);
 int sh_builtin_export(struct sh_pipeline *p);
+int sh_builtin_unset(struct sh_pipeline *p);
 int sh_alias_expand_cmd(struct sh_simple_cmd *cmd);
+
+int sh_valid_env_name(const char *name);
+int sh_cmd_extract_assignments(struct sh_simple_cmd *cmd);
+int sh_apply_assignments(const struct sh_simple_cmd *cmd);
+
+struct sh_env_save {
+	char *name;
+	char *value; /* NULL when the variable was unset */
+};
+
+int sh_env_save_assignments(const struct sh_simple_cmd *cmd,
+			    struct sh_env_save **out, size_t *nr);
+void sh_env_restore(struct sh_env_save *saves, size_t nr);
 
 enum sh_edit_status {
 	SH_EDIT_OK = 0,

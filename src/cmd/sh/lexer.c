@@ -72,16 +72,19 @@ char *sh_buf_push(char *buf, size_t *len, size_t *cap, char c)
 }
 
 /*
- * Expand $NAME and ${NAME} from the process environment.  Returns the
- * updated buffer and sets *consumed when a variable reference was consumed.
+ * Expand $NAME and ${NAME} from the process environment.  Returns 0 on
+ * success, including the case where the variable is unset or empty.  *buf
+ * may remain NULL when nothing was appended.  Returns -1 on allocation
+ * failure.
  */
-static char *expand_variable(struct sh_lexer *lex, char *buf, size_t *len,
-			     size_t *cap, int *consumed)
+static int expand_variable(struct sh_lexer *lex, char **buf, size_t *len,
+			   size_t *cap, int *consumed)
 {
 	char name[128];
 	size_t name_len = 0;
 	size_t save = lex->pos;
 	const char *value;
+	char *b = *buf;
 	int braced = 0;
 
 	*consumed = 0;
@@ -95,7 +98,7 @@ static char *expand_variable(struct sh_lexer *lex, char *buf, size_t *len,
 	if (!braced &&
 	    !(isalpha((unsigned char)peek(lex)) || peek(lex) == '_')) {
 		lex->pos = save;
-		return buf;
+		return 0;
 	}
 
 	while (!at_eof(lex) &&
@@ -109,28 +112,30 @@ static char *expand_variable(struct sh_lexer *lex, char *buf, size_t *len,
 	if (braced) {
 		if (peek(lex) != '}' || name_len == 0) {
 			lex->pos = save;
-			return buf;
+			return 0;
 		}
 		advance(lex);
 	}
 
 	if (name_len == 0 || name_len >= sizeof(name)) {
 		lex->pos = save;
-		return buf;
+		return 0;
 	}
 	name[name_len] = '\0';
 
 	value = getenv(name);
 	if (value) {
 		for (const char *p = value; *p; p++) {
-			buf = sh_buf_push(buf, len, cap, *p);
-			if (!buf)
-				return NULL;
+			b = sh_buf_push(b, len, cap, *p);
+			if (!b)
+				return -1;
+			*buf = b;
 		}
 	}
 
+	*buf = b;
 	*consumed = 1;
-	return buf;
+	return 0;
 }
 
 static int read_single_quoted(struct sh_lexer *lex, char **out)
@@ -185,11 +190,13 @@ static int read_double_quoted(struct sh_lexer *lex, char **out)
 				buf = sh_buf_push(buf, &len, &cap, n);
 				advance(lex);
 			}
+			if (!buf)
+				return -1;
 		} else if (peek(lex) == '$') {
 			int consumed;
 
-			buf = expand_variable(lex, buf, &len, &cap, &consumed);
-			if (!buf)
+			if (expand_variable(lex, &buf, &len, &cap, &consumed) !=
+			    0)
 				return -1;
 			if (!consumed) {
 				buf = sh_buf_push(buf, &len, &cap, '$');
@@ -199,10 +206,10 @@ static int read_double_quoted(struct sh_lexer *lex, char **out)
 			}
 		} else {
 			buf = sh_buf_push(buf, &len, &cap, peek(lex));
+			if (!buf)
+				return -1;
 			advance(lex);
 		}
-		if (!buf)
-			return -1;
 	}
 	if (peek(lex) != '"') {
 		free(buf);
@@ -262,8 +269,8 @@ static int read_word(struct sh_lexer *lex, char **out)
 		if (c == '$') {
 			int consumed;
 
-			buf = expand_variable(lex, buf, &len, &cap, &consumed);
-			if (!buf)
+			if (expand_variable(lex, &buf, &len, &cap, &consumed) !=
+			    0)
 				return -1;
 			if (!consumed) {
 				buf = sh_buf_push(buf, &len, &cap, '$');

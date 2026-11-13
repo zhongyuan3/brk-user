@@ -34,9 +34,18 @@ void sh_pipeline_release(struct sh_pipeline *p)
 				free(c->argv[j]);
 			free(c->argv);
 		}
+		if (c->assign) {
+			size_t j;
+
+			for (j = 0; c->assign[j]; j++)
+				free(c->assign[j]);
+			free(c->assign);
+		}
 		redir_list_release(c->redir_list);
 		c->argv = NULL;
 		c->argc = 0;
+		c->assign = NULL;
+		c->nr_assign = 0;
 		c->redir_list = NULL;
 	}
 	free(p->cmds);
@@ -92,6 +101,8 @@ static int push_cmd(struct sh_pipeline *p)
 
 	c->argv = NULL;
 	c->argc = 0;
+	c->assign = NULL;
+	c->nr_assign = 0;
 	c->redir_list = NULL;
 
 	return 0;

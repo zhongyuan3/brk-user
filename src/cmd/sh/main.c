@@ -1,5 +1,18 @@
 #include "sh.h"
 
+static int sh_is_builtin(const char *name)
+{
+	return !strcmp(name, "exit") || !strcmp(name, "cd") ||
+	       !strcmp(name, "pwd") || !strcmp(name, "alias") ||
+	       !strcmp(name, "export") || !strcmp(name, "unset");
+}
+
+static int sh_is_special_builtin(const char *name)
+{
+	return !strcmp(name, "exit") || !strcmp(name, "export") ||
+	       !strcmp(name, "unset");
+}
+
 static int run_line(const char *line, size_t len)
 {
 	struct sh_lexer lex;
@@ -20,20 +33,72 @@ static int run_line(const char *line, size_t len)
 	}
 
 	for (size_t i = 0; i < pl.nr_cmds; i++) {
+		if (sh_cmd_extract_assignments(&pl.cmds[i]) != 0) {
+			fprintf(stderr, "sh: out of memory\n");
+			sh_pipeline_release(&pl);
+			return 1;
+		}
 		if (sh_alias_expand_cmd(&pl.cmds[i]) != 0) {
 			fprintf(stderr, "sh: alias expansion failed\n");
 			sh_pipeline_release(&pl);
 			return 1;
 		}
+		/* An alias value may itself start with NAME=VALUE words. */
+		if (sh_cmd_extract_assignments(&pl.cmds[i]) != 0) {
+			fprintf(stderr, "sh: out of memory\n");
+			sh_pipeline_release(&pl);
+			return 1;
+		}
+	}
+
+	for (size_t i = 0; i < pl.nr_cmds; i++) {
+		if (pl.cmds[i].argc > 0)
+			continue;
+		if (pl.nr_cmds == 1 && pl.cmds[0].nr_assign > 0) {
+			int status = 0;
+
+			if (sh_apply_assignments(&pl.cmds[0]) != 0) {
+				fprintf(stderr, "sh: setenv: %s\n",
+					strerror(errno));
+				status = 1;
+			}
+			sh_pipeline_release(&pl);
+			return status;
+		}
+		fprintf(stderr, "sh: missing command\n");
+		sh_pipeline_release(&pl);
+		return 1;
 	}
 
 	if (pl.nr_cmds == 1 && pl.cmds[0].argv[0]) {
-		const char *a0 = pl.cmds[0].argv[0];
+		struct sh_simple_cmd *cmd = &pl.cmds[0];
+		const char *a0 = cmd->argv[0];
+		struct sh_env_save *saves = NULL;
+		size_t nr_saves = 0;
+		int status = 0;
+
+		if (sh_is_builtin(a0) && cmd->nr_assign > 0) {
+			if (!sh_is_special_builtin(a0) &&
+			    sh_env_save_assignments(cmd, &saves, &nr_saves) !=
+				    0) {
+				fprintf(stderr, "sh: out of memory\n");
+				sh_pipeline_release(&pl);
+				return 1;
+			}
+			if (sh_apply_assignments(cmd) != 0) {
+				fprintf(stderr, "sh: setenv: %s\n",
+					strerror(errno));
+				sh_env_restore(saves, nr_saves);
+				sh_pipeline_release(&pl);
+				return 1;
+			}
+		}
 
 		if (!strcmp(a0, "exit"))
 			sh_builtin_exit(&pl);
 		if (!strcmp(a0, "cd")) {
 			err = sh_builtin_cd(&pl);
+			sh_env_restore(saves, nr_saves);
 			sh_pipeline_release(&pl);
 			if (err != SH_OK)
 				return sh_err_to_exit_status(err);
@@ -41,21 +106,28 @@ static int run_line(const char *line, size_t len)
 		}
 		if (!strcmp(a0, "pwd")) {
 			sh_builtin_pwd();
+			sh_env_restore(saves, nr_saves);
 			sh_pipeline_release(&pl);
 			return 0;
 		}
 		if (!strcmp(a0, "alias")) {
-			int status = sh_builtin_alias(&pl);
-
+			status = sh_builtin_alias(&pl);
+			sh_env_restore(saves, nr_saves);
 			sh_pipeline_release(&pl);
 			return status;
 		}
 		if (!strcmp(a0, "export")) {
-			int status = sh_builtin_export(&pl);
-
+			status = sh_builtin_export(&pl);
 			sh_pipeline_release(&pl);
 			return status;
 		}
+		if (!strcmp(a0, "unset")) {
+			status = sh_builtin_unset(&pl);
+			sh_pipeline_release(&pl);
+			return status;
+		}
+
+		sh_env_restore(saves, nr_saves);
 	}
 
 	err = sh_pipeline_exec(&pl, &cmd_exit);
@@ -201,17 +273,26 @@ static int run_interactive(void)
 {
 	struct termios t;
 
-	if (!getcwd(cwd, sizeof(cwd) - 1)) {
-		perror("sh: getcwd");
-		return sh_err_to_exit_status(SH_ERR_IO);
-	}
-	cwd[sizeof(cwd) - 1] = '\0';
-
 	if (ioctl(STDIN_FILENO, TCGETS, &t) == 0 &&
 	    ioctl(STDOUT_FILENO, TCGETS, &t) == 0)
 		return run_interactive_tty();
 
 	return run_interactive_getline();
+}
+
+static int init_shell_cwd(void)
+{
+	if (!getcwd(cwd, sizeof(cwd) - 1)) {
+		perror("sh: getcwd");
+		return -1;
+	}
+	cwd[sizeof(cwd) - 1] = '\0';
+
+	if (setenv("PWD", cwd, 1) != 0) {
+		perror("sh: PWD");
+		return -1;
+	}
+	return 0;
 }
 
 int main(int argc, char **argv)
@@ -223,6 +304,9 @@ int main(int argc, char **argv)
 	 */
 	signal(SIGINT, SIG_IGN);
 	signal(SIGQUIT, SIG_IGN);
+
+	if (init_shell_cwd() != 0)
+		return 1;
 
 	if (argc >= 2 && strcmp(argv[1], "-c") == 0) {
 		if (argc < 3) {

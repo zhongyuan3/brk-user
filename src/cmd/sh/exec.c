@@ -40,6 +40,10 @@ static void run_child(const struct sh_simple_cmd *c)
 	signal(SIGINT, SIG_DFL);
 	signal(SIGQUIT, SIG_DFL);
 
+	if (sh_apply_assignments(c) != 0) {
+		fprintf(stderr, "sh: setenv: %s\n", strerror(errno));
+		_exit(127);
+	}
 	if (apply_redirs_child(c) < 0)
 		_exit(127);
 	execvp(c->argv[0], c->argv);

@@ -26,18 +26,54 @@ void sh_builtin_exit(struct sh_pipeline *p)
 sh_err_t sh_builtin_cd(struct sh_pipeline *p)
 {
 	struct sh_simple_cmd *c = &p->cmds[0];
+	const char *target;
+	char oldcwd[sizeof(cwd)];
+	int print_path = 0;
 
-	if (c->argc > 1) {
-		if (chdir(c->argv[1]) < 0) {
-			perror("sh: cd");
-			return SH_ERR_IO;
-		}
-		if (!getcwd(cwd, sizeof(cwd) - 1)) {
-			perror("sh: getcwd");
-			return SH_ERR_IO;
-		}
-		cwd[sizeof(cwd) - 1] = '\0';
+	if (c->argc > 2) {
+		fprintf(stderr, "sh: cd: too many arguments\n");
+		return SH_ERR_IO;
 	}
+
+	if (c->argc == 1) {
+		target = getenv("HOME");
+		if (!target || !target[0]) {
+			fprintf(stderr, "sh: cd: HOME not set\n");
+			return SH_ERR_IO;
+		}
+	} else if (!strcmp(c->argv[1], "-")) {
+		target = getenv("OLDPWD");
+		if (!target || !target[0]) {
+			fprintf(stderr, "sh: cd: OLDPWD not set\n");
+			return SH_ERR_IO;
+		}
+		print_path = 1;
+	} else {
+		target = c->argv[1];
+	}
+
+	if (!getcwd(oldcwd, sizeof(oldcwd) - 1)) {
+		perror("sh: getcwd");
+		return SH_ERR_IO;
+	}
+	oldcwd[sizeof(oldcwd) - 1] = '\0';
+
+	if (chdir(target) < 0) {
+		perror("sh: cd");
+		return SH_ERR_IO;
+	}
+
+	if (!getcwd(cwd, sizeof(cwd) - 1)) {
+		perror("sh: getcwd");
+		return SH_ERR_IO;
+	}
+	cwd[sizeof(cwd) - 1] = '\0';
+
+	if (setenv("OLDPWD", oldcwd, 1) != 0 || setenv("PWD", cwd, 1) != 0)
+		perror("sh: cd");
+
+	if (print_path)
+		puts(cwd);
 	return SH_OK;
 }
 
@@ -128,16 +164,6 @@ static int sh_valid_alias_name(const char *name)
 		    strchr("=|<>\'\"\\#", *name))
 			return 0;
 	}
-	return 1;
-}
-
-static int sh_valid_env_name(const char *name)
-{
-	if (!isalpha((unsigned char)name[0]) && name[0] != '_')
-		return 0;
-	for (name++; *name; name++)
-		if (!isalnum((unsigned char)*name) && *name != '_')
-			return 0;
 	return 1;
 }
 
@@ -313,10 +339,34 @@ int sh_builtin_export(struct sh_pipeline *p)
 				fprintf(stderr,
 					"sh: export: invalid name '%s'\n", arg);
 				status = 1;
-			} else if (!getenv(arg) && setenv(arg, "", 1) != 0) {
-				perror("sh: export");
-				status = 1;
 			}
+			/*
+			 * In this shell every environment variable is already
+			 * exported.  Do not create an empty variable when the
+			 * name was previously unset: "export PATH" must not
+			 * turn an unset PATH into an empty PATH.
+			 */
+		}
+	}
+	return status;
+}
+
+int sh_builtin_unset(struct sh_pipeline *p)
+{
+	struct sh_simple_cmd *cmd = &p->cmds[0];
+	int status = 0;
+
+	for (size_t i = 1; i < cmd->argc; i++) {
+		const char *arg = cmd->argv[i];
+
+		if (!sh_valid_env_name(arg)) {
+			fprintf(stderr, "sh: unset: invalid name '%s'\n", arg);
+			status = 1;
+			continue;
+		}
+		if (unsetenv(arg) != 0) {
+			perror("sh: unset");
+			status = 1;
 		}
 	}
 	return status;
