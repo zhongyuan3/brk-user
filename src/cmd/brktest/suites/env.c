@@ -563,6 +563,75 @@ static int case_profile(struct test_ctx *ctx)
 	return 0;
 }
 
+static int case_prompt(struct test_ctx *ctx)
+{
+	char dir[256];
+	char output[300];
+	char line[128];
+	char expected[64];
+	char *envp[] = { "PS1=BRK:\\u:\\w:\\$ ", "HOME=/", "USER=tester",
+			 "PATH=/bin", NULL };
+	pid_t pid;
+	int fd;
+
+	(void)ctx;
+	if (test_tmpdir(dir, sizeof(dir), "envprompt") != 0)
+		return test_fail_msg("env: cannot create prompt directory");
+	if (snprintf(output, sizeof(output), "%s/output", dir) >=
+	    (int)sizeof(output))
+		return test_fail_msg("env: prompt path too long");
+
+	fd = open(output, O_CREAT | O_WRONLY | O_TRUNC, 0644);
+	if (fd < 0)
+		return test_fail_msg("env: cannot create prompt output: %d",
+				     errno);
+
+	pid = fork();
+	if (pid < 0)
+		return test_fail_msg("env: fork failed: %d", errno);
+	if (pid == 0) {
+		char *argv[] = { "sh", NULL };
+		int p[2];
+
+		if (pipe(p) != 0)
+			_exit(127);
+		close(p[1]);
+		if (dup2(p[0], STDIN_FILENO) < 0)
+			_exit(127);
+		close(p[0]);
+		(void)dup2(fd, STDOUT_FILENO);
+		close(fd);
+		if (chdir("/") != 0)
+			_exit(127);
+		execve("/bin/sh", argv, envp);
+		_exit(127);
+	}
+
+	close(fd);
+	if (wait_exit(pid, 0, "prompt") != 0)
+		return -1;
+
+	fd = open(output, O_RDONLY);
+	if (fd < 0)
+		return test_fail_msg("env: cannot read prompt output");
+	ssize_t n = read(fd, line, sizeof(line) - 1);
+	close(fd);
+	if (n < 0)
+		return test_fail_msg("env: cannot read prompt output");
+	line[n] = '\0';
+
+	if (snprintf(expected, sizeof(expected), "BRK:tester:~:%c ",
+		     geteuid() == 0 ? '#' : '$') >= (int)sizeof(expected))
+		return test_fail_msg("env: expected prompt too long");
+	if (strcmp(line, expected))
+		return test_fail_msg("env: PS1 mismatch (got '%s', want '%s')",
+				     line, expected);
+
+	(void)unlink(output);
+	(void)rmdir(dir);
+	return 0;
+}
+
 static const struct test_case env_cases[] = {
 	{ "basic", case_basic, 0, 10000 },
 	{ "clearenv", case_clearenv_putenv, 0, 10000 },
@@ -574,6 +643,7 @@ static const struct test_case env_cases[] = {
 	{ "term", case_term, 0, 10000 },
 	{ "locale", case_locale, 0, 10000 },
 	{ "profile", case_profile, 0, 10000 },
+	{ "prompt", case_prompt, 0, 10000 },
 };
 
 const struct test_suite brktest_env_suite = {

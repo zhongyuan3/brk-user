@@ -1,5 +1,9 @@
 #include "sh.h"
 
+#include <sys/utsname.h>
+
+#define SH_PROMPT_MAX 1024
+
 static int sh_is_builtin(const char *name)
 {
 	return !strcmp(name, "exit") || !strcmp(name, "cd") ||
@@ -219,9 +223,128 @@ static char sh_prompt_char(void)
 	return prompt_char;
 }
 
+static void prompt_append(char *buf, size_t size, size_t *len, const char *text)
+{
+	size_t n = strlen(text);
+
+	if (*len >= size - 1)
+		return;
+	if (n > size - 1 - *len)
+		n = size - 1 - *len;
+	memcpy(buf + *len, text, n);
+	*len += n;
+	buf[*len] = '\0';
+}
+
+static void prompt_append_char(char *buf, size_t size, size_t *len, char c)
+{
+	char text[2] = { c, '\0' };
+
+	prompt_append(buf, size, len, text);
+}
+
+static void prompt_append_cwd(char *buf, size_t size, size_t *len, int base)
+{
+	const char *home = getenv("HOME");
+
+	if (!base && home && home[0]) {
+		size_t home_len = strlen(home);
+
+		if (!strncmp(cwd, home, home_len) &&
+		    (cwd[home_len] == '\0' || cwd[home_len] == '/')) {
+			prompt_append(buf, size, len, "~");
+			prompt_append(buf, size, len, cwd + home_len);
+			return;
+		}
+	}
+
+	if (base) {
+		const char *slash = strrchr(cwd, '/');
+		const char *name = slash ? slash + 1 : cwd;
+
+		if (!name[0])
+			name = "/";
+		prompt_append(buf, size, len, name);
+	} else {
+		prompt_append(buf, size, len, cwd);
+	}
+}
+
+static int sh_build_prompt(char *buf, size_t size)
+{
+	const char *ps1 = getenv("PS1");
+	size_t len = 0;
+
+	if (!size)
+		return -1;
+	buf[0] = '\0';
+
+	if (!ps1) {
+		prompt_append(buf, size, &len, cwd);
+		prompt_append(buf, size, &len, " ");
+		prompt_append_char(buf, size, &len, sh_prompt_char());
+		prompt_append(buf, size, &len, " ");
+		return (int)len;
+	}
+
+	for (const char *p = ps1; *p; p++) {
+		if (*p != '\\') {
+			prompt_append_char(buf, size, &len, *p);
+			continue;
+		}
+
+		p++;
+		if (!*p) {
+			prompt_append_char(buf, size, &len, '\\');
+			break;
+		}
+
+		switch (*p) {
+		case 'u': {
+			const char *user = getenv("USER");
+
+			if (!user || !user[0])
+				user = getenv("LOGNAME");
+			if (!user || !user[0])
+				user = "?";
+			prompt_append(buf, size, &len, user);
+			break;
+		}
+		case 'h': {
+			struct utsname u;
+
+			if (uname(&u) == 0)
+				prompt_append(buf, size, &len, u.nodename);
+			break;
+		}
+		case 'w':
+			prompt_append_cwd(buf, size, &len, 0);
+			break;
+		case 'W':
+			prompt_append_cwd(buf, size, &len, 1);
+			break;
+		case '$':
+			prompt_append_char(buf, size, &len, sh_prompt_char());
+			break;
+		case 'n':
+			prompt_append_char(buf, size, &len, '\n');
+			break;
+		case '\\':
+			prompt_append_char(buf, size, &len, '\\');
+			break;
+		default:
+			prompt_append_char(buf, size, &len, '\\');
+			prompt_append_char(buf, size, &len, *p);
+			break;
+		}
+	}
+
+	return (int)len;
+}
+
 static int run_interactive_tty(void)
 {
-	char prompt[sizeof(cwd) + 8];
+	char prompt[SH_PROMPT_MAX];
 	int last = 0;
 
 	signal(SIGHUP, sh_tty_fatal);
@@ -232,14 +355,11 @@ static int run_interactive_tty(void)
 		int n;
 		int r;
 
-		n = snprintf(prompt, sizeof(prompt), "%s %c ", cwd,
-			     sh_prompt_char());
+		n = sh_build_prompt(prompt, sizeof(prompt));
 		if (n < 0) {
 			perror("sh: prompt");
 			return sh_err_to_exit_status(SH_ERR_IO);
 		}
-		if ((size_t)n >= sizeof(prompt))
-			n = (int)sizeof(prompt) - 1;
 
 		if (fflush(stdout)) {
 			perror("sh: fflush");
@@ -277,12 +397,18 @@ static int run_interactive_tty(void)
 static int run_interactive_getline(void)
 {
 	char *line = NULL;
+	char prompt[SH_PROMPT_MAX];
 	size_t cap = 0;
 	ssize_t nread;
 	int last = 0;
 
 	for (;;) {
-		printf("%s %c ", cwd, sh_prompt_char());
+		if (sh_build_prompt(prompt, sizeof(prompt)) < 0) {
+			perror("sh: prompt");
+			free(line);
+			return sh_err_to_exit_status(SH_ERR_IO);
+		}
+		fputs(prompt, stdout);
 		fflush(stdout);
 		nread = getline(&line, &cap, stdin);
 		if (nread == -1) {
