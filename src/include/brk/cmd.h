@@ -27,6 +27,9 @@ struct passwd;
 int brk_cmd_env_login(const struct passwd *pw, const char *term);
 int brk_cmd_env_user(const struct passwd *pw);
 
+const char *brk_cmd_term(void);
+int brk_cmd_term_check(void);
+
 void brk_cmd_error(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 void brk_cmd_error_errno(const char *msg);
 void brk_cmd_warn(const char *fmt, ...) __attribute__((format(printf, 1, 2)));

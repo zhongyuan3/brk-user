@@ -2,6 +2,7 @@
 #include "../util.h"
 
 #include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -24,6 +25,54 @@ static int wait_exit(pid_t pid, int expected, const char *what)
 	if (WEXITSTATUS(status) != expected)
 		return test_fail_msg("env: %s exited with %d, expected %d",
 				     what, WEXITSTATUS(status), expected);
+	return 0;
+}
+
+static int run_program(const char *path, char *const argv[], char *const envp[],
+		       int expected)
+{
+	pid_t pid = fork();
+
+	if (pid < 0)
+		return test_fail_msg("env: fork failed: %d", errno);
+	if (pid == 0) {
+		int null = open("/dev/null", O_WRONLY);
+
+		if (null >= 0) {
+			(void)dup2(null, STDOUT_FILENO);
+			if (null > STDOUT_FILENO)
+				close(null);
+		}
+		execve(path, argv, envp);
+		_exit(127);
+	}
+
+	return wait_exit(pid, expected, path);
+}
+
+static int case_term(struct test_ctx *ctx)
+{
+	char *empty_env[] = { "PATH=/bin", NULL };
+	char *vt100_env[] = { "PATH=/bin", "TERM=vt100", NULL };
+	char *dumb_env[] = { "PATH=/bin", "TERM=dumb", NULL };
+	char *clear_argv[] = { "clear", NULL };
+	char *tput_argv[] = { "tput", "clear", NULL };
+	char *version_argv[] = { "tput", "-V", NULL };
+
+	(void)ctx;
+
+	if (run_program("/usr/bin/clear", clear_argv, empty_env, 1) != 0)
+		return -1;
+	if (run_program("/usr/bin/clear", clear_argv, dumb_env, 1) != 0)
+		return -1;
+	if (run_program("/usr/bin/clear", clear_argv, vt100_env, 0) != 0)
+		return -1;
+	if (run_program("/usr/bin/tput", tput_argv, empty_env, 1) != 0)
+		return -1;
+	if (run_program("/usr/bin/tput", tput_argv, vt100_env, 0) != 0)
+		return -1;
+	if (run_program("/usr/bin/tput", version_argv, empty_env, 0) != 0)
+		return -1;
 	return 0;
 }
 
@@ -425,6 +474,7 @@ static const struct test_case env_cases[] = {
 	{ "execvpe", case_execvpe_path, 0, 10000 },
 	{ "shell", case_export_unset, 0, 10000 },
 	{ "home", case_cd_home, 0, 10000 },
+	{ "term", case_term, 0, 10000 },
 };
 
 const struct test_suite brktest_env_suite = {

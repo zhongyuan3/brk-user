@@ -1,3 +1,4 @@
+#include <brk/cmd.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -103,7 +104,8 @@ static int set_color(int background, const char *arg)
 	}
 
 	if (n < 8)
-		return out_fmt1(background ? "\033[4%um" : "\033[3%um", n) == 0 ?
+		return out_fmt1(background ? "\033[4%um" : "\033[3%um", n) ==
+				       0 ?
 			       0 :
 			       1;
 	return out_fmt1(background ? "\033[10%um" : "\033[9%um", n - 8) == 0 ?
@@ -116,6 +118,8 @@ int main(int argc, char *argv[])
 	const char *cap;
 	unsigned int row, col;
 	int n;
+
+	brk_cmd_init(argc, argv);
 
 	if (argc < 2) {
 		usage();
@@ -131,13 +135,17 @@ int main(int argc, char *argv[])
 		return 0;
 	}
 
+	if (brk_cmd_term_check() != 0)
+		return 1;
+
 	cap = argv[1];
 
 	if (!strcmp(cap, "cols") || !strcmp(cap, "lines")) {
 		int v = query_size(!strcmp(cap, "cols"));
 
 		if (v <= 0) {
-			fprintf(stderr, "tput: cannot determine terminal size\n");
+			fprintf(stderr,
+				"tput: cannot determine terminal size\n");
 			return 1;
 		}
 		printf("%d\n", v);
@@ -183,7 +191,8 @@ int main(int argc, char *argv[])
 	if (!strcmp(cap, "cup")) {
 		if (argc < 4 || parse_uint(argv[2], &row) != 0 ||
 		    parse_uint(argv[3], &col) != 0) {
-			fprintf(stderr, "tput: cup needs two numeric arguments\n");
+			fprintf(stderr,
+				"tput: cup needs two numeric arguments\n");
 			return 1;
 		}
 		n = out_fmt2("\033[%u;%uH", row, col);

@@ -36,6 +36,9 @@ int main(int argc, char *argv[])
 	if (brk_cmd_operand_count(&ctx) != 0)
 		brk_cmd_usage("Usage: clear");
 
+	if (brk_cmd_term_check() != 0)
+		return BRK_CMD_EXIT_FAIL;
+
 	if (write_clear())
 		return brk_cmd_fail_errno("clear: write error");
 

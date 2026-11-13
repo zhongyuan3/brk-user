@@ -272,6 +272,10 @@ static int run_interactive_getline(void)
 static int run_interactive(void)
 {
 	struct termios t;
+	const char *term = getenv("TERM");
+
+	if (!term || !term[0] || !strcmp(term, "dumb"))
+		return run_interactive_getline();
 
 	if (ioctl(STDIN_FILENO, TCGETS, &t) == 0 &&
 	    ioctl(STDOUT_FILENO, TCGETS, &t) == 0)

@@ -1076,6 +1076,9 @@ int main(int argc, char *argv[])
 	if (brk_cmd_operand_count(&ctx) != 1)
 		brk_cmd_usage("Usage: edit [-k] FILE");
 
+	if (brk_cmd_term_check() != 0)
+		return BRK_CMD_EXIT_FAIL;
+
 	memset(&ed, 0, sizeof(ed));
 	ed.debug_keys = debug_keys;
 	ed.path = strdup(brk_cmd_operand(&ctx, 0));
