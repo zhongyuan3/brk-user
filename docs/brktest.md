@@ -55,6 +55,7 @@ brktest all --format tap
 | `time` | clocks, sleeps and wall-clock changes |
 | `sys` | process identity, uname, rusage, times and `/proc` |
 | `dev` | devtmpfs nodes and basic device access |
+| `env` | environment variables, execve and shell integration |
 
 ## Stress suites
 
