@@ -714,6 +714,86 @@ static int case_params(struct test_ctx *ctx)
 	return 0;
 }
 
+static int case_which(struct test_ctx *ctx)
+{
+	char dir[256];
+	char script[300];
+	char output[300];
+	char content[512];
+	char line[128];
+	char *path_env[] = { "PATH=/bin", NULL };
+	char *multi_env[] = { "PATH=/bin:/bin", NULL };
+	FILE *f;
+
+	(void)ctx;
+	if (test_tmpdir(dir, sizeof(dir), "envwhich") != 0)
+		return test_fail_msg("env: cannot create which directory");
+	if (snprintf(script, sizeof(script), "%s/script", dir) >=
+		    (int)sizeof(script) ||
+	    snprintf(output, sizeof(output), "%s/output", dir) >=
+		    (int)sizeof(output))
+		return test_fail_msg("env: which path too long");
+
+	if (snprintf(content, sizeof(content), "/bin/which true > %s\n",
+		     output) >= (int)sizeof(content))
+		return test_fail_msg("env: which command too long");
+	if (write_script(script, content) != 0)
+		return test_fail_msg("env: cannot write which script");
+	if (run_shell_script(script, path_env, "/", 0) != 0)
+		return -1;
+
+	f = fopen(output, "r");
+	if (!f || !fgets(line, sizeof(line), f) ||
+	    strcmp(line, "/bin/true\n")) {
+		if (f)
+			fclose(f);
+		return test_fail_msg("env: which did not find true");
+	}
+	fclose(f);
+
+	if (snprintf(content, sizeof(content),
+		     "/bin/which brktest-no-such-which > %s\n",
+		     output) >= (int)sizeof(content))
+		return test_fail_msg("env: which command too long");
+	if (write_script(script, content) != 0)
+		return test_fail_msg("env: cannot write missing which script");
+	if (run_shell_script(script, path_env, "/", 1) != 0)
+		return -1;
+
+	f = fopen(output, "r");
+	if (!f || fgetc(f) != EOF) {
+		if (f)
+			fclose(f);
+		return test_fail_msg("env: which printed a missing command");
+	}
+	fclose(f);
+
+	if (snprintf(content, sizeof(content), "/bin/which -a true > %s\n",
+		     output) >= (int)sizeof(content))
+		return test_fail_msg("env: which command too long");
+	if (write_script(script, content) != 0)
+		return test_fail_msg("env: cannot write all which script");
+	if (run_shell_script(script, multi_env, "/", 0) != 0)
+		return -1;
+
+	f = fopen(output, "r");
+	if (!f)
+		return test_fail_msg("env: cannot read which output");
+	for (int i = 0; i < 2; i++) {
+		if (!fgets(line, sizeof(line), f) ||
+		    strcmp(line, "/bin/true\n")) {
+			fclose(f);
+			return test_fail_msg("env: which -a output mismatch");
+		}
+	}
+	fclose(f);
+
+	(void)unlink(script);
+	(void)unlink(output);
+	(void)rmdir(dir);
+	return 0;
+}
+
 static const struct test_case env_cases[] = {
 	{ "basic", case_basic, 0, 10000 },
 	{ "clearenv", case_clearenv_putenv, 0, 10000 },
@@ -727,6 +807,7 @@ static const struct test_case env_cases[] = {
 	{ "profile", case_profile, 0, 10000 },
 	{ "prompt", case_prompt, 0, 10000 },
 	{ "params", case_params, 0, 10000 },
+	{ "which", case_which, 0, 10000 },
 };
 
 const struct test_suite brktest_env_suite = {
