@@ -9,7 +9,6 @@ int main(int argc, char *argv[])
 	int fd;
 	long offset;
 	long len;
-	int err;
 
 	if (argc < 4) {
 		fprintf(stderr, "usage: fallocate <file> <offset> <length>\n");
@@ -25,9 +24,8 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
-	err = posix_fallocate(fd, offset, len);
-	if (err) {
-		fprintf(stderr, "fallocate: %s\n", strerror(err));
+	if (fallocate(fd, 0, offset, len) != 0) {
+		perror("fallocate");
 		close(fd);
 		return 1;
 	}

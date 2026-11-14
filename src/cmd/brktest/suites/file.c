@@ -216,10 +216,56 @@ static int case_dir_ops(struct test_ctx *ctx)
 	return 0;
 }
 
+static int case_fallocate(struct test_ctx *ctx)
+{
+	char dir[128], path[160];
+	struct stat st;
+	int fd, err;
+
+	(void)ctx;
+	if (test_tmpdir(dir, sizeof(dir), "fallocate") != 0)
+		return test_fail_msg("fallocate: cannot create temp dir");
+	if (make_path(path, sizeof(path), dir, "file") != 0)
+		return -1;
+
+	fd = open(path, O_RDWR | O_CREAT | O_TRUNC, 0644);
+	if (fd < 0)
+		return test_fail_msg("fallocate: open failed: %d", errno);
+
+	err = posix_fallocate(fd, 0, 8192);
+	if (err)
+		return test_fail_msg("fallocate: posix_fallocate failed: %d", err);
+	if (fstat(fd, &st) != 0 || st.st_size != 8192)
+		return test_fail_msg("fallocate: size after posix_fallocate is %ld",
+				     (long)st.st_size);
+
+	err = posix_fallocate(fd, 0, 0);
+	if (err != EINVAL)
+		return test_fail_msg("fallocate: zero length returned %d", err);
+
+	if (fallocate(fd, FALLOC_FL_KEEP_SIZE, 0, 16384) != 0)
+		return test_fail_msg("fallocate: KEEP_SIZE failed: %d", errno);
+	if (fstat(fd, &st) != 0 || st.st_size != 8192)
+		return test_fail_msg("fallocate: KEEP_SIZE changed size to %ld",
+				     (long)st.st_size);
+
+	if (fallocate(fd, 0, 8192, 4096) != 0)
+		return test_fail_msg("fallocate: extend failed: %d", errno);
+	if (fstat(fd, &st) != 0 || st.st_size != 12288)
+		return test_fail_msg("fallocate: size after extend is %ld",
+				     (long)st.st_size);
+
+	close(fd);
+	unlink(path);
+	rmdir(dir);
+	return 0;
+}
+
 static const struct test_case file_cases[] = {
 	{ "basic", case_basic, TEST_OWN_PGRP, 10000 },
 	{ "append", case_append, TEST_OWN_PGRP, 10000 },
 	{ "truncate", case_truncate, TEST_OWN_PGRP, 10000 },
+	{ "fallocate", case_fallocate, TEST_OWN_PGRP, 10000 },
 	{ "open_flags", case_open_flags, TEST_OWN_PGRP, 10000 },
 	{ "rename", case_rename, TEST_OWN_PGRP, 10000 },
 	{ "dir_ops", case_dir_ops, TEST_OWN_PGRP, 10000 },
