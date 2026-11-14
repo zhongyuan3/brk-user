@@ -1,7 +1,8 @@
+#include <fcntl.h>
 #include <syscall.h>
 #include <unistd.h>
 
 int rmdir(const char *path)
 {
-	return syscall(SYS_rmdir, path);
+	return unlinkat(AT_FDCWD, path, AT_REMOVEDIR);
 }
