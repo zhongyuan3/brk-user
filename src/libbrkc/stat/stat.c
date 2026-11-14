@@ -1,8 +1,6 @@
-#include <fcntl.h>
-#include <syscall.h>
-#include <sys/stat.h>
+#include "statx_impl.h"
 
 int stat(const char *path, struct stat *buf)
 {
-	return fstatat(AT_FDCWD, path, buf, 0);
+	return statx_at(AT_FDCWD, path, buf, 0);
 }

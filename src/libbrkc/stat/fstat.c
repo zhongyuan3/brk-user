@@ -1,7 +1,6 @@
-#include <syscall.h>
-#include <sys/stat.h>
+#include "statx_impl.h"
 
 int fstat(int fd, struct stat *buf)
 {
-	return syscall(SYS_fstat, fd, buf);
+	return statx_at(fd, "", buf, AT_EMPTY_PATH);
 }
