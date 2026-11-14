@@ -1,7 +1,6 @@
 #include <stdarg.h>
 #include <sys/ioctl.h>
 #include <syscall.h>
-#include <uapi/syscall_internal.h>
 
 int ioctl(int fd, int request, ...)
 {

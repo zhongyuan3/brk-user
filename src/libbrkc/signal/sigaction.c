@@ -1,6 +1,5 @@
 #include <signal.h>
 #include <sys/syscall.h>
-#include <uapi/syscall_internal.h>
 #include <unistd.h>
 
 static void (*__brk_handlers[NSIG])(int);

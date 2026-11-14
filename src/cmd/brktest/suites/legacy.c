@@ -271,6 +271,107 @@ static int test_sigprocmask(void)
 	return 0;
 }
 
+static int test_sigwait(void)
+{
+	sigset_t set = (1ULL << SIGUSR1);
+	sigset_t old;
+	sigset_t pending;
+	siginfo_t info;
+	struct timespec zero = { 0, 0 };
+	int sig = 0;
+
+	if (sigprocmask(SIG_BLOCK, &set, &old) != 0) {
+		perror("sigwait sigprocmask");
+		return -1;
+	}
+
+	if (kill(getpid(), SIGUSR1) != 0) {
+		perror("sigwait kill");
+		return -1;
+	}
+
+	if (sigwait(&set, &sig) != 0 || sig != SIGUSR1) {
+		printf("sigwait failed: sig=%d\n", sig);
+		return -1;
+	}
+	printf("sigwait ok: %d\n", sig);
+
+	if (sigpending(&pending) != 0 || (pending & set) != 0) {
+		printf("sigwait: signal still pending\n");
+		return -1;
+	}
+
+	errno = 0;
+	if (sigtimedwait(&set, &zero, &info) != -1 || errno != EAGAIN) {
+		printf("sigtimedwait timeout: errno=%d\n", errno);
+		return -1;
+	}
+
+	if (kill(getpid(), SIGUSR1) != 0) {
+		perror("sigtimedwait kill");
+		return -1;
+	}
+
+	sig = sigtimedwait(&set, NULL, &info);
+	if (sig != SIGUSR1 || info.si_signo != SIGUSR1) {
+		printf("sigtimedwait failed: sig=%d info=%d\n", sig,
+		       info.si_signo);
+		return -1;
+	}
+	printf("sigtimedwait ok: %d\n", sig);
+
+	if (sigprocmask(SIG_SETMASK, &old, NULL) != 0) {
+		perror("sigwait restore");
+		return -1;
+	}
+	return 0;
+}
+
+static int test_sigsuspend(void)
+{
+	struct sigaction sa = { .sa_handler = on_sigusr1 };
+	sigset_t empty = 0;
+	sigset_t block = (1ULL << SIGUSR1);
+	sigset_t old;
+	pid_t pid;
+
+	if (sigaction(SIGUSR1, &sa, NULL) != 0) {
+		perror("sigsuspend sigaction");
+		return -1;
+	}
+	if (sigprocmask(SIG_BLOCK, &block, &old) != 0) {
+		perror("sigsuspend sigprocmask");
+		return -1;
+	}
+
+	pid = fork();
+	if (pid < 0) {
+		perror("sigsuspend fork");
+		return -1;
+	}
+	if (pid == 0)
+		_exit(kill(getppid(), SIGUSR1) == 0 ? 0 : 1);
+
+	caught = 0;
+	errno = 0;
+	if (sigsuspend(&empty) != -1 || errno != EINTR) {
+		printf("sigsuspend returned early: errno=%d\n", errno);
+		return -1;
+	}
+	if (!caught) {
+		printf("sigsuspend: handler did not run\n");
+		return -1;
+	}
+	printf("sigsuspend ok\n");
+
+	waitpid(pid, NULL, 0);
+	if (sigprocmask(SIG_SETMASK, &old, NULL) != 0) {
+		perror("sigsuspend restore");
+		return -1;
+	}
+	return 0;
+}
+
 static int test_signal(void)
 {
 	struct sigaction sa = { .sa_handler = on_sigusr1 };
@@ -290,6 +391,10 @@ static int test_signal(void)
 		return -1;
 	}
 	if (test_sigprocmask() != 0)
+		return -1;
+	if (test_sigwait() != 0)
+		return -1;
+	if (test_sigsuspend() != 0)
 		return -1;
 	if (test_raise() != 0)
 		return -1;
