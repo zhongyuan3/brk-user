@@ -12,5 +12,5 @@ int open(const char *path, int flags, ...)
 	mode = va_arg(ap, mode_t);
 	va_end(ap);
 
-	return syscall(SYS_open, path, flags, mode);
+	return openat(AT_FDCWD, path, flags, mode);
 }

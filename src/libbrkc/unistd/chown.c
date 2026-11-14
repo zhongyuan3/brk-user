@@ -1,14 +1,15 @@
+#include <fcntl.h>
 #include <syscall.h>
 #include <unistd.h>
 
 int chown(const char *path, uid_t owner, gid_t group)
 {
-	return syscall(SYS_chown, path, owner, group);
+	return fchownat(AT_FDCWD, path, owner, group, 0);
 }
 
 int fchown(int fd, uid_t owner, gid_t group)
 {
-	return syscall(SYS_fchown, fd, owner, group);
+	return fchownat(fd, "", owner, group, AT_EMPTY_PATH);
 }
 
 int fchownat(int dirfd, const char *path, uid_t owner, gid_t group, int flags)
@@ -18,5 +19,5 @@ int fchownat(int dirfd, const char *path, uid_t owner, gid_t group, int flags)
 
 int lchown(const char *path, uid_t owner, gid_t group)
 {
-	return syscall(SYS_lchown, path, owner, group);
+	return fchownat(AT_FDCWD, path, owner, group, AT_SYMLINK_NOFOLLOW);
 }

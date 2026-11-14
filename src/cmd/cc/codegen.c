@@ -249,19 +249,15 @@ static void gen_call(struct node *n)
 	}
 
 	if (builtin_ok && (!strcmp(name, "write") || !strcmp(name, "read") ||
-			   !strcmp(name, "open") || !strcmp(name, "close"))) {
+			   !strcmp(name, "close"))) {
 		int sysno;
 
 		if (!strcmp(name, "write"))
 			sysno = SYS_write;
 		else if (!strcmp(name, "read"))
 			sysno = SYS_read;
-		else if (!strcmp(name, "open"))
-			sysno = SYS_open;
 		else
 			sysno = SYS_close;
-		if (!strcmp(name, "open") && n->nargs < 3)
-			i_li(A2, 0);
 		i_li(17, sysno);
 		i_ecall();
 		return;

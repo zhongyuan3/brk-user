@@ -3,22 +3,38 @@
 
 uid_t getuid(void)
 {
-	return (uid_t)syscall(SYS_getuid);
+	uid_t ruid, euid, suid;
+
+	if (getresuid(&ruid, &euid, &suid) != 0)
+		return (uid_t)-1;
+	return ruid;
 }
 
 uid_t geteuid(void)
 {
-	return (uid_t)syscall(SYS_geteuid);
+	uid_t ruid, euid, suid;
+
+	if (getresuid(&ruid, &euid, &suid) != 0)
+		return (uid_t)-1;
+	return euid;
 }
 
 gid_t getgid(void)
 {
-	return (gid_t)syscall(SYS_getgid);
+	gid_t rgid, egid, sgid;
+
+	if (getresgid(&rgid, &egid, &sgid) != 0)
+		return (gid_t)-1;
+	return rgid;
 }
 
 gid_t getegid(void)
 {
-	return (gid_t)syscall(SYS_getegid);
+	gid_t rgid, egid, sgid;
+
+	if (getresgid(&rgid, &egid, &sgid) != 0)
+		return (gid_t)-1;
+	return egid;
 }
 
 int getresuid(uid_t *ruid, uid_t *euid, uid_t *suid)

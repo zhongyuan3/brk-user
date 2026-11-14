@@ -1,8 +1,17 @@
 #include <sys/time.h>
-#include <syscall.h>
-#include <uapi/syscall_internal.h>
+#include <time.h>
 
 int gettimeofday(struct timeval *tv, struct timezone *tz)
 {
-	return syscall(SYS_gettimeofday, tv, tz);
+	struct timespec ts;
+
+	(void)tz;
+	if (clock_gettime(CLOCK_REALTIME, &ts) != 0)
+		return -1;
+
+	if (tv) {
+		tv->tv_sec = ts.tv_sec;
+		tv->tv_usec = ts.tv_nsec / 1000L;
+	}
+	return 0;
 }

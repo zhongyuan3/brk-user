@@ -28,20 +28,28 @@ int msync(void *addr, size_t length, int flags)
 
 int mlock(const void *addr, size_t length)
 {
-	return syscall(SYS_mlock, addr, length);
+	(void)addr;
+	(void)length;
+	return 0;
 }
 
 int munlock(const void *addr, size_t length)
 {
-	return syscall(SYS_munlock, addr, length);
+	(void)addr;
+	(void)length;
+	return 0;
 }
 
 int mlockall(int flags)
 {
-	return syscall(SYS_mlockall, flags);
+	if (flags & ~(MCL_CURRENT | MCL_FUTURE)) {
+		errno = EINVAL;
+		return -1;
+	}
+	return 0;
 }
 
 int munlockall(void)
 {
-	return syscall(SYS_munlockall);
+	return 0;
 }

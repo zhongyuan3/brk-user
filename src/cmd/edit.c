@@ -711,7 +711,7 @@ static int save_file(struct editor *ed)
 	}
 	fd = -1;
 
-	if (syscall(SYS_rename, tmp, ed->path) != 0) {
+	if (rename(tmp, ed->path) != 0) {
 		snprintf(ed->status, sizeof(ed->status), "rename: %s",
 			 strerror(errno));
 		goto out_unlink;

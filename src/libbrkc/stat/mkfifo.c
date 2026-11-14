@@ -1,7 +1,7 @@
+#include <fcntl.h>
 #include <sys/stat.h>
-#include <syscall.h>
 
 int mkfifo(const char *path, mode_t mode)
 {
-	return syscall(SYS_mkfifo, path, mode);
+	return mknodat(AT_FDCWD, path, S_IFIFO | (mode & 07777), 0);
 }

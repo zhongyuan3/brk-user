@@ -1,8 +1,9 @@
 #include <fcntl.h>
+#include <stddef.h>
 #include <sys/stat.h>
-#include <syscall.h>
+#include <time.h>
 
 int futimens(int fd, const struct timespec times[2])
 {
-	return syscall(SYS_futimens, fd, times);
+	return utimensat(fd, NULL, times, 0);
 }

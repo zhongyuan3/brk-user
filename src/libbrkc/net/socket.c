@@ -23,7 +23,7 @@ int listen(int fd, int backlog)
 
 int accept(int fd, struct sockaddr *addr, socklen_t *addrlen)
 {
-	return syscall(SYS_accept, fd, addr, addrlen);
+	return accept4(fd, addr, addrlen, 0);
 }
 
 int accept4(int fd, struct sockaddr *addr, socklen_t *addrlen, int flags)

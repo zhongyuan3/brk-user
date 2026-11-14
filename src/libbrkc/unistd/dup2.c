@@ -3,5 +3,7 @@
 
 int dup2(int oldfd, int newfd)
 {
-	return syscall(SYS_dup2, oldfd, newfd);
+	if (oldfd == newfd)
+		return newfd;
+	return dup3(oldfd, newfd, 0);
 }
