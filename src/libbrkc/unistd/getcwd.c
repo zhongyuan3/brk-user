@@ -3,7 +3,7 @@
 
 char *getcwd(char *buf, size_t size)
 {
-	if (syscall(SYS_getcwd, buf, size) < 0)
+	if (syscall(SYS_GETCWD, buf, size) < 0)
 		return NULL;
 	return buf;
 }

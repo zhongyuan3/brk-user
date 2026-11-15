@@ -3,5 +3,5 @@
 
 pid_t fork(void)
 {
-	return syscall(SYS_fork);
+	return syscall(SYS_FORK);
 }

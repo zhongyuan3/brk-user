@@ -3,5 +3,5 @@
 
 int close(int fd)
 {
-	return syscall(SYS_close, fd);
+	return syscall(SYS_CLOSE, fd);
 }

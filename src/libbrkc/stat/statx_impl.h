@@ -35,7 +35,7 @@ static inline int statx_at(int dirfd, const char *path, struct stat *st,
 			   int flags)
 {
 	struct statx stx;
-	long ret = syscall(SYS_statx, dirfd, path, flags, &stx);
+	long ret = syscall(SYS_STATX, dirfd, path, flags, &stx);
 
 	if (ret < 0)
 		return -1;

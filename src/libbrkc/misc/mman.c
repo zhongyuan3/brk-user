@@ -4,7 +4,7 @@
 
 void *mmap(void *addr, size_t length, int prot, int flags, int fd, off_t offset)
 {
-	long ret = syscall(SYS_mmap, addr, length, prot, flags, fd, offset);
+	long ret = syscall(SYS_MMAP, addr, length, prot, flags, fd, offset);
 
 	if (ret == -1)
 		return MAP_FAILED;
@@ -13,17 +13,17 @@ void *mmap(void *addr, size_t length, int prot, int flags, int fd, off_t offset)
 
 int munmap(void *addr, size_t length)
 {
-	return syscall(SYS_munmap, addr, length);
+	return syscall(SYS_MUNMAP, addr, length);
 }
 
 int mprotect(void *addr, size_t length, int prot)
 {
-	return syscall(SYS_mprotect, addr, length, prot);
+	return syscall(SYS_MPROTECT, addr, length, prot);
 }
 
 int msync(void *addr, size_t length, int flags)
 {
-	return syscall(SYS_msync, addr, length, flags);
+	return syscall(SYS_MSYNC, addr, length, flags);
 }
 
 int mlock(const void *addr, size_t length)

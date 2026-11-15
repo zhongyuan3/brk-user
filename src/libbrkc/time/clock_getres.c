@@ -8,7 +8,7 @@ int clock_getres(clockid_t clockid, struct timespec *res)
 	struct brk_sysinfo info;
 	__u64 ns;
 
-	if (syscall(SYS_sysinfo, &info) < 0)
+	if (syscall(SYS_SYSINFO, &info) < 0)
 		return -1;
 
 	switch (clockid) {

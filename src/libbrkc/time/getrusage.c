@@ -21,7 +21,7 @@ int getrusage(int who, struct rusage *usage)
 		return -1;
 	}
 
-	ret = syscall(SYS_get_times, &times);
+	ret = syscall(SYS_GET_TIMES, &times);
 	if (ret < 0)
 		return -1;
 

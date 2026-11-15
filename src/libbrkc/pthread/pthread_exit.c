@@ -12,10 +12,10 @@ void pthread_exit(void *retval)
 	__pthread_detach_cleanup(self);
 
 	/*
-	 * SYS_exit is thread-only in BRK.  Process-wide exit is _exit(),
-	 * which uses SYS_exit_group.
+	 * SYS_EXIT is thread-only in BRK.  Process-wide exit is _exit(),
+	 * which uses SYS_EXIT_GROUP.
 	 */
-	(void)syscall(SYS_exit, 0);
+	(void)syscall(SYS_EXIT, 0);
 	for (;;)
 		;
 }

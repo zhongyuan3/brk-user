@@ -16,7 +16,7 @@ clock_t times(struct tms *buf)
 	struct brk_times times;
 	struct timespec now;
 
-	if (syscall(SYS_get_times, &times) < 0 ||
+	if (syscall(SYS_GET_TIMES, &times) < 0 ||
 	    clock_gettime(CLOCK_BOOTTIME, &now) != 0)
 		return (clock_t)-1;
 

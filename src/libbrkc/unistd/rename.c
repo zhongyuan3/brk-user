@@ -10,5 +10,5 @@ int rename(const char *oldpath, const char *newpath)
 int renameat(int olddirfd, const char *oldpath, int newdirfd,
 	     const char *newpath)
 {
-	return syscall(SYS_renameat, olddirfd, oldpath, newdirfd, newpath);
+	return syscall(SYS_RENAMEAT, olddirfd, oldpath, newdirfd, newpath);
 }

@@ -38,7 +38,7 @@ ssize_t posix_getdents(int fd, void *dirp, size_t count, int flags)
 		return -1;
 	}
 
-	n = syscall(SYS_getdents, fd, raw, raw_size, 0);
+	n = syscall(SYS_GETDENTS, fd, raw, raw_size, 0);
 	if (n < 0) {
 		free(raw);
 		return -1;

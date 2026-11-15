@@ -3,5 +3,5 @@
 
 int dup3(int oldfd, int newfd, int flags)
 {
-	return syscall(SYS_dup3, oldfd, newfd, flags);
+	return syscall(SYS_DUP3, oldfd, newfd, flags);
 }

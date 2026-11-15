@@ -208,7 +208,7 @@ static void gen_call(struct node *n)
 		i_li(A0, 1);
 		i_mv(A1, SP);
 		i_li(A2, 1);
-		i_li(17, SYS_write); /* a7 = SYS_write */
+		i_li(17, SYS_WRITE); /* a7 = SYS_WRITE */
 		i_ecall();
 		i_addi(SP, SP, 16);
 		return;
@@ -242,7 +242,7 @@ static void gen_call(struct node *n)
 	if (builtin_ok && !strcmp(name, "exit")) {
 		if (n->nargs == 0)
 			i_li(A0, 0);
-		i_li(17, SYS_exit); /* a7 = SYS_exit */
+		i_li(17, SYS_EXIT); /* a7 = SYS_EXIT */
 		i_ecall();
 		emit32(enc_j(0x6f, X0, 0));
 		return;
@@ -253,11 +253,11 @@ static void gen_call(struct node *n)
 		int sysno;
 
 		if (!strcmp(name, "write"))
-			sysno = SYS_write;
+			sysno = SYS_WRITE;
 		else if (!strcmp(name, "read"))
-			sysno = SYS_read;
+			sysno = SYS_READ;
 		else
-			sysno = SYS_close;
+			sysno = SYS_CLOSE;
 		i_li(17, sysno);
 		i_ecall();
 		return;
@@ -867,7 +867,7 @@ void gen_runtime(void)
 	i_li(A0, 1);
 	i_mv(A1, T0);
 	i_mv(A2, T1);
-	i_li(17, SYS_write);
+	i_li(17, SYS_WRITE);
 	i_ecall();
 	/* write(1, "\n", 1) */
 	i_addi(SP, SP, -16);
@@ -876,7 +876,7 @@ void gen_runtime(void)
 	i_li(A0, 1);
 	i_mv(A1, SP);
 	i_li(A2, 1);
-	i_li(17, SYS_write);
+	i_li(17, SYS_WRITE);
 	i_ecall();
 	i_addi(SP, SP, 16);
 	i_li(A0, 0);
@@ -937,7 +937,7 @@ void gen_start(struct sym *main_sym)
 	start_sym->defined = true;
 	start_sym->offset = code.len;
 	i_call_sym(main_sym);
-	i_li(17, SYS_exit);
+	i_li(17, SYS_EXIT);
 	i_ecall();
 	emit32(enc_j(0x6f, X0, 0));
 }

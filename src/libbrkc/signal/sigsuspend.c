@@ -12,7 +12,7 @@ int sigsuspend(const sigset_t *mask)
 		return -1;
 	}
 
-	if (syscall(SYS_sigsuspend, mask, &old) != -1 || errno != EINTR)
+	if (syscall(SYS_SIGSUSPEND, mask, &old) != -1 || errno != EINTR)
 		return -1;
 
 	/*

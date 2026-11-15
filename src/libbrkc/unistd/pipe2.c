@@ -3,5 +3,5 @@
 
 int pipe2(int pipefd[2], int flags)
 {
-	return syscall(SYS_pipe2, pipefd, flags);
+	return syscall(SYS_PIPE2, pipefd, flags);
 }

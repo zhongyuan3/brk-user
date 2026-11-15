@@ -12,7 +12,7 @@ int uname(struct utsname *buf)
 		errno = EFAULT;
 		return -1;
 	}
-	if (syscall(SYS_sysinfo, &info) < 0)
+	if (syscall(SYS_SYSINFO, &info) < 0)
 		return -1;
 
 	memset(buf, 0, sizeof(*buf));

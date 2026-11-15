@@ -4,5 +4,5 @@
 int clock_nanosleep(clockid_t clockid, int flags, const struct timespec *req,
 		    struct timespec *rem)
 {
-	return syscall(SYS_clock_nanosleep, clockid, flags, req, rem);
+	return syscall(SYS_CLOCK_NANOSLEEP, clockid, flags, req, rem);
 }

@@ -4,7 +4,7 @@
 
 static int get_proc(struct brk_proc *proc)
 {
-	return (int)syscall(SYS_getproc, proc);
+	return (int)syscall(SYS_GETPROC, proc);
 }
 
 uid_t getuid(void)
@@ -75,5 +75,5 @@ int getresgid(gid_t *rgid, gid_t *egid, gid_t *sgid)
 
 int getgroups(int size, gid_t list[])
 {
-	return (int)syscall(SYS_getgroups, size, list);
+	return (int)syscall(SYS_GETGROUPS, size, list);
 }
