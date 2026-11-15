@@ -20,10 +20,10 @@ make -C brk run CROSS_COMPILE=riscv64-unknown-elf-
 In the BRK shell:
 
 ```sh
-cc /home/tests/hello.c -o /tmp/hello
+cc /home/tests/cc/hello.c -o /tmp/hello
 /tmp/hello
 
-cc /home/tests/multi_a.c /home/tests/multi_b.c -o /tmp/multi
+cc /home/tests/cc/multi_a.c /home/tests/cc/multi_b.c -o /tmp/multi
 /tmp/multi
 ```
 
@@ -243,11 +243,11 @@ Build only the host version (for quickly inspecting generated ELF files):
 ```sh
 make -C brk-user cc-host
 ./brk-user/build/cc-host -I brk-user/src/include \
-    -o /tmp/hello.elf brk-user/tests/hello.c
+    -o /tmp/hello.elf brk-user/tests/cc/hello.c
 riscv64-unknown-elf-readelf -h -l /tmp/hello.elf
 ```
 
-`tests/` contains verified examples:
+`tests/cc/` contains verified examples:
 
 | File                             | Coverage                                                                        | Expected Output                      |
 | -------------------------------- | ------------------------------------------------------------------------------- | ------------------------------------ |
@@ -269,4 +269,4 @@ riscv64-unknown-elf-readelf -h -l /tmp/hello.elf
 | `multi_a.c` + `multi_b.c`        | Multi-file linking, `extern`, `static` internal linkage                         | `multi`, `5`, `101`, `1`, `2`, `7`   |
 | `multi_a.c` + `multi_b.c` (`-c`) | Separate compilation, object files, local symbols                               | Same as above                        |
 
-After modifying the compiler, it is recommended to run at least `tests/expr.c`, `tests/struct.c`, `tests/funcptr.c`, `tests/init.c`, and `tests/multi_a.c multi_b.c`.
+After modifying the compiler, it is recommended to run at least `tests/cc/expr.c`, `tests/cc/struct.c`, `tests/cc/funcptr.c`, `tests/cc/init.c`, and `tests/cc/multi_a.c tests/cc/multi_b.c`.

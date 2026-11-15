@@ -1,61 +1,61 @@
 # cc tests
 
-These source files are copied to `/home/tests/` in the image by `brk-user/scripts/mkrootfs.sh`.
+These source files are copied to `/home/tests/cc/` in the image by `brk-user/scripts/mkrootfs.sh`.
 
 After booting BRK, you can run them like this:
 
 ```sh
-cc /home/tests/hello.c -o /tmp/hello
+cc /home/tests/cc/hello.c -o /tmp/hello
 /tmp/hello
 
-cc /home/tests/smoke.c -o /tmp/smoke
+cc /home/tests/cc/smoke.c -o /tmp/smoke
 /tmp/smoke
 
-cc /home/tests/expr.c -o /tmp/expr
+cc /home/tests/cc/expr.c -o /tmp/expr
 /tmp/expr
 
-cc /home/tests/io.c -o /tmp/io
+cc /home/tests/cc/io.c -o /tmp/io
 /tmp/io hello
 
-cc /home/tests/long.c -o /tmp/long
+cc /home/tests/cc/long.c -o /tmp/long
 /tmp/long
 
-cc /home/tests/large.c -o /tmp/large
+cc /home/tests/cc/large.c -o /tmp/large
 /tmp/large
 
-cc /home/tests/pp.c -o /tmp/pp
+cc /home/tests/cc/pp.c -o /tmp/pp
 /tmp/pp
 
-cc /home/tests/struct.c -o /tmp/struct
+cc /home/tests/cc/struct.c -o /tmp/struct
 /tmp/struct
 
-cc /home/tests/funcptr.c -o /tmp/funcptr
+cc /home/tests/cc/funcptr.c -o /tmp/funcptr
 /tmp/funcptr
 
-cc /home/tests/init.c -o /tmp/init
+cc /home/tests/cc/init.c -o /tmp/init
 /tmp/init
 
-cc /home/tests/ginit.c -o /tmp/ginit
+cc /home/tests/cc/ginit.c -o /tmp/ginit
 /tmp/ginit
 
-cc /home/tests/designated.c -o /tmp/designated
+cc /home/tests/cc/designated.c -o /tmp/designated
 /tmp/designated
 
-cc /home/tests/macros.c -o /tmp/macros
+cc /home/tests/cc/macros.c -o /tmp/macros
 /tmp/macros
 
-cc /home/tests/control.c -o /tmp/control
+cc /home/tests/cc/control.c -o /tmp/control
 /tmp/control
 
-cc /home/tests/varargs.c -o /tmp/varargs
+cc /home/tests/cc/varargs.c -o /tmp/varargs
 /tmp/varargs
 
-cc /home/tests/multi_a.c /home/tests/multi_b.c -o /tmp/multi
+cc /home/tests/cc/multi_a.c /home/tests/cc/multi_b.c -o /tmp/multi
 /tmp/multi
 
 # Separate compilation / object files
-cc -c /home/tests/multi_a.c -o /tmp/a.o
-cc -c /home/tests/multi_b.c -o /tmp/b.o
+cc -c /home/tests/cc/multi_a.c -o /tmp/a.o
+cc -c /home/tests/cc/multi_b.c -o /tmp/b.o
 cc /tmp/a.o /tmp/b.o -o /tmp/multi_obj
 /tmp/multi_obj
 ```

@@ -85,8 +85,14 @@ USER_OBJS := $(patsubst src/%.c,$(OBJDIR)/%.o,\
 	$(USER_SINGLE_SRCS) $(USER_DIR_SRCS))
 DEPS := $(LIB_OBJS:.o=.d) $(USER_OBJS:.o=.d)
 
+# libc tests are normal libuser-linked programs under tests/libc.
+TEST_SRCS := $(sort $(wildcard tests/libc/*.c))
+TEST_OBJS := $(patsubst tests/%.c,$(OBJDIR)/tests/%.o,$(TEST_SRCS))
+TEST_BINS := $(patsubst tests/%.c,$(BUILD_ROOT)/tests/%,$(TEST_SRCS))
+DEPS += $(TEST_OBJS:.o=.d)
+
 # Keep object files around for debugging and incremental rebuilds.
-.SECONDARY: $(LIB_OBJS) $(USER_OBJS)
+.SECONDARY: $(LIB_OBJS) $(USER_OBJS) $(TEST_OBJS)
 
 CC_HOST := $(BUILD_ROOT)/cc-host
 CC_HOST_OBJDIR := $(BUILD_ROOT)/cc-host-obj
@@ -94,13 +100,15 @@ CC_HOST_SRCS := $(sort $(wildcard $(CMD_DIR)/cc/*.c))
 CC_HOST_OBJS := $(patsubst src/%.c,$(CC_HOST_OBJDIR)/%.o,$(CC_HOST_SRCS))
 DEPS += $(CC_HOST_OBJS:.o=.d)
 
-.PHONY: all lib cc-host clean help hooks list-progs
+.PHONY: all lib cc-host tests clean help hooks list-progs
 
 all: $(USER_BINS)
 
 lib: $(LIBUSER_A)
 
 cc-host: $(CC_HOST)
+
+tests: $(TEST_BINS)
 
 list-progs:
 	@printf '%s\n' $(USER_PROGS)
@@ -114,6 +122,7 @@ help:
 	@echo "  all          Build all user programs (default)"
 	@echo "  lib          Build libuser.a only"
 	@echo "  cc-host      Build the host-side cc helper"
+	@echo "  tests        Build libc tests under tests/libc"
 	@echo "  list-progs   Print the names of all user programs"
 	@echo "  hooks        Enable the Conventional Commit hook"
 	@echo "  clean        Remove $(BUILD_ROOT)"
@@ -153,6 +162,10 @@ $(OBJDIR)/%.o: src/%.c | $(UAPI_STAMP)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
+$(OBJDIR)/tests/%.o: tests/%.c | $(UAPI_STAMP)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -c -o $@ $<
+
 $(CC_HOST_OBJDIR)/%.o: src/%.c $(UAPI_STAMP) | $(UAPI_STAMP)
 	@mkdir -p $(dir $@)
 	$(HOSTCC) $(HOST_CFLAGS) -MMD -MP -c -o $@ $<
@@ -174,6 +187,10 @@ endef
 
 $(foreach p,$(USER_SINGLE_PROGS),$(eval $(call ADD_SINGLE_PROGRAM,$(p))))
 $(foreach p,$(USER_DIR_PROGS),$(eval $(call ADD_DIR_PROGRAM,$(p))))
+
+$(BUILD_ROOT)/tests/%: $(OBJDIR)/tests/%.o $(LIBUSER_A) $(USER_LD)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) $(LDFLAGS) -T $(USER_LD) -o $@ $< $(LIBUSER_A) $(LDLIBS)
 
 $(CC_HOST): $(CC_HOST_OBJS)
 	$(HOSTCC) $(HOST_CFLAGS) -o $@ $^

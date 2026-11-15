@@ -49,7 +49,7 @@ fi
 
 make -C "$USER_ROOT" KERNEL_ROOT="$KERNEL_ROOT" BUILD_ROOT="$BUILD_ROOT" \
 	${CROSS_COMPILE:+CROSS_COMPILE="$CROSS_COMPILE"} \
-	${LIBGCC:+LIBGCC="$LIBGCC"}
+	${LIBGCC:+LIBGCC="$LIBGCC"} all tests
 
 if [[ ! -x $BIN_DIR/init ]]; then
 	echo "${0##*/}: userland binaries not found under $BIN_DIR" >&2
@@ -114,6 +114,16 @@ fi
 
 if [[ -d $USER_ROOT/tests ]]; then
 	"$BRKFS" cp -r "$USER_ROOT/tests" "/home/tests" "$IMG"
+fi
+
+# libc tests are built as normal libuser-linked executables; install those
+# alongside their sources so they can be run directly inside BRK.
+if [[ -d $BUILD_ROOT/tests/libc ]]; then
+	for test_bin in "$BUILD_ROOT"/tests/libc/*; do
+		[[ -f $test_bin ]] || continue
+		"$BRKFS" cp "$test_bin" \
+			"/home/tests/libc/${test_bin##*/}" "$IMG"
+	done
 fi
 
 if [[ -f $USER_ROOT/src/include/cc.h ]]; then
