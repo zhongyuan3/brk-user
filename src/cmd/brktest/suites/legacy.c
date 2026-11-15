@@ -6,6 +6,7 @@
 #include <netdb.h>
 #include <netinet/in.h>
 #include <poll.h>
+#include <pthread.h>
 #include <pwd.h>
 #include <pwutil.h>
 #include <shadow.h>
@@ -1579,6 +1580,48 @@ static int case_auth(struct test_ctx *ctx)
 	return test_auth();
 }
 
+struct exit_group_pipes {
+	int ready[2];
+	int data[2];
+};
+
+static void *exit_group_worker(void *arg)
+{
+	struct exit_group_pipes *pipes = arg;
+	char c;
+
+	write(pipes->ready[1], "r", 1);
+	read(pipes->data[0], &c, 1);
+	return NULL;
+}
+
+/*
+ * A sibling blocked in an interruptible sleep must observe exit_group and
+ * unwind.  If it does not, this case never exits and the harness times out.
+ */
+static int case_exit_group_blocked(struct test_ctx *ctx)
+{
+	struct exit_group_pipes pipes;
+	struct timespec delay = { .tv_sec = 0, .tv_nsec = 50000000 };
+	pthread_t thread;
+	char c;
+
+	(void)ctx;
+
+	if (pipe(pipes.ready) || pipe(pipes.data))
+		return 1;
+	if (pthread_create(&thread, NULL, exit_group_worker, &pipes))
+		return 2;
+	if (read(pipes.ready[0], &c, 1) != 1)
+		return 3;
+
+	/* Let the worker enter the blocking read before ending the group. */
+	nanosleep(&delay, NULL);
+
+	exit(0);
+	return 0;
+}
+
 static int case_posix(struct test_ctx *ctx)
 {
 	(void)ctx;
@@ -1600,6 +1643,7 @@ static int case_net(struct test_ctx *ctx)
 static const struct test_case process_cases[] = {
 	{ "fork", case_fork, TEST_OWN_PGRP, 10000 },
 	{ "kill", case_kill, TEST_OWN_PGRP, 10000 },
+	{ "exit_group_blocked", case_exit_group_blocked, 0, 10000 },
 };
 
 static const struct test_case signal_cases[] = {
