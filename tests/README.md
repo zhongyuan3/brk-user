@@ -1,8 +1,8 @@
 # cc tests
 
-这些源文件会被 `brk-user/scripts/mkrootfs.sh` 复制到镜像的 `/home/tests/`。
+These source files are copied to `/home/tests/` in the image by `brk-user/scripts/mkrootfs.sh`.
 
-启动 BRK 后可以这样运行：
+After booting BRK, you can run them like this:
 
 ```sh
 cc /home/tests/hello.c -o /tmp/hello
@@ -53,43 +53,43 @@ cc /home/tests/varargs.c -o /tmp/varargs
 cc /home/tests/multi_a.c /home/tests/multi_b.c -o /tmp/multi
 /tmp/multi
 
-# 分段编译 / 对象文件
+# Separate compilation / object files
 cc -c /home/tests/multi_a.c -o /tmp/a.o
 cc -c /home/tests/multi_b.c -o /tmp/b.o
 cc /tmp/a.o /tmp/b.o -o /tmp/multi_obj
 /tmp/multi_obj
 ```
 
-预期结果：
+Expected results:
 
-- `hello`：`hello from cc`
-- `smoke`：
+- `hello`: `hello from cc`
+- `smoke`:
 
   ```text
   sum=
   30
   ```
 
-- `expr`：依次为 `20`、`13`、`3`、`8`、`4`、`2`、`5 7`、`hi`、`abc`、
-  `4 16 1`、`55`、`123`、`1`
-- `io hello`：以 `8` 开头，随后是 `file-io`，再往后是 `8 4 -4` 等；
-  最后一行是 `2 /tmp/io` 和 `hello`
-- `long`：`1118`
-- `large`：`999` 和 `512`
-- `pp`：`pp-ok`、`43`、`1`、`45`
-- `struct`：`7`、`10`、`10`、`A`、`42`、`DCBA`、`0 5 6`、`8 4 12`、`7 0`
-- `funcptr`：`15`、`5`、`123`、`15`、`-1`、`23 17`、`3`
-- `init`：`6`、`hi`、`15`、`15 ab`、`9`、`10`、`hi`、`7`、`30 xy`
-- `ginit`：`15 ab`、`5 b`、`60`、`10`、`global`、`x`、`y`、`5`、`DCBA`、`5`
-- `designated`：`7 8 ab`、`1 2 cd`、`3`、`10 0 20 30 0`、`1 2 3 4`、
-  `1 a`、`3 b`、`5 0 lo`、`0 2 0 9`、`5 6 7 8`、`9 x`、`11 y`
-- `macros`：`5`、`9`、`16`、`10`、`7`、`9`、`11`、`9`、`6`、`5`、`macros`
-- `control`：`10 20 20 6 99`、`3 2 13 10`、`406`、`10`
-- `varargs`：`42`、`15`、`0`、`15`、`1`、`alpha`、`beta`、`gamma`、
+- `expr`: in order, `20`, `13`, `3`, `8`, `4`, `2`, `5 7`, `hi`, `abc`,
+  `4 16 1`, `55`, `123`, `1`
+- `io hello`: starts with `8`, followed by `file-io`, then `8 4 -4`, etc.;
+  the last line is `2 /tmp/io` and `hello`
+- `long`: `1118`
+- `large`: `999` and `512`
+- `pp`: `pp-ok`, `43`, `1`, `45`
+- `struct`: `7`, `10`, `10`, `A`, `42`, `DCBA`, `0 5 6`, `8 4 12`, `7 0`
+- `funcptr`: `15`, `5`, `123`, `15`, `-1`, `23 17`, `3`
+- `init`: `6`, `hi`, `15`, `15 ab`, `9`, `10`, `hi`, `7`, `30 xy`
+- `ginit`: `15 ab`, `5 b`, `60`, `10`, `global`, `x`, `y`, `5`, `DCBA`, `5`
+- `designated`: `7 8 ab`, `1 2 cd`, `3`, `10 0 20 30 0`, `1 2 3 4`,
+  `1 a`, `3 b`, `5 0 lo`, `0 2 0 9`, `5 6 7 8`, `9 x`, `11 y`
+- `macros`: `5`, `9`, `16`, `10`, `7`, `9`, `11`, `9`, `6`, `5`, `macros`
+- `control`: `10 20 20 6 99`, `3 2 13 10`, `406`, `10`
+- `varargs`: `42`, `15`, `0`, `15`, `1`, `alpha`, `beta`, `gamma`,
   `5-mid-7`
-- `multi`：`multi`、`5`、`101`、`1`、`2`、`7`
-- `multi_obj`：与 `multi` 相同；两个 `.o` 中都有同名的 `static helper`，
-  用于验证局部符号不会冲突
+- `multi`: `multi`, `5`, `101`, `1`, `2`, `7`
+- `multi_obj`: the same as `multi`; both `.o` files contain a same-named `static helper`,
+  used to verify that local symbols do not conflict
 
-`pp.c` 依赖 `/usr/include/cc.h` 和同目录的 `pp.h`，因此需要先由 rootfs 构建脚本
-安装头文件并复制整个 `tests/` 目录。
+`pp.c` depends on `/usr/include/cc.h` and `pp.h` in the same directory, so the rootfs build script must first
+install the headers and copy the entire `tests/` directory.
