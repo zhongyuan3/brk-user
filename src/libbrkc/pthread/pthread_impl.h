@@ -15,10 +15,16 @@ struct pthread {
 	size_t stack_size;
 	int tid;
 	int joined;
+	int detached;
+	int exiting;
+	int detach_queued;
+	struct pthread *detach_next;
 	int err;
 };
 
 struct pthread *__pthread_self_internal(void);
+int __pthread_reaper_start(void);
+void __pthread_detach_cleanup(struct pthread *self);
 
 static inline uintptr_t __pthread_get_tp(void)
 {

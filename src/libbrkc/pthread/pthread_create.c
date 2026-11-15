@@ -31,10 +31,22 @@ int pthread_create(pthread_t *thread, const pthread_attr_t *attr,
 	size_t stack_size;
 	size_t total;
 	void *region;
+	int detachstate;
 	long tid;
 
 	if (!thread || !start_routine)
 		return EINVAL;
+
+	detachstate = attr ? attr->detachstate : PTHREAD_CREATE_JOINABLE;
+	if (detachstate != PTHREAD_CREATE_JOINABLE &&
+	    detachstate != PTHREAD_CREATE_DETACHED)
+		return EINVAL;
+	if (detachstate == PTHREAD_CREATE_DETACHED) {
+		int err = __pthread_reaper_start();
+
+		if (err)
+			return err;
+	}
 
 	stack_size = (attr && attr->stacksize) ? attr->stacksize :
 						 PTHREAD_STACK_DEFAULT;
@@ -58,6 +70,7 @@ int pthread_create(pthread_t *thread, const pthread_attr_t *attr,
 	self->arg = arg;
 	self->stack = region;
 	self->stack_size = total;
+	self->detached = detachstate == PTHREAD_CREATE_DETACHED;
 
 	args.stack = (__kernel_ulong_t)((uintptr_t)region + total) & ~0xFUL;
 	args.entry = (__kernel_ulong_t)pthread_start;

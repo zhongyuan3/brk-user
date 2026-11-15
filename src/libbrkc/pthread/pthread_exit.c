@@ -9,6 +9,8 @@ void pthread_exit(void *retval)
 	self->retval = retval;
 	__sync_synchronize();
 
+	__pthread_detach_cleanup(self);
+
 	/*
 	 * SYS_exit is thread-only in BRK.  Process-wide exit is _exit(),
 	 * which uses SYS_exit_group.

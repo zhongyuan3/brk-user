@@ -9,6 +9,8 @@ int pthread_join(pthread_t thread, void **retval)
 
 	if (!thread || !thread->stack)
 		return EINVAL;
+	if (thread->detached)
+		return EINVAL;
 	if (thread == __pthread_self_internal())
 		return EDEADLK;
 	if (thread->joined)
