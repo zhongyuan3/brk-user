@@ -25,4 +25,7 @@ typedef __kernel_ssize_t ssize_t;
 typedef __kernel_blkcnt_t blkcnt_t;
 typedef __kernel_blksize_t blksize_t;
 
+struct pthread;
+typedef struct pthread *pthread_t;
+
 #endif

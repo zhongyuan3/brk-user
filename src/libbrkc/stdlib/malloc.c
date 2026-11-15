@@ -95,8 +95,7 @@ static size_t tlsf_region_cache_bytes;
 
 static int tlsf_fls(size_t size)
 {
-	return (int)(sizeof(uint64_t) * 8 - 1 -
-		     brk_clz64((uint64_t)size));
+	return (int)(sizeof(uint64_t) * 8 - 1 - brk_clz64((uint64_t)size));
 }
 
 static int tlsf_ffs64(uint64_t word)
@@ -498,7 +497,9 @@ static void tlsf_free_block(struct tlsf_block *block)
 	tlsf_free_insert(block);
 }
 
-void *malloc(size_t size)
+static void free_unlocked(void *ptr);
+
+static void *malloc_unlocked(size_t size)
 {
 	struct tlsf_block *block;
 	size_t need;
@@ -517,7 +518,7 @@ void *malloc(size_t size)
 	return tlsf_block_payload(block);
 }
 
-void *calloc(size_t nmemb, size_t size)
+static void *calloc_unlocked(size_t nmemb, size_t size)
 {
 	void *ptr;
 	size_t total;
@@ -528,13 +529,13 @@ void *calloc(size_t nmemb, size_t size)
 		return NULL;
 
 	total = nmemb * size;
-	ptr = malloc(total);
+	ptr = malloc_unlocked(total);
 	if (ptr)
 		memset(ptr, 0, total);
 	return ptr;
 }
 
-void *realloc(void *ptr, size_t size)
+static void *realloc_unlocked(void *ptr, size_t size)
 {
 	struct tlsf_block *block;
 	struct tlsf_block *next;
@@ -545,9 +546,9 @@ void *realloc(void *ptr, size_t size)
 	size_t total;
 
 	if (!ptr)
-		return malloc(size);
+		return malloc_unlocked(size);
 	if (size == 0) {
-		free(ptr);
+		free_unlocked(ptr);
 		return NULL;
 	}
 	if (tlsf_size_to_block(size, &need))
@@ -579,18 +580,18 @@ void *realloc(void *ptr, size_t size)
 		}
 	}
 
-	new_ptr = malloc(size);
+	new_ptr = malloc_unlocked(size);
 	if (!new_ptr)
 		return NULL;
 
 	capacity = tlsf_block_size(block) - TLSF_HEADER_SIZE;
 	copy = capacity < size ? capacity : size;
 	memcpy(new_ptr, ptr, copy);
-	free(ptr);
+	free_unlocked(ptr);
 	return new_ptr;
 }
 
-void free(void *ptr)
+static void free_unlocked(void *ptr)
 {
 	struct tlsf_block *block;
 
@@ -602,4 +603,56 @@ void free(void *ptr)
 		return;
 
 	tlsf_free_block(block);
+}
+
+static volatile int malloc_lock;
+
+static void malloc_lock_acquire(void)
+{
+	while (__atomic_exchange_n(&malloc_lock, 1, __ATOMIC_ACQUIRE)) {
+		while (__atomic_load_n(&malloc_lock, __ATOMIC_RELAXED))
+			;
+	}
+}
+
+static void malloc_lock_release(void)
+{
+	__atomic_store_n(&malloc_lock, 0, __ATOMIC_RELEASE);
+}
+
+void *malloc(size_t size)
+{
+	void *ptr;
+
+	malloc_lock_acquire();
+	ptr = malloc_unlocked(size);
+	malloc_lock_release();
+	return ptr;
+}
+
+void *calloc(size_t nmemb, size_t size)
+{
+	void *ptr;
+
+	malloc_lock_acquire();
+	ptr = calloc_unlocked(nmemb, size);
+	malloc_lock_release();
+	return ptr;
+}
+
+void *realloc(void *ptr, size_t size)
+{
+	void *new_ptr;
+
+	malloc_lock_acquire();
+	new_ptr = realloc_unlocked(ptr, size);
+	malloc_lock_release();
+	return new_ptr;
+}
+
+void free(void *ptr)
+{
+	malloc_lock_acquire();
+	free_unlocked(ptr);
+	malloc_lock_release();
 }
