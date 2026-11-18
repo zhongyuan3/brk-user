@@ -863,7 +863,66 @@ static int sh_tty_getc_timeout(int timeout_ms)
 	return sh_tty_getc();
 }
 
-static int sh_edit_escape_seq(struct sh_edit *ed)
+/* ---- incremental paint helpers ---- */
+
+/* Echo a character appended at the end of the line. */
+static int sh_edit_putc(char c)
+{
+	return sh_write_all(STDOUT_FILENO, &c, 1) ? -1 : 0;
+}
+
+/* Erase the last character on screen; the cursor sits just past it. */
+static int sh_edit_erase_char(void)
+{
+	return sh_write_all(STDOUT_FILENO, "\b \b", 3) ? -1 : 0;
+}
+
+/* Move the cursor by delta columns without repainting (CUF/CUB). */
+static int sh_edit_shift_cursor(int delta)
+{
+	char seq[16];
+	int n;
+
+	if (delta == 0)
+		return 0;
+	n = snprintf(seq, sizeof(seq), "\033[%d%c",
+		     delta > 0 ? delta : -delta, delta > 0 ? 'C' : 'D');
+	if (n < 0 || (size_t)n >= sizeof(seq))
+		return -1;
+	return sh_write_all(STDOUT_FILENO, seq, (size_t)n) ? -1 : 0;
+}
+
+/* Delete the character at the cursor.  Sets *redraw when the remainder of
+ * the line must be repainted in full. */
+static int sh_edit_delete_at(struct sh_edit *ed, int *redraw)
+{
+	if (ed->line.pos >= ed->line.len)
+		return 0;
+	if (ed->line.pos + 1 == ed->line.len) {
+		/* Deleting the last character looks like a backspace. */
+		sh_line_delete_at(&ed->line);
+		return sh_edit_erase_char();
+	}
+	sh_line_delete_at(&ed->line);
+	*redraw = 1;
+	return 0;
+}
+
+/* Delete the character before the cursor.  Same conventions. */
+static int sh_edit_backspace(struct sh_edit *ed, int *redraw)
+{
+	if (ed->line.pos == 0)
+		return 0;
+	if (ed->line.pos == ed->line.len) {
+		sh_line_delete_before(&ed->line);
+		return sh_edit_erase_char();
+	}
+	sh_line_delete_before(&ed->line);
+	*redraw = 1;
+	return 0;
+}
+
+static int sh_edit_escape_seq(struct sh_edit *ed, int *redraw)
 {
 	char params[16];
 	size_t nparams = 0;
@@ -885,22 +944,39 @@ static int sh_edit_escape_seq(struct sh_edit *ed)
 
 	switch (final) {
 	case 'A':
+		*redraw = 1;
 		return sh_edit_history_move(ed, -1);
 	case 'B':
+		*redraw = 1;
 		return sh_edit_history_move(ed, 1);
 	case 'C':
-		if (ed->line.pos < ed->line.len)
+		if (ed->line.pos < ed->line.len) {
+			if (sh_edit_shift_cursor(1))
+				return -1;
 			ed->line.pos++;
+		}
 		return 0;
 	case 'D':
-		if (ed->line.pos > 0)
+		if (ed->line.pos > 0) {
+			if (sh_edit_shift_cursor(-1))
+				return -1;
 			ed->line.pos--;
+		}
 		return 0;
 	case 'H':
-		ed->line.pos = 0;
+		if (ed->line.pos > 0) {
+			if (sh_edit_shift_cursor(-(int)ed->line.pos))
+				return -1;
+			ed->line.pos = 0;
+		}
 		return 0;
 	case 'F':
-		ed->line.pos = ed->line.len;
+		if (ed->line.pos < ed->line.len) {
+			if (sh_edit_shift_cursor((int)(ed->line.len -
+						       ed->line.pos)))
+				return -1;
+			ed->line.pos = ed->line.len;
+		}
 		return 0;
 	case '~': {
 		int code = atoi(params);
@@ -908,14 +984,24 @@ static int sh_edit_escape_seq(struct sh_edit *ed)
 		switch (code) {
 		case 1:
 		case 7:
-			ed->line.pos = 0;
+			if (ed->line.pos > 0) {
+				if (sh_edit_shift_cursor(-(int)ed->line.pos))
+					return -1;
+				ed->line.pos = 0;
+			}
 			break;
 		case 4:
 		case 8:
-			ed->line.pos = ed->line.len;
+			if (ed->line.pos < ed->line.len) {
+				if (sh_edit_shift_cursor(
+					    (int)(ed->line.len - ed->line.pos)))
+					return -1;
+				ed->line.pos = ed->line.len;
+			}
 			break;
 		case 3:
-			sh_line_delete_at(&ed->line);
+			if (sh_edit_delete_at(ed, redraw))
+				return -1;
 			break;
 		default:
 			break;
@@ -927,39 +1013,50 @@ static int sh_edit_escape_seq(struct sh_edit *ed)
 	}
 }
 
-static int sh_edit_escape(struct sh_edit *ed)
+static int sh_edit_escape(struct sh_edit *ed, int *redraw)
 {
 	int c = sh_tty_getc_timeout(50);
 
 	if (c == '[' || c == 'O')
-		return sh_edit_escape_seq(ed);
+		return sh_edit_escape_seq(ed, redraw);
 	return 0;
 }
 
+/* Repaint the whole line with a single write so the terminal never sees
+ * an intermediate state. */
 static int sh_edit_draw(const struct sh_edit *ed)
 {
 	char seq[32];
 	int n;
+	size_t total = 4 + ed->prompt_len + ed->line.len + sizeof(seq);
+	char *buf = malloc(total);
+	char *p;
 
-	if (sh_write_all(STDOUT_FILENO, "\r\033[K", 4))
+	if (!buf)
 		return -1;
-	if (sh_write_all(STDOUT_FILENO, ed->prompt, ed->prompt_len))
-		return -1;
-	if (ed->line.len &&
-	    sh_write_all(STDOUT_FILENO, ed->line.data, ed->line.len))
-		return -1;
+	p = buf;
+
+	memcpy(p, "\r\033[K", 4);
+	p += 4;
+	memcpy(p, ed->prompt, ed->prompt_len);
+	p += ed->prompt_len;
+	memcpy(p, ed->line.data, ed->line.len);
+	p += ed->line.len;
 
 	if (ed->line.pos < ed->line.len) {
 		n = snprintf(seq, sizeof(seq), "\033[%luD",
 			     (unsigned long)(ed->line.len - ed->line.pos));
-		if (n < 0)
+		if (n < 0 || (size_t)n >= sizeof(seq)) {
+			free(buf);
 			return -1;
-		if ((size_t)n >= sizeof(seq))
-			n = (int)sizeof(seq) - 1;
-		if (sh_write_all(STDOUT_FILENO, seq, (size_t)n))
-			return -1;
+		}
+		memcpy(p, seq, (size_t)n);
+		p += n;
 	}
-	return 0;
+
+	n = sh_write_all(STDOUT_FILENO, buf, (size_t)(p - buf));
+	free(buf);
+	return n ? -1 : 0;
 }
 
 static int sh_edit_init(struct sh_edit *ed, const char *prompt,
@@ -999,6 +1096,7 @@ int sh_edit_line(const char *prompt, size_t prompt_len, char **out)
 
 	for (;;) {
 		int c = sh_tty_getc();
+		int redraw = 0;
 
 		if (c == SH_TTY_EOF) {
 			if (sh_write_all(STDOUT_FILENO, "\r\n", 2))
@@ -1036,42 +1134,87 @@ int sh_edit_line(const char *prompt, size_t prompt_len, char **out)
 				status = SH_EDIT_EOF;
 				break;
 			}
-			sh_line_delete_at(&ed.line);
+			if (sh_edit_delete_at(&ed, &redraw)) {
+				status = SH_EDIT_ERR;
+				break;
+			}
 		} else if (c == 0x7f || c == 0x08) {
-			sh_line_delete_before(&ed.line);
+			if (sh_edit_backspace(&ed, &redraw)) {
+				status = SH_EDIT_ERR;
+				break;
+			}
 		} else if (c == 0x01) {
-			ed.line.pos = 0;
+			if (ed.line.pos > 0) {
+				if (sh_edit_shift_cursor(-(int)ed.line.pos)) {
+					status = SH_EDIT_ERR;
+					break;
+				}
+				ed.line.pos = 0;
+			}
 		} else if (c == 0x05) {
-			ed.line.pos = ed.line.len;
+			if (ed.line.pos < ed.line.len) {
+				if (sh_edit_shift_cursor(
+					    (int)(ed.line.len - ed.line.pos))) {
+					status = SH_EDIT_ERR;
+					break;
+				}
+				ed.line.pos = ed.line.len;
+			}
 		} else if (c == 0x02) {
-			if (ed.line.pos > 0)
+			if (ed.line.pos > 0) {
+				if (sh_edit_shift_cursor(-1)) {
+					status = SH_EDIT_ERR;
+					break;
+				}
 				ed.line.pos--;
+			}
 		} else if (c == 0x06) {
-			if (ed.line.pos < ed.line.len)
+			if (ed.line.pos < ed.line.len) {
+				if (sh_edit_shift_cursor(1)) {
+					status = SH_EDIT_ERR;
+					break;
+				}
 				ed.line.pos++;
+			}
 		} else if (c == '\t') {
 			if (sh_edit_complete(&ed)) {
 				status = SH_EDIT_ERR;
 				break;
 			}
+			redraw = 1;
 		} else if (c == 0x0b) {
+			size_t old_len = ed.line.len;
+
 			sh_line_kill_to_end(&ed.line);
+			if (ed.line.len != old_len)
+				redraw = 1;
 		} else if (c == 0x15) {
+			size_t old_len = ed.line.len;
+
 			sh_line_kill_to_start(&ed.line);
+			if (ed.line.len != old_len)
+				redraw = 1;
 		} else if (c == 0x17) {
+			size_t old_len = ed.line.len;
+			size_t old_pos = ed.line.pos;
+
 			sh_line_erase_word(&ed.line);
+			if (ed.line.len != old_len || ed.line.pos != old_pos)
+				redraw = 1;
 		} else if (c == 0x10) {
+			redraw = 1;
 			if (sh_edit_history_move(&ed, -1)) {
 				status = SH_EDIT_ERR;
 				break;
 			}
 		} else if (c == 0x0e) {
+			redraw = 1;
 			if (sh_edit_history_move(&ed, 1)) {
 				status = SH_EDIT_ERR;
 				break;
 			}
 		} else if (c == 0x1b) {
-			if (sh_edit_escape(&ed)) {
+			if (sh_edit_escape(&ed, &redraw)) {
 				status = SH_EDIT_ERR;
 				break;
 			}
@@ -1080,11 +1223,18 @@ int sh_edit_line(const char *prompt, size_t prompt_len, char **out)
 				status = SH_EDIT_ERR;
 				break;
 			}
-		} else {
-			continue;
+			if (ed.line.pos == ed.line.len) {
+				/* Appended at the end of the line: echo it. */
+				if (sh_edit_putc((char)c)) {
+					status = SH_EDIT_ERR;
+					break;
+				}
+			} else {
+				redraw = 1;
+			}
 		}
 
-		if (sh_edit_draw(&ed)) {
+		if (redraw && sh_edit_draw(&ed)) {
 			status = SH_EDIT_ERR;
 			break;
 		}
