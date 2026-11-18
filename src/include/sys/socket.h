@@ -5,6 +5,9 @@
 #include <sys/types.h>
 #include <uapi/socket.h>
 
+typedef __brk_sa_family_t sa_family_t;
+typedef __brk_socklen_t socklen_t;
+
 struct sockaddr_storage {
 	sa_family_t ss_family;
 	char __ss_padding[126];
