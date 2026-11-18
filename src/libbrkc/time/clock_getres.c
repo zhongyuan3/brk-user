@@ -6,7 +6,7 @@
 int clock_getres(clockid_t clockid, struct timespec *res)
 {
 	struct brk_sysinfo info;
-	__u64 ns;
+	__brk_u64 ns;
 
 	if (syscall(SYS_SYSINFO, &info) < 0)
 		return -1;
@@ -27,8 +27,8 @@ int clock_getres(clockid_t clockid, struct timespec *res)
 	}
 
 	if (res) {
-		res->tv_sec = (__kernel_time_t)(ns / 1000000000ULL);
-		res->tv_nsec = (__kernel_long_t)(ns % 1000000000ULL);
+		res->tv_sec = (__brk_time_t)(ns / 1000000000ULL);
+		res->tv_nsec = (__brk_long_t)(ns % 1000000000ULL);
 	}
 	return 0;
 }

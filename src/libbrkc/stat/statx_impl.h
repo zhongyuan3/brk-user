@@ -24,11 +24,11 @@ static inline void statx_to_stat(const struct statx *stx, struct stat *st)
 	st->st_blocks = stx->stx_blocks;
 
 	st->st_atime = stx->stx_atime_ns / STATX_NS_PER_SEC;
-	st->st_atime_nsec = (__u64)(stx->stx_atime_ns % STATX_NS_PER_SEC);
+	st->st_atime_nsec = (__brk_u64)(stx->stx_atime_ns % STATX_NS_PER_SEC);
 	st->st_mtime = stx->stx_mtime_ns / STATX_NS_PER_SEC;
-	st->st_mtime_nsec = (__u64)(stx->stx_mtime_ns % STATX_NS_PER_SEC);
+	st->st_mtime_nsec = (__brk_u64)(stx->stx_mtime_ns % STATX_NS_PER_SEC);
 	st->st_ctime = stx->stx_ctime_ns / STATX_NS_PER_SEC;
-	st->st_ctime_nsec = (__u64)(stx->stx_ctime_ns % STATX_NS_PER_SEC);
+	st->st_ctime_nsec = (__brk_u64)(stx->stx_ctime_ns % STATX_NS_PER_SEC);
 }
 
 static inline int statx_at(int dirfd, const char *path, struct stat *st,

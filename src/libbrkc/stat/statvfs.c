@@ -6,16 +6,16 @@ static void statfs_to_statvfs(const struct brk_statfs *st, struct statvfs *buf)
 {
 	memset(buf, 0, sizeof(*buf));
 
-	buf->f_bsize = (__kernel_ulong_t)st->bsize;
-	buf->f_frsize = (__kernel_ulong_t)st->frsize;
-	buf->f_blocks = (__kernel_ulong_t)st->blocks;
-	buf->f_bfree = (__kernel_ulong_t)st->bfree;
-	buf->f_bavail = (__kernel_ulong_t)st->bavail;
-	buf->f_files = (__kernel_ulong_t)st->files;
-	buf->f_ffree = (__kernel_ulong_t)st->ffree;
-	buf->f_favail = (__kernel_ulong_t)st->ffree;
-	buf->f_fsid = (__kernel_ulong_t)st->fsid;
-	buf->f_namemax = (__kernel_ulong_t)st->namelen;
+	buf->f_bsize = (__brk_ulong_t)st->bsize;
+	buf->f_frsize = (__brk_ulong_t)st->frsize;
+	buf->f_blocks = (__brk_ulong_t)st->blocks;
+	buf->f_bfree = (__brk_ulong_t)st->bfree;
+	buf->f_bavail = (__brk_ulong_t)st->bavail;
+	buf->f_files = (__brk_ulong_t)st->files;
+	buf->f_ffree = (__brk_ulong_t)st->ffree;
+	buf->f_favail = (__brk_ulong_t)st->ffree;
+	buf->f_fsid = (__brk_ulong_t)st->fsid;
+	buf->f_namemax = (__brk_ulong_t)st->namelen;
 
 	/* Internal mount flags use the MS_* numbering. */
 	if (st->flags & 0x1)

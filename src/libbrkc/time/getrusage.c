@@ -7,8 +7,8 @@
 
 static void ns_to_timeval(unsigned long long ns, struct timeval *tv)
 {
-	tv->tv_sec = (__kernel_time_t)(ns / NS_PER_SEC);
-	tv->tv_usec = (__kernel_suseconds_t)((ns % NS_PER_SEC) / 1000ULL);
+	tv->tv_sec = (__brk_time_t)(ns / NS_PER_SEC);
+	tv->tv_usec = (__brk_suseconds_t)((ns % NS_PER_SEC) / 1000ULL);
 }
 
 int getrusage(int who, struct rusage *usage)

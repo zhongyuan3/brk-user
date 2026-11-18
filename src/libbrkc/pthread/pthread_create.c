@@ -72,11 +72,11 @@ int pthread_create(pthread_t *thread, const pthread_attr_t *attr,
 	self->stack_size = total;
 	self->detached = detachstate == PTHREAD_CREATE_DETACHED;
 
-	args.stack = (__kernel_ulong_t)((uintptr_t)region + total) & ~0xFUL;
-	args.entry = (__kernel_ulong_t)pthread_start;
-	args.arg = (__kernel_ulong_t)self;
-	args.tls = (__kernel_ulong_t)self;
-	args.clear_tid = (__kernel_ulong_t)&self->tid;
+	args.stack = (__brk_ulong_t)((uintptr_t)region + total) & ~0xFUL;
+	args.entry = (__brk_ulong_t)pthread_start;
+	args.arg = (__brk_ulong_t)self;
+	args.tls = (__brk_ulong_t)self;
+	args.clear_tid = (__brk_ulong_t)&self->tid;
 	args.flags = 0;
 
 	tid = syscall(SYS_THREAD_CREATE, &args);
