@@ -9,6 +9,7 @@ int fseek(FILE *stream, long offset, int whence)
 		return -1;
 	if (fflush(stream) < 0)
 		return -1;
+	stream->unget_valid = 0;
 	off_t r = lseek(stream->fd, offset, whence);
 	if (r < 0)
 		return -1;

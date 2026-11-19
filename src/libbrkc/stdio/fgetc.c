@@ -10,6 +10,11 @@ int fgetc(FILE *stream)
 	if (!stream || (stream->flags & __IO_ERR))
 		return EOF;
 
+	if (stream->unget_valid) {
+		stream->unget_valid = 0;
+		return (int)(unsigned char)stream->unget;
+	}
+
 	if (__stdio_flush_wbuf(stream) < 0)
 		return EOF;
 

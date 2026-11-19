@@ -15,6 +15,7 @@ int putenv(char *string);
 int clearenv(void);
 
 void exit(int status) __attribute__((noreturn));
+void abort(void) __attribute__((noreturn));
 int atexit(void (*func)(void));
 
 void qsort(void *base, size_t nmemb, size_t size,
@@ -30,10 +31,15 @@ int atoi(const char *nptr);
 long atol(const char *nptr);
 long long atoll(const char *nptr);
 
+int system(const char *command);
+
 long strtol(const char *nptr, char **endptr, int base);
 long long strtoll(const char *nptr, char **endptr, int base);
 unsigned long strtoul(const char *nptr, char **endptr, int base);
 unsigned long long strtoull(const char *nptr, char **endptr, int base);
+
+double strtod(const char *nptr, char **endptr);
+float strtof(const char *nptr, char **endptr);
 
 #define WEXITSTATUS(s) (((s) & 0xff00) >> 8)
 #define WTERMSIG(s) ((s) & 0x7f)

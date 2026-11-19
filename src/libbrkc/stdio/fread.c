@@ -20,6 +20,13 @@ size_t fread(void *ptr, size_t size, size_t nmemb, FILE *stream)
 	if (__stdio_flush_wbuf(stream) < 0)
 		return 0;
 
+	/* A character pushed back with ungetc() is read first. */
+	if (stream->unget_valid && left > 0) {
+		*p++ = (uint8_t)stream->unget;
+		stream->unget_valid = 0;
+		left--;
+	}
+
 	while (left > 0) {
 		while (left > 0 && stream->read_ptr && stream->read_end &&
 		       stream->read_ptr < stream->read_end) {

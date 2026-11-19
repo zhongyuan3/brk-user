@@ -5,11 +5,11 @@
 
 #include "stdio_int.h"
 
-#define ZERO_PAD (1U << 0)
-#define LEFT_ALIGN (1U << 1)
-#define MARK_POS (1U << 2)
-#define ALT_FORM (1U << 3)
-#define PAD_POS (1U << 4)
+#define ZERO_PAD PRTF_ZERO_PAD
+#define LEFT_ALIGN PRTF_LEFT_ALIGN
+#define MARK_POS PRTF_MARK_POS
+#define ALT_FORM PRTF_ALT_FORM
+#define PAD_POS PRTF_PAD_POS
 
 union fmt_arg {
 	struct {
@@ -17,11 +17,7 @@ union fmt_arg {
 		bool lt0;
 	};
 	void *p;
-};
-
-struct fmt_context {
-	FILE *stream;
-	size_t cnt;
+	double f;
 };
 
 enum {
@@ -59,6 +55,8 @@ enum {
 	STATE_N_INTMAX,
 	STATE_N_SIZE,
 	STATE_N_PTRDIFF,
+	STATE_DBL,
+	STATE_DBL_L,
 };
 
 #define S(x) [x - 'A']
@@ -83,6 +81,14 @@ static uint8_t const states[STATE_STOP + 1]['z' - 'A' + 1] = {
 		S('c') = STATE_INT,
 		S('p') = STATE_PTR,
 		S('n') = STATE_N_INT,
+		S('e') = STATE_DBL,
+		S('f') = STATE_DBL,
+		S('g') = STATE_DBL,
+		S('a') = STATE_DBL,
+		S('E') = STATE_DBL,
+		S('F') = STATE_DBL,
+		S('G') = STATE_DBL,
+		S('A') = STATE_DBL,
 	},
 	{
 		/* STATE_LPRE */
@@ -94,6 +100,14 @@ static uint8_t const states[STATE_STOP + 1]['z' - 'A' + 1] = {
 		S('X') = STATE_ULONG,
 		S('o') = STATE_ULONG,
 		S('n') = STATE_N_LONG,
+		S('e') = STATE_DBL_L,
+		S('f') = STATE_DBL_L,
+		S('g') = STATE_DBL_L,
+		S('a') = STATE_DBL_L,
+		S('E') = STATE_DBL_L,
+		S('F') = STATE_DBL_L,
+		S('G') = STATE_DBL_L,
+		S('A') = STATE_DBL_L,
 	},
 	{
 		/* STATE_LLPRE */
@@ -186,7 +200,7 @@ static char *fmt_x(uintmax_t x, char *s, char const *d)
 	return s;
 }
 
-static void out(struct fmt_context *ctx, char const *buf, size_t len)
+void __printf_out(struct fmt_context *ctx, char const *buf, size_t len)
 {
 	while (len > 0) {
 		size_t n = 0;
@@ -204,10 +218,20 @@ static void out(struct fmt_context *ctx, char const *buf, size_t len)
 	}
 }
 
-static void pad(struct fmt_context *ctx, size_t pad_len, char pad_ch)
+static void out(struct fmt_context *ctx, char const *buf, size_t len)
+{
+	__printf_out(ctx, buf, len);
+}
+
+void __printf_pad(struct fmt_context *ctx, size_t pad_len, char pad_ch)
 {
 	for (size_t i = 0; i < pad_len; ++i)
-		out(ctx, &pad_ch, 1);
+		__printf_out(ctx, &pad_ch, 1);
+}
+
+static void pad(struct fmt_context *ctx, size_t pad_len, char pad_ch)
+{
+	__printf_pad(ctx, pad_len, pad_ch);
 }
 
 static void pop_n(va_list *ap, unsigned int st, size_t cnt)
@@ -338,6 +362,13 @@ static void pop_arg(va_list *ap, unsigned int st, union fmt_arg *arg)
 		pd = va_arg(*ap, ptrdiff_t);
 		arg->i = (uintmax_t)pd;
 		break;
+	case STATE_DBL:
+		arg->f = va_arg(*ap, double);
+		break;
+	case STATE_DBL_L:
+		/* long double is narrow-cast: the FP engine is double-only. */
+		arg->f = (double)va_arg(*ap, long double);
+		break;
 	}
 }
 
@@ -456,6 +487,15 @@ static int printf_core(FILE *stream, const char *format, va_list ap)
 		size_t rspace_pad = 0;
 
 		switch (pch) {
+		case 'e': case 'f': case 'g': case 'a':
+		case 'E': case 'F': case 'G': case 'A': {
+			int fp_prec = has_prec ? (int)prec : -1;
+			int l = __printf_fmt_fp(&ctx, arg.f, width, fp_prec,
+						flags, pch);
+			if (l < 0)
+				goto invalid;
+			continue;
+		}
 		case 'i':
 		case 'd':
 		case 'u':

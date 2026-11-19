@@ -30,6 +30,8 @@ char *strstr(char const *haystack, char const *needle);
 size_t strspn(const char *s, const char *accept);
 size_t strcspn(const char *s, const char *reject);
 char *strtok(char *str, const char *delim);
+char *strpbrk(const char *s, const char *accept);
+int strcoll(const char *s1, const char *s2);
 
 const char *strerror(int errnum);
 

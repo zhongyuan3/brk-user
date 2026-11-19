@@ -29,6 +29,14 @@ void clearerr(FILE *stream);
 void rewind(FILE *stream);
 int ferror(FILE *stream);
 int feof(FILE *stream);
+FILE *freopen(const char *path, const char *mode, FILE *stream);
+int ungetc(int c, FILE *stream);
+int setvbuf(FILE *stream, char *buf, int mode, size_t size);
+FILE *tmpfile(void);
+char *tmpnam(char *s);
+
+int remove(const char *path);
+int rename(const char *oldpath, const char *newpath);
 
 int putc(int c, FILE *stream);
 int fputc(int c, FILE *stream);
@@ -59,5 +67,11 @@ extern FILE *__stderr_file;
 #define SEEK_SET 0
 #define SEEK_CUR 1
 #define SEEK_END 2
+
+#define BUFSIZ 1024
+#define _IOFBF 0
+#define _IOLBF 1
+#define _IONBF 2
+#define L_tmpnam 64
 
 #endif

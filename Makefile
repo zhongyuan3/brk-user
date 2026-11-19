@@ -50,9 +50,11 @@ CFLAGS += -I./src/include -I$(BUILD_ROOT)/include
 CFLAGS += -MMD -MP
 
 LDFLAGS := -nostdlib -no-pie -z max-page-size=4096 -static
-# Userland provides its own compiler helpers; override with -lgcc only as a
-# fallback if a future toolchain emits an unimplemented helper.
-LIBGCC ?=
+# The printf engine renders %Lf by narrowing a long double, which the
+# compiler implements with the __trunctfdf2 helper in libgcc.  The
+# archive linker only pulls that one member on demand, so defaulting to
+# -lgcc adds nothing to programs that never print long doubles.
+LIBGCC ?= -lgcc
 LDLIBS := $(LIBGCC)
 
 HOST_CFLAGS ?= -std=gnu11 -O2 -Wall -Wextra -Werror

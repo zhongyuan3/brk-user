@@ -6,6 +6,7 @@
 #include <uapi/signal.h>
 
 typedef __brk_sigset_t sigset_t;
+typedef int sig_atomic_t;
 
 int kill(pid_t pid, int sig);
 int raise(int sig);

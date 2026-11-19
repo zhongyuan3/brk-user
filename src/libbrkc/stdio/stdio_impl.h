@@ -18,6 +18,9 @@ struct __io_file {
 	char *read_end;
 	int fd;
 	unsigned char flags;
+	/* One-character pushback for ungetc(); read by fgetc() first. */
+	char unget;
+	unsigned char unget_valid;
 };
 
 #define __IO_EOF 1u
