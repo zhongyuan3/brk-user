@@ -95,12 +95,22 @@ BRKSH_OBJS := $(patsubst src/%.c,$(OBJDIR)/%.o,$(BRKSH_SRCS))
 BRKCC_OBJS := $(patsubst src/%.c,$(OBJDIR)/%.o,$(BRKCC_SRCS))
 BRKTEST_OBJS := $(patsubst src/%.c,$(OBJDIR)/%.o,$(BRKTEST_SRCS))
 
-USER_PROGS := $(sort $(USER_SINGLE_PROGS) $(USER_DIR_PROGS)) sh cc brktest
+# Vendored third-party sources live under vendor/ and are compiled with
+# warnings visible but without -Werror, mirroring the kernel's vendor/
+# policy. Lua 5.5.1 builds every file except luac.c, the standalone
+# bytecode-compiler frontend with its own main().
+LUA_DIR := vendor/lua
+LUA_CFLAGS := $(filter-out -Werror,$(CFLAGS))
+LUA_SRCS := $(sort $(filter-out $(LUA_DIR)/luac.c,\
+	$(wildcard $(LUA_DIR)/*.c)))
+LUA_OBJS := $(patsubst $(LUA_DIR)/%.c,$(OBJDIR)/vendor/lua/%.o,$(LUA_SRCS))
+
+USER_PROGS := $(sort $(USER_SINGLE_PROGS) $(USER_DIR_PROGS)) sh cc brktest lua
 USER_BINS := $(addprefix $(BINDIR)/,$(USER_PROGS))
 USER_OBJS := $(patsubst src/%.c,$(OBJDIR)/%.o,\
 	$(USER_SINGLE_SRCS) $(USER_DIR_SRCS)) $(BRKSH_OBJS) $(BRKCC_OBJS) \
 	$(BRKTEST_OBJS)
-DEPS := $(LIB_OBJS:.o=.d) $(USER_OBJS:.o=.d)
+DEPS := $(LIB_OBJS:.o=.d) $(USER_OBJS:.o=.d) $(LUA_OBJS:.o=.d)
 
 # libc tests are normal libuser-linked programs under tests/libc.
 TEST_SRCS := $(sort $(wildcard tests/libc/*.c))
@@ -109,7 +119,7 @@ TEST_BINS := $(patsubst tests/%.c,$(BUILD_ROOT)/tests/%,$(TEST_SRCS))
 DEPS += $(TEST_OBJS:.o=.d)
 
 # Keep object files around for debugging and incremental rebuilds.
-.SECONDARY: $(LIB_OBJS) $(USER_OBJS) $(TEST_OBJS)
+.SECONDARY: $(LIB_OBJS) $(USER_OBJS) $(TEST_OBJS) $(LUA_OBJS)
 
 CC_HOST := $(BUILD_ROOT)/cc-host
 CC_HOST_OBJDIR := $(BUILD_ROOT)/cc-host-obj
@@ -153,6 +163,7 @@ help:
 	@echo "  src/libbrkc/         BRK C library"
 	@echo "  src/libbrkcmd/       BRK command helpers"
 	@echo "  src/include/         public headers"
+	@echo "  vendor/lua/          vendored Lua 5.5.1 (installed as lua)"
 	@echo ""
 	@echo "Configurable variables:"
 	@echo "  CROSS_COMPILE=<prefix>"
@@ -219,6 +230,15 @@ $(BINDIR)/cc: $(BRKCC_OBJS) $(LIBUSER_A) $(USER_LD) | $(BINDIR)
 $(BINDIR)/brktest: $(BRKTEST_OBJS) $(LIBUSER_A) $(USER_LD) | $(BINDIR)
 	$(CC) $(CFLAGS) $(LDFLAGS) -T $(USER_LD) -o $@ \
 		$(filter $(OBJDIR)/%.o,$^) $(LIBUSER_A) $(LDLIBS)
+
+# Vendored Lua interpreter: linked from vendor/lua (see its README).
+$(OBJDIR)/vendor/lua/%.o: $(LUA_DIR)/%.c | $(UAPI_STAMP)
+	@mkdir -p $(dir $@)
+	$(CC) $(LUA_CFLAGS) -c -o $@ $<
+
+$(BINDIR)/lua: $(LUA_OBJS) $(LIBUSER_A) $(USER_LD) | $(BINDIR)
+	$(CC) $(LUA_CFLAGS) $(LDFLAGS) -T $(USER_LD) -o $@ $(LUA_OBJS) \
+		$(LIBUSER_A) $(LDLIBS)
 
 $(BUILD_ROOT)/tests/%: $(OBJDIR)/tests/%.o $(LIBUSER_A) $(USER_LD)
 	@mkdir -p $(dir $@)

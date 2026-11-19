@@ -14,13 +14,17 @@ src/
 ├── brktest/            # libc/system test harness
 ├── cmd/                # single-file user commands
 ├── libbrkc/            # BRK C library (libc API)
+├── libbrkc/math/       # double-precision libm (vendored from musl)
 ├── libbrkcmd/          # command helper library (brk_cmd_* API)
 ├── include/            # public headers
 ├── include/brk/cmd.h   # command helper API
 └── user.ld.S           # user program linker script
+vendor/
+└── lua/                # vendored Lua 5.5.1 (installed as lua)
 tests/
 ├── cc/                 # sources compiled by the on-target cc
-└── libc/               # tests linked against libuser.a
+├── libc/               # tests linked against libuser.a
+└── lua/                # smoke test run by the vendored interpreter
 ```
 
 A command is either a single source file (`src/cmd/foo.c`) or a directory of
@@ -116,10 +120,28 @@ Libc tests are linked into `libuser` programs and installed as executables:
 ```sh
 /home/tests/libc/alloc
 ```
-
 The allocator test covers small and large allocations, `calloc`, `realloc`,
 coalescing, invalid sizes and concurrent allocation.  See
 [`tests/libc/README.md`](tests/libc/README.md) for details.
+
+### Lua
+
+`src/cmd/lua` vendors Lua 5.5.1 unmodified and links it statically against
+`libuser.a`; the build installs it as `/bin/lua`.  It exercises the whole
+floating-point stack: the vendored musl-derived libm, correctly rounded
+`strtod` and printf conversions, `setjmp`-based error handling and the
+kernel's FP context switching.  The in-system smoke test:
+
+```sh
+lua /home/tests/lua/smoke.lua
+```
+
+The math, strtod and printf-float engines are pure arithmetic and are
+validated on the host against glibc (2 ULP bound) by:
+
+```sh
+scripts/math_host_test.sh
+```
 
 The libc and system test harness can also be run directly:
 
