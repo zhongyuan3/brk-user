@@ -1,4 +1,4 @@
-#include "sh.h"
+#include "brksh.h"
 
 void sh_lexer_init(struct sh_lexer *lex, const char *input, size_t len)
 {

@@ -1,4 +1,4 @@
-#include "cc.h"
+#include "brkcc.h"
 
 void fatal(const char *fmt, ...)
 	__attribute__((noreturn, format(printf, 1, 2)));

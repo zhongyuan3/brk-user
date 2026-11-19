@@ -1,4 +1,4 @@
-#include "sh.h"
+#include "brksh.h"
 
 /* ---- interactive line editing, completion and command history ---- */
 

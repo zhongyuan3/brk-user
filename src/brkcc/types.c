@@ -1,4 +1,4 @@
-#include "cc.h"
+#include "brkcc.h"
 
 struct type *ty_void;
 struct type *ty_char;

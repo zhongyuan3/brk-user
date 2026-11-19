@@ -9,10 +9,10 @@ configurable with `KERNEL_ROOT`.
 
 ```text
 src/
+├── brksh/              # the shell (installed as sh)
+├── brkcc/              # on-target C compiler (installed as cc)
 ├── cmd/                # user commands
 │   ├── *.c             # single-file commands
-│   ├── cc/             # on-target C compiler
-│   ├── sh/             # shell
 │   └── brktest/        # libc/system test harness
 ├── libbrkc/            # BRK C library (libc API)
 ├── libbrkcmd/          # command helper library (brk_cmd_* API)
@@ -90,7 +90,7 @@ The rootfs script builds the user commands and libc tests, then installs:
 - `/etc` configuration files
 - `tests/` under `/home/tests`
 - libc test binaries under `/home/tests/libc`
-- `src/cmd/cc/include/cc.h` under `/usr/include/cc.h`
+- `src/brkcc/include/cc.h` under `/usr/include/cc.h`
 
 `KERNEL_ROOT` and `TOOLS_ROOT` can be overridden when the kernel or
 `brk-tools` repositories are checked out elsewhere.
@@ -110,7 +110,7 @@ cc /home/tests/cc/multi_a.c /home/tests/cc/multi_b.c -o /tmp/multi
 
 See [`tests/cc/README.md`](tests/cc/README.md) for the full list and expected
 outputs.  The compiler implementation is documented in
-[`src/cmd/cc/README.md`](src/cmd/cc/README.md).
+[`src/brkcc/README.md`](src/brkcc/README.md).
 
 Libc tests are linked into `libuser` programs and installed as executables:
 

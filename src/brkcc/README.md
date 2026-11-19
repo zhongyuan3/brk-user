@@ -1,6 +1,6 @@
 # cc — A Lightweight User-Space C Compiler for BRK
 
-`src/cmd/cc/` is a small C compiler that runs in BRK/RISC-V64 user space. It does not depend on the target machine's `as`/`ld`; instead, it performs lexing, preprocessing, parsing, code generation, linking, and ELF writing itself. The compiler itself still uses this repository's `libuser.a`, but **the generated programs do not link against libuser**—they depend only on kernel system calls.
+`src/brkcc/` is a small C compiler that runs in BRK/RISC-V64 user space. It does not depend on the target machine's `as`/`ld`; instead, it performs lexing, preprocessing, parsing, code generation, linking, and ELF writing itself. The compiler itself still uses this repository's `libuser.a`, but **the generated programs do not link against libuser**—they depend only on kernel system calls.
 
 ## Quick Start
 
@@ -10,7 +10,7 @@ Build user programs (including `/bin/cc`):
 make -C brk-user
 ```
 
-Regenerate the rootfs (this installs `cc` to `/bin/cc`, `src/cmd/cc/include/cc.h` to `/usr/include/cc.h`, and copies `tests/` to `/home/tests`):
+Regenerate the rootfs (this installs `cc` to `/bin/cc`, `src/brkcc/include/cc.h` to `/usr/include/cc.h`, and copies `tests/` to `/home/tests`):
 
 ```sh
 make -C brk rootfs CROSS_COMPILE=riscv64-unknown-elf-
@@ -61,7 +61,7 @@ Not supported:
 - `#` stringification, `##` token pasting
 - `#include` followed by a macro name
 - Macro invocations spanning physical lines (a macro invocation must be within the same logical line)
-- Complex standard headers (the target machine provides only a minimal `src/cmd/cc/include/cc.h`)
+- Complex standard headers (the target machine provides only a minimal `src/brkcc/include/cc.h`)
 
 ## Supported C Subset
 
@@ -144,7 +144,7 @@ int putchar(int c);
 int puts(const char *s);
 ```
 
-`src/cmd/cc/include/cc.h` provides these prototypes as well as `NULL`, `EOF`, and `O_*` constants.
+`src/brkcc/include/cc.h` provides these prototypes as well as `NULL`, `EOF`, and `O_*` constants.
 
 ## Multi-File and Linking
 
@@ -213,9 +213,9 @@ In addition, the kernel currently does not save floating-point context, so gener
 
 ## Implementation Structure
 
-`src/cmd/cc/` is divided by stage:
+`src/brkcc/` is divided by stage:
 
-- `cc.h`: shared types, symbol tables, and function declarations between modules
+- `brkcc.h`: shared types, symbol tables, and function declarations between modules
 - `util.c`: memory allocation, error handling, and byte buffers
 - `lexer.c`: integer/character/string literals, identifiers, operators, comments, escapes
 - `preprocess.c`: macro tables, include search, conditional compilation, `#if` expression evaluation

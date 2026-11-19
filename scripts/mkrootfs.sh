@@ -132,8 +132,8 @@ if [[ -d $BUILD_ROOT/tests/libc ]]; then
 	done
 fi
 
-if [[ -f $USER_ROOT/src/cmd/cc/include/cc.h ]]; then
-	"$BRKFS" cp "$USER_ROOT/src/cmd/cc/include/cc.h" "/usr/include/cc.h" "$IMG"
+if [[ -f $USER_ROOT/src/brkcc/include/cc.h ]]; then
+	"$BRKFS" cp "$USER_ROOT/src/brkcc/include/cc.h" "/usr/include/cc.h" "$IMG"
 fi
 
 for doc in README.md README.cn.md LICENSE; do

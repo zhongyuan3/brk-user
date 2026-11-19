@@ -1,4 +1,4 @@
-#include "cc.h"
+#include "brkcc.h"
 
 struct buf code;
 struct fixup *fixups;

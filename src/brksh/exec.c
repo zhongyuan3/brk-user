@@ -1,4 +1,4 @@
-#include "sh.h"
+#include "brksh.h"
 
 static int apply_redirs_child(const struct sh_simple_cmd *c)
 {
