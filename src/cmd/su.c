@@ -1,7 +1,7 @@
 #include <brk/cmd.h>
 #include <errno.h>
 #include <pwd.h>
-#include <pwutil.h>
+#include <brk/pwutil.h>
 #include <shadow.h>
 #include <stdbool.h>
 #include <stdio.h>

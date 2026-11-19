@@ -8,7 +8,7 @@
 #include <poll.h>
 #include <pthread.h>
 #include <pwd.h>
-#include <pwutil.h>
+#include <brk/pwutil.h>
 #include <shadow.h>
 #include <signal.h>
 #include <stdio.h>

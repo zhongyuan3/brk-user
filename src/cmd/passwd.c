@@ -1,6 +1,6 @@
 #include <brk/cmd.h>
 #include <pwd.h>
-#include <pwutil.h>
+#include <brk/pwutil.h>
 #include <shadow.h>
 #include <stdio.h>
 #include <stdlib.h>

@@ -90,7 +90,7 @@ The rootfs script builds the user commands and libc tests, then installs:
 - `/etc` configuration files
 - `tests/` under `/home/tests`
 - libc test binaries under `/home/tests/libc`
-- `src/include/cc.h` under `/usr/include/cc.h`
+- `src/cmd/cc/include/cc.h` under `/usr/include/cc.h`
 
 `KERNEL_ROOT` and `TOOLS_ROOT` can be overridden when the kernel or
 `brk-tools` repositories are checked out elsewhere.

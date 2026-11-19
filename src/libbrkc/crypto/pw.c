@@ -5,7 +5,7 @@
 #include <termios.h>
 #include <unistd.h>
 
-#include <pwutil.h>
+#include <brk/pwutil.h>
 
 #define SALT_LEN 8
 #define PW_TMP_LEN 256

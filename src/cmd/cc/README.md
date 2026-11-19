@@ -10,7 +10,7 @@ Build user programs (including `/bin/cc`):
 make -C brk-user
 ```
 
-Regenerate the rootfs (this installs `cc` to `/bin/cc`, `src/include/cc.h` to `/usr/include/cc.h`, and copies `tests/` to `/home/tests`):
+Regenerate the rootfs (this installs `cc` to `/bin/cc`, `src/cmd/cc/include/cc.h` to `/usr/include/cc.h`, and copies `tests/` to `/home/tests`):
 
 ```sh
 make -C brk rootfs CROSS_COMPILE=riscv64-unknown-elf-
@@ -61,7 +61,7 @@ Not supported:
 - `#` stringification, `##` token pasting
 - `#include` followed by a macro name
 - Macro invocations spanning physical lines (a macro invocation must be within the same logical line)
-- Complex standard headers (the target machine provides only a minimal `src/include/cc.h`)
+- Complex standard headers (the target machine provides only a minimal `src/cmd/cc/include/cc.h`)
 
 ## Supported C Subset
 
@@ -144,7 +144,7 @@ int putchar(int c);
 int puts(const char *s);
 ```
 
-`src/include/cc.h` provides these prototypes as well as `NULL`, `EOF`, and `O_*` constants.
+`src/cmd/cc/include/cc.h` provides these prototypes as well as `NULL`, `EOF`, and `O_*` constants.
 
 ## Multi-File and Linking
 
