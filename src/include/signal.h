@@ -5,7 +5,7 @@
 #include <sys/types.h>
 #include <uapi/signal.h>
 
-typedef __brk_ulong_t sigset_t;
+typedef __brk_sigset_t sigset_t;
 
 int kill(pid_t pid, int sig);
 int raise(int sig);

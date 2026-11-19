@@ -6,7 +6,7 @@
 #include <sys/types.h>
 #include <uapi/poll.h>
 
-typedef __brk_ulong_t nfds_t;
+typedef __brk_nfds_t nfds_t;
 
 int poll(struct pollfd *fds, nfds_t nfds, int timeout);
 int ppoll(struct pollfd *fds, nfds_t nfds, const struct timespec *timeout,

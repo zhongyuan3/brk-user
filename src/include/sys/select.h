@@ -6,7 +6,7 @@
 #include <sys/types.h>
 #include <uapi/select.h>
 
-typedef __brk_u64 fd_mask;
+typedef __brk_fd_mask_t fd_mask;
 
 int select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds,
 	   struct timeval *timeout);
