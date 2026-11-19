@@ -1,4 +1,4 @@
-#include <brk/kernel.h>
+#include <brk/lengthof.h>
 #include <errno.h>
 #include <stddef.h>
 
@@ -107,7 +107,7 @@ const char *strerror(int errnum)
 	if (errnum < 0)
 		errnum = -errnum;
 
-	if ((size_t)errnum >= countof(errmsgs))
+	if ((size_t)errnum >= lengthof(errmsgs))
 		return "Unknown error";
 	msg = errmsgs[errnum];
 	return msg ? msg : "Unknown error";
