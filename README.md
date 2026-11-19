@@ -11,9 +11,8 @@ configurable with `KERNEL_ROOT`.
 src/
 ├── brksh/              # the shell (installed as sh)
 ├── brkcc/              # on-target C compiler (installed as cc)
-├── cmd/                # user commands
-│   ├── *.c             # single-file commands
-│   └── brktest/        # libc/system test harness
+├── brktest/            # libc/system test harness
+├── cmd/                # single-file user commands
 ├── libbrkc/            # BRK C library (libc API)
 ├── libbrkcmd/          # command helper library (brk_cmd_* API)
 ├── include/            # public headers
@@ -129,7 +128,7 @@ The libc and system test harness can also be run directly:
 /usr/bin/brktest all
 ```
 
-See [`src/cmd/brktest/README.md`](src/cmd/brktest/README.md) for suite names,
+See [`src/brktest/README.md`](src/brktest/README.md) for suite names,
 options and stress-test usage.
 
 ## License
