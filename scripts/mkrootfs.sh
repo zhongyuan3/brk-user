@@ -77,6 +77,9 @@ mkdir -p "$ROOTFS_TREE"/usr/local/{bin,sbin,lib,include,share}
 mkdir -p "$ROOTFS_TREE"/usr/share/doc/brk
 mkdir -p "$ROOTFS_TREE"/var/{log,tmp,spool,cache,lib}
 
+# FHS: world-writable scratch directories with the sticky bit.
+chmod 1777 "$ROOTFS_TREE/tmp" "$ROOTFS_TREE/var/tmp"
+
 for d in bin sbin etc home root tmp boot dev proc sys run mnt media opt srv \
 	 lib lib64 usr var; do
 	"$BRKFS" cp -r --parents "$ROOTFS_TREE/$d" "/$d" "$IMG"
@@ -109,6 +112,9 @@ for name in "${bins[@]}"; do
 done
 
 if [[ -d $USER_ROOT/etc ]]; then
+	# The shadow file holds password hashes; it must stay root-only even
+	# on the host side so the mode survives the copy into the image.
+	[[ -f $USER_ROOT/etc/shadow ]] && chmod 0600 "$USER_ROOT/etc/shadow"
 	"$BRKFS" cp -r --parents "$USER_ROOT/etc" "/etc" "$IMG"
 fi
 
