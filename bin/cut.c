@@ -1,4 +1,4 @@
-#include <brk/cmd.h>
+#include <libcmdfw.h>
 #include <errno.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -200,7 +200,7 @@ static int cut_file(FILE *f, const struct ranges *field_ranges,
 
 int main(int argc, char *argv[])
 {
-	struct brk_cmd_optctx ctx;
+	struct cmdfw_optctx ctx;
 	struct ranges field_ranges = { 0 };
 	struct ranges char_ranges = { 0 };
 	const char *field_list = NULL;
@@ -211,25 +211,25 @@ int main(int argc, char *argv[])
 	bool have_chars = false;
 	char delim = '\t';
 	int opt;
-	int ret = BRK_CMD_EXIT_OK;
+	int ret = CMDFW_EXIT_OK;
 
-	brk_cmd_init(argc, argv);
-	brk_cmd_optctx_init(&ctx, argc, argv);
+	cmdfw_init(argc, argv);
+	cmdfw_optctx_init(&ctx, argc, argv);
 
-	static const struct brk_cmd_option opts[] = {
-		{ 'd', 'd', NULL, BRK_CMD_OPT_REQUIRED_ARG },
-		{ 'f', 'f', NULL, BRK_CMD_OPT_REQUIRED_ARG },
-		{ 'c', 'c', NULL, BRK_CMD_OPT_REQUIRED_ARG },
-		{ 's', 's', NULL, BRK_CMD_OPT_NO_ARG },
-		{ BRK_CMD_OPT_HELP, 0, "help", BRK_CMD_OPT_NO_ARG },
-		BRK_CMD_OPTION_END,
+	static const struct cmdfw_option opts[] = {
+		{ 'd', 'd', NULL, CMDFW_OPT_REQUIRED_ARG },
+		{ 'f', 'f', NULL, CMDFW_OPT_REQUIRED_ARG },
+		{ 'c', 'c', NULL, CMDFW_OPT_REQUIRED_ARG },
+		{ 's', 's', NULL, CMDFW_OPT_NO_ARG },
+		{ CMDFW_OPT_HELP, 0, "help", CMDFW_OPT_NO_ARG },
+		CMDFW_OPTION_END,
 	};
 
-	while ((opt = brk_cmd_optparse(&ctx, opts)) != 0) {
+	while ((opt = cmdfw_optparse(&ctx, opts)) != 0) {
 		if (opt == '?' || opt == ':')
-			return BRK_CMD_EXIT_USAGE;
-		if (opt == BRK_CMD_OPT_HELP)
-			brk_cmd_help_exit(help);
+			return CMDFW_EXIT_USAGE;
+		if (opt == CMDFW_OPT_HELP)
+			cmdfw_help_exit(help);
 		if (opt == 'd')
 			delim_arg = ctx.arg;
 		if (opt == 'f') {
@@ -245,34 +245,34 @@ int main(int argc, char *argv[])
 	}
 
 	if (have_fields == have_chars)
-		brk_cmd_usage(help);
+		cmdfw_usage(help);
 
 	if (delim_arg && parse_delim(delim_arg, &delim) != 0)
-		return brk_cmd_fail("invalid delimiter");
+		return cmdfw_fail("invalid delimiter");
 
 	if (have_fields && parse_list(field_list, &field_ranges) != 0)
-		return brk_cmd_fail("invalid field list");
+		return cmdfw_fail("invalid field list");
 	if (have_chars && parse_list(char_list, &char_ranges) != 0)
-		return brk_cmd_fail("invalid character list");
+		return cmdfw_fail("invalid character list");
 
-	if (brk_cmd_operand_count(&ctx) == 0) {
+	if (cmdfw_operand_count(&ctx) == 0) {
 		if (cut_file(stdin, have_fields ? &field_ranges : NULL,
 			     have_chars ? &char_ranges : NULL, delim,
 			     suppress) != 0)
-			ret = brk_cmd_fail_errno("read");
+			ret = cmdfw_fail_errno("read");
 	} else {
-		for (int i = 0; i < brk_cmd_operand_count(&ctx); i++) {
-			const char *path = brk_cmd_operand(&ctx, i);
+		for (int i = 0; i < cmdfw_operand_count(&ctx); i++) {
+			const char *path = cmdfw_operand(&ctx, i);
 			FILE *f = !strcmp(path, "-") ? stdin : fopen(path, "r");
 
 			if (!f) {
-				ret = brk_cmd_fail_errno(path);
+				ret = cmdfw_fail_errno(path);
 				continue;
 			}
 			if (cut_file(f, have_fields ? &field_ranges : NULL,
 				     have_chars ? &char_ranges : NULL, delim,
 				     suppress) != 0)
-				ret = brk_cmd_fail_errno(path);
+				ret = cmdfw_fail_errno(path);
 			if (f != stdin)
 				fclose(f);
 		}

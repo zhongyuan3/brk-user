@@ -1,20 +1,20 @@
-#include <brk/cmd.h>
+#include <libcmdfw.h>
 #include <unistd.h>
 
 static const char usage[] = "Usage: unlink <linkname>";
 
 int main(int argc, char *argv[])
 {
-	struct brk_cmd_optctx ctx;
+	struct cmdfw_optctx ctx;
 
-	brk_cmd_init(argc, argv);
-	brk_cmd_optctx_init(&ctx, argc, argv);
-	brk_cmd_require_operands(&ctx, 1, usage);
-	if (brk_cmd_operand_count(&ctx) != 1)
-		brk_cmd_usage(usage);
+	cmdfw_init(argc, argv);
+	cmdfw_optctx_init(&ctx, argc, argv);
+	cmdfw_require_operands(&ctx, 1, usage);
+	if (cmdfw_operand_count(&ctx) != 1)
+		cmdfw_usage(usage);
 
-	if (unlink(brk_cmd_operand(&ctx, 0)) != 0)
-		return brk_cmd_fail_errno("unlink failed");
+	if (unlink(cmdfw_operand(&ctx, 0)) != 0)
+		return cmdfw_fail_errno("unlink failed");
 
-	return BRK_CMD_EXIT_OK;
+	return CMDFW_EXIT_OK;
 }

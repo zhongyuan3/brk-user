@@ -1,4 +1,4 @@
-#include <brk/cmd.h>
+#include <libcmdfw.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -25,21 +25,21 @@ int main(int argc, char *argv[])
 	int status;
 	int index = 1;
 
-	brk_cmd_init(argc, argv);
+	cmdfw_init(argc, argv);
 
 	if (argc > 1 && !strcmp(argv[1], "--help"))
-		brk_cmd_help_exit(usage);
+		cmdfw_help_exit(usage);
 	if (index < argc && !strcmp(argv[index], "-p"))
 		index++;
 	if (index >= argc)
-		brk_cmd_usage(usage);
+		cmdfw_usage(usage);
 
 	if (clock_gettime(CLOCK_MONOTONIC, &start) != 0)
-		return brk_cmd_fail_errno("clock_gettime");
+		return cmdfw_fail_errno("clock_gettime");
 
 	pid = fork();
 	if (pid < 0)
-		return brk_cmd_fail_errno("fork");
+		return cmdfw_fail_errno("fork");
 	if (pid == 0) {
 		execvp(argv[index], &argv[index]);
 		fprintf(stderr, "time: %s: %s\n", argv[index], strerror(errno));
@@ -47,11 +47,11 @@ int main(int argc, char *argv[])
 	}
 
 	if (waitpid(pid, &status, 0) != pid)
-		return brk_cmd_fail_errno("waitpid");
+		return cmdfw_fail_errno("waitpid");
 	if (clock_gettime(CLOCK_MONOTONIC, &end) != 0)
-		return brk_cmd_fail_errno("clock_gettime");
+		return cmdfw_fail_errno("clock_gettime");
 	if (getrusage(RUSAGE_CHILDREN, &ru) != 0)
-		return brk_cmd_fail_errno("getrusage");
+		return cmdfw_fail_errno("getrusage");
 
 	long sec = end.tv_sec - start.tv_sec;
 	long nsec = end.tv_nsec - start.tv_nsec;
@@ -69,5 +69,5 @@ int main(int argc, char *argv[])
 		return WEXITSTATUS(status);
 	if (WIFSIGNALED(status))
 		return 128 + WTERMSIG(status);
-	return BRK_CMD_EXIT_FAIL;
+	return CMDFW_EXIT_FAIL;
 }

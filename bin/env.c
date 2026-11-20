@@ -1,4 +1,4 @@
-#include <brk/cmd.h>
+#include <libcmdfw.h>
 #include <errno.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -15,11 +15,11 @@ static const char usage[] =
 	"  -u NAME  remove NAME from the environment\n"
 	"  --help   display this help and exit";
 
-static const struct brk_cmd_option opts[] = {
-	{ 'i', 'i', "ignore-environment", BRK_CMD_OPT_NO_ARG },
-	{ 'u', 'u', "unset", BRK_CMD_OPT_REQUIRED_ARG },
-	{ BRK_CMD_OPT_HELP, 0, "help", BRK_CMD_OPT_NO_ARG },
-	BRK_CMD_OPTION_END,
+static const struct cmdfw_option opts[] = {
+	{ 'i', 'i', "ignore-environment", CMDFW_OPT_NO_ARG },
+	{ 'u', 'u', "unset", CMDFW_OPT_REQUIRED_ARG },
+	{ CMDFW_OPT_HELP, 0, "help", CMDFW_OPT_NO_ARG },
+	CMDFW_OPTION_END,
 };
 
 static int set_assignment(const char *assignment)
@@ -41,22 +41,22 @@ static int set_assignment(const char *assignment)
 
 int main(int argc, char *argv[])
 {
-	struct brk_cmd_optctx ctx;
+	struct cmdfw_optctx ctx;
 	bool ignore_env = false;
 	int opt;
 
-	brk_cmd_init(argc, argv);
-	brk_cmd_optctx_init(&ctx, argc, argv);
+	cmdfw_init(argc, argv);
+	cmdfw_optctx_init(&ctx, argc, argv);
 
-	while ((opt = brk_cmd_optparse(&ctx, opts)) != 0) {
+	while ((opt = cmdfw_optparse(&ctx, opts)) != 0) {
 		if (opt == '?' || opt == ':')
-			return BRK_CMD_EXIT_USAGE;
-		if (opt == BRK_CMD_OPT_HELP)
-			brk_cmd_help_exit(usage);
+			return CMDFW_EXIT_USAGE;
+		if (opt == CMDFW_OPT_HELP)
+			cmdfw_help_exit(usage);
 		if (opt == 'i')
 			ignore_env = true;
 		if (opt == 'u' && unsetenv(ctx.arg) != 0)
-			return brk_cmd_fail_errno("unsetenv");
+			return cmdfw_fail_errno("unsetenv");
 	}
 
 	if (ignore_env)
@@ -66,7 +66,7 @@ int main(int argc, char *argv[])
 
 	while (i < ctx.argc && strchr(argv[i], '=')) {
 		if (set_assignment(argv[i]) != 0)
-			return brk_cmd_fail(
+			return cmdfw_fail(
 				"invalid environment assignment: %s", argv[i]);
 		i++;
 	}
@@ -76,12 +76,12 @@ int main(int argc, char *argv[])
 			for (int j = 0; environ[j]; j++)
 				printf("%s\n", environ[j]);
 		}
-		return BRK_CMD_EXIT_OK;
+		return CMDFW_EXIT_OK;
 	}
 
 	execvp(argv[i], &argv[i]);
 	int saved_errno = errno;
 
-	brk_cmd_error_errno(argv[i]);
+	cmdfw_error_errno(argv[i]);
 	return saved_errno == ENOENT ? 127 : 126;
 }

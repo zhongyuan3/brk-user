@@ -1,12 +1,11 @@
-#include <brk/cmd.h>
 #include <brk/limits.h>
-
+#include <libcmdfw.h>
 #include <pwd.h>
 #include <stdlib.h>
 #include <unistd.h>
 
-#define BRK_CMD_DEFAULT_PATH "/bin:/sbin:/usr/bin:/usr/sbin"
-#define BRK_CMD_DEFAULT_TERM "vt100"
+#define CMDFW_DEFAULT_PATH "/bin:/sbin:/usr/bin:/usr/sbin"
+#define CMDFW_DEFAULT_TERM "vt100"
 
 static const char *value_or(const char *value, const char *fallback)
 {
@@ -33,7 +32,7 @@ static int set_identity(const char *user, const char *home, const char *shell)
 		return -1;
 	if (setenv("SHELL", shell, 1) != 0)
 		return -1;
-	if (setenv("PATH", BRK_CMD_DEFAULT_PATH, 1) != 0)
+	if (setenv("PATH", CMDFW_DEFAULT_PATH, 1) != 0)
 		return -1;
 	return 0;
 }
@@ -41,7 +40,7 @@ static int set_identity(const char *user, const char *home, const char *shell)
 /*
  * Build a fresh login environment.  Used by login(1) and su -.
  */
-int brk_cmd_env_login(const struct passwd *pw, const char *term)
+int cmdfw_env_login(const struct passwd *pw, const char *term)
 {
 	const char *user = value_or(pw->pw_name, "unknown");
 	const char *home = value_or(pw->pw_dir, "/");
@@ -52,7 +51,7 @@ int brk_cmd_env_login(const struct passwd *pw, const char *term)
 
 	if (set_identity(user, home, shell) != 0)
 		return -1;
-	if (setenv("TERM", value_or(term, BRK_CMD_DEFAULT_TERM), 1) != 0)
+	if (setenv("TERM", value_or(term, CMDFW_DEFAULT_TERM), 1) != 0)
 		return -1;
 	return set_pwd();
 }
@@ -62,7 +61,7 @@ int brk_cmd_env_login(const struct passwd *pw, const char *term)
  * shell.  Unknown variables are preserved, but PATH, HOME and the shell
  * identity must never be inherited from the old user.
  */
-int brk_cmd_env_user(const struct passwd *pw)
+int cmdfw_env_user(const struct passwd *pw)
 {
 	const char *user = value_or(pw->pw_name, "unknown");
 	const char *home = value_or(pw->pw_dir, "/");
@@ -84,7 +83,7 @@ int brk_cmd_env_user(const struct passwd *pw)
 
 	term = getenv("TERM");
 	if (!term || !term[0]) {
-		if (setenv("TERM", BRK_CMD_DEFAULT_TERM, 1) != 0)
+		if (setenv("TERM", CMDFW_DEFAULT_TERM, 1) != 0)
 			return -1;
 	}
 	return set_pwd();

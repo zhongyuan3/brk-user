@@ -1,4 +1,4 @@
-#include <brk/cmd.h>
+#include <libcmdfw.h>
 #include <brk/limits.h>
 #include <errno.h>
 #include <stdbool.h>
@@ -17,10 +17,10 @@ static const char usage[] = "Usage: which [-a] COMMAND...\n"
 			    "  -a, --all  print all matches\n"
 			    "  --help     display this help and exit";
 
-static const struct brk_cmd_option opts[] = {
-	{ 'a', 'a', "all", BRK_CMD_OPT_NO_ARG },
-	{ BRK_CMD_OPT_HELP, 0, "help", BRK_CMD_OPT_NO_ARG },
-	BRK_CMD_OPTION_END,
+static const struct cmdfw_option opts[] = {
+	{ 'a', 'a', "all", CMDFW_OPT_NO_ARG },
+	{ CMDFW_OPT_HELP, 0, "help", CMDFW_OPT_NO_ARG },
+	CMDFW_OPTION_END,
 };
 
 static int is_executable(const char *path)
@@ -100,36 +100,36 @@ static int search_path(const char *name, int all)
 
 int main(int argc, char *argv[])
 {
-	struct brk_cmd_optctx ctx;
+	struct cmdfw_optctx ctx;
 	int all = 0;
 	int opt;
-	int ret = BRK_CMD_EXIT_OK;
+	int ret = CMDFW_EXIT_OK;
 
-	brk_cmd_init(argc, argv);
-	brk_cmd_optctx_init(&ctx, argc, argv);
+	cmdfw_init(argc, argv);
+	cmdfw_optctx_init(&ctx, argc, argv);
 
-	while ((opt = brk_cmd_optparse(&ctx, opts)) != 0) {
+	while ((opt = cmdfw_optparse(&ctx, opts)) != 0) {
 		if (opt == '?' || opt == ':')
-			return BRK_CMD_EXIT_USAGE;
-		if (opt == BRK_CMD_OPT_HELP)
-			brk_cmd_help_exit(usage);
+			return CMDFW_EXIT_USAGE;
+		if (opt == CMDFW_OPT_HELP)
+			cmdfw_help_exit(usage);
 		if (opt == 'a')
 			all = 1;
 	}
 
-	if (brk_cmd_operand_count(&ctx) == 0)
-		brk_cmd_usage(usage);
+	if (cmdfw_operand_count(&ctx) == 0)
+		cmdfw_usage(usage);
 
-	for (int i = 0; i < brk_cmd_operand_count(&ctx); i++) {
-		const char *name = brk_cmd_operand(&ctx, i);
+	for (int i = 0; i < cmdfw_operand_count(&ctx); i++) {
+		const char *name = cmdfw_operand(&ctx, i);
 
 		if (strchr(name, '/')) {
 			if (is_executable(name))
 				puts(name);
 			else
-				ret = BRK_CMD_EXIT_FAIL;
+				ret = CMDFW_EXIT_FAIL;
 		} else if (!search_path(name, all)) {
-			ret = BRK_CMD_EXIT_FAIL;
+			ret = CMDFW_EXIT_FAIL;
 		}
 	}
 

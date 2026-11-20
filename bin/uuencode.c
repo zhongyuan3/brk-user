@@ -1,4 +1,4 @@
-#include <brk/cmd.h>
+#include <libcmdfw.h>
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
@@ -36,25 +36,25 @@ int main(int argc, char *argv[])
 	const char *path = NULL;
 	const char *name;
 
-	brk_cmd_init(argc, argv);
+	cmdfw_init(argc, argv);
 
 	if (argc > 1 && !strcmp(argv[1], "--help"))
-		brk_cmd_help_exit(usage);
+		cmdfw_help_exit(usage);
 	if (argc > 1 && !strcmp(argv[1], "-m"))
-		brk_cmd_usage(usage2);
+		cmdfw_usage(usage2);
 	if (argc == 2) {
 		name = argv[1];
 	} else if (argc == 3) {
 		path = argv[1];
 		name = argv[2];
 	} else {
-		brk_cmd_usage(usage);
+		cmdfw_usage(usage);
 	}
 
 	FILE *fp = path ? fopen(path, "r") : stdin;
 
 	if (!fp)
-		return brk_cmd_fail_errno(path);
+		return cmdfw_fail_errno(path);
 
 	printf("begin 644 %s\n", name);
 
@@ -72,5 +72,5 @@ int main(int argc, char *argv[])
 
 	if (fp != stdin)
 		fclose(fp);
-	return BRK_CMD_EXIT_OK;
+	return CMDFW_EXIT_OK;
 }

@@ -1,4 +1,4 @@
-#include <brk/cmd.h>
+#include <libcmdfw.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -102,12 +102,12 @@ int main(int argc, char *argv[])
 	const char *p;
 	int argi = 2;
 
-	brk_cmd_init(argc, argv);
+	cmdfw_init(argc, argv);
 
 	if (argc > 1 && !strcmp(argv[1], "--help"))
-		brk_cmd_help_exit(usage);
+		cmdfw_help_exit(usage);
 	if (argc < 2)
-		brk_cmd_usage(usage);
+		cmdfw_usage(usage);
 
 	fmt = argv[1];
 	for (p = fmt; *p;) {
@@ -183,8 +183,8 @@ int main(int argc, char *argv[])
 			else
 				v = strtol(arg, &end, 0);
 			if (*end) {
-				brk_cmd_error("invalid number: %s", arg);
-				return BRK_CMD_EXIT_FAIL;
+				cmdfw_error("invalid number: %s", arg);
+				return CMDFW_EXIT_FAIL;
 			}
 			if (len == 0)
 				spec[si++] = 'l';
@@ -210,8 +210,8 @@ int main(int argc, char *argv[])
 			else
 				v = strtoul(arg, &end, 0);
 			if (*end) {
-				brk_cmd_error("invalid number: %s", arg);
-				return BRK_CMD_EXIT_FAIL;
+				cmdfw_error("invalid number: %s", arg);
+				return CMDFW_EXIT_FAIL;
 			}
 			if (len == 0)
 				spec[si++] = 'l';
@@ -256,5 +256,5 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	return BRK_CMD_EXIT_OK;
+	return CMDFW_EXIT_OK;
 }

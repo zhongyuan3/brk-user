@@ -1,6 +1,6 @@
-#include <brk/cmd.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <libcmdfw.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
@@ -8,33 +8,33 @@
 static const char usage[] = "Usage: netstat\n"
 			    "Show active TCP connections from /proc/tcp.";
 
-static const struct brk_cmd_option opts[] = {
-	{ BRK_CMD_OPT_HELP, 0, "help", BRK_CMD_OPT_NO_ARG },
-	BRK_CMD_OPTION_END,
+static const struct cmdfw_option opts[] = {
+	{ CMDFW_OPT_HELP, 0, "help", CMDFW_OPT_NO_ARG },
+	CMDFW_OPTION_END,
 };
 
 int main(int argc, char *argv[])
 {
-	struct brk_cmd_optctx ctx;
+	struct cmdfw_optctx ctx;
 	int opt;
 
-	brk_cmd_init(argc, argv);
-	brk_cmd_optctx_init(&ctx, argc, argv);
+	cmdfw_init(argc, argv);
+	cmdfw_optctx_init(&ctx, argc, argv);
 
-	while ((opt = brk_cmd_optparse(&ctx, opts)) != 0) {
+	while ((opt = cmdfw_optparse(&ctx, opts)) != 0) {
 		if (opt == '?' || opt == ':')
-			return BRK_CMD_EXIT_USAGE;
-		if (opt == BRK_CMD_OPT_HELP)
-			brk_cmd_help_exit(usage);
+			return CMDFW_EXIT_USAGE;
+		if (opt == CMDFW_OPT_HELP)
+			cmdfw_help_exit(usage);
 	}
 
-	if (brk_cmd_operand_count(&ctx) != 0)
-		brk_cmd_usage(usage);
+	if (cmdfw_operand_count(&ctx) != 0)
+		cmdfw_usage(usage);
 
 	int fd = open("/proc/tcp", O_RDONLY);
 
 	if (fd < 0)
-		return brk_cmd_fail_errno("cannot open /proc/tcp");
+		return cmdfw_fail_errno("cannot open /proc/tcp");
 
 	printf("Active TCP connections\n");
 
@@ -46,7 +46,7 @@ int main(int argc, char *argv[])
 			if (errno == EINTR)
 				continue;
 			close(fd);
-			return brk_cmd_fail_errno("read /proc/tcp failed");
+			return cmdfw_fail_errno("read /proc/tcp failed");
 		}
 		if (n == 0)
 			break;
@@ -60,12 +60,12 @@ int main(int argc, char *argv[])
 				if (errno == EINTR)
 					continue;
 				close(fd);
-				return brk_cmd_fail_errno("write failed");
+				return cmdfw_fail_errno("write failed");
 			}
 			p += w;
 			left -= w;
 		}
 	}
 	close(fd);
-	return BRK_CMD_EXIT_OK;
+	return CMDFW_EXIT_OK;
 }

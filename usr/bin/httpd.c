@@ -1,7 +1,7 @@
 #include <arpa/inet.h>
-#include <brk/cmd.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <libcmdfw.h>
 #include <netinet/in.h>
 #include <stdio.h>
 #include <string.h>
@@ -18,11 +18,11 @@ static const char usage[] =
 	"  -r ROOT  document root (default .)\n"
 	"  --help   display this help and exit";
 
-static const struct brk_cmd_option opts[] = {
-	{ 'p', 'p', NULL, BRK_CMD_OPT_REQUIRED_ARG },
-	{ 'r', 'r', NULL, BRK_CMD_OPT_REQUIRED_ARG },
-	{ BRK_CMD_OPT_HELP, 0, "help", BRK_CMD_OPT_NO_ARG },
-	BRK_CMD_OPTION_END,
+static const struct cmdfw_option opts[] = {
+	{ 'p', 'p', NULL, CMDFW_OPT_REQUIRED_ARG },
+	{ 'r', 'r', NULL, CMDFW_OPT_REQUIRED_ARG },
+	{ CMDFW_OPT_HELP, 0, "help", CMDFW_OPT_NO_ARG },
+	CMDFW_OPTION_END,
 };
 
 static int write_all(int fd, const char *buf, size_t len)
@@ -121,34 +121,34 @@ static void send_file(int fd, const char *root, const char *path)
 
 int main(int argc, char *argv[])
 {
-	struct brk_cmd_optctx ctx;
+	struct cmdfw_optctx ctx;
 	unsigned long port = 8080;
 	const char *root = ".";
 	int opt;
 
-	brk_cmd_init(argc, argv);
-	brk_cmd_optctx_init(&ctx, argc, argv);
+	cmdfw_init(argc, argv);
+	cmdfw_optctx_init(&ctx, argc, argv);
 
-	while ((opt = brk_cmd_optparse(&ctx, opts)) != 0) {
+	while ((opt = cmdfw_optparse(&ctx, opts)) != 0) {
 		if (opt == '?' || opt == ':')
-			return BRK_CMD_EXIT_USAGE;
-		if (opt == BRK_CMD_OPT_HELP)
-			brk_cmd_help_exit(usage);
+			return CMDFW_EXIT_USAGE;
+		if (opt == CMDFW_OPT_HELP)
+			cmdfw_help_exit(usage);
 		if (opt == 'p') {
-			if (brk_cmd_parse_ulong(ctx.arg, &port, 1, 65535) != 0)
-				return BRK_CMD_EXIT_FAIL;
+			if (cmdfw_parse_ulong(ctx.arg, &port, 1, 65535) != 0)
+				return CMDFW_EXIT_FAIL;
 		}
 		if (opt == 'r')
 			root = ctx.arg;
 	}
 
-	if (brk_cmd_operand_count(&ctx) != 0)
-		brk_cmd_usage(usage);
+	if (cmdfw_operand_count(&ctx) != 0)
+		cmdfw_usage(usage);
 
 	int fd = socket(AF_INET, SOCK_STREAM, 0);
 
 	if (fd < 0)
-		return brk_cmd_fail_errno("socket failed");
+		return cmdfw_fail_errno("socket failed");
 
 	int one = 1;
 	struct sockaddr_in sa = {
@@ -164,7 +164,7 @@ int main(int argc, char *argv[])
 
 		close(fd);
 		errno = err;
-		return brk_cmd_fail_errno("listen failed");
+		return cmdfw_fail_errno("listen failed");
 	}
 
 	fprintf(stderr, "httpd: listening on port %lu\n", port);
@@ -174,7 +174,7 @@ int main(int argc, char *argv[])
 
 	close(fd);
 	if (cfd < 0)
-		return brk_cmd_fail_errno("accept failed");
+		return cmdfw_fail_errno("accept failed");
 
 	char request[1024];
 	size_t used = 0;
@@ -187,7 +187,7 @@ int main(int argc, char *argv[])
 			if (errno == EINTR)
 				continue;
 			close(cfd);
-			return brk_cmd_fail_errno("recv failed");
+			return cmdfw_fail_errno("recv failed");
 		}
 		if (n == 0)
 			break;
@@ -203,7 +203,7 @@ int main(int argc, char *argv[])
 	if (!p) {
 		send_error(cfd, "400 Bad Request", "bad request\n");
 		close(cfd);
-		return BRK_CMD_EXIT_FAIL;
+		return CMDFW_EXIT_FAIL;
 	}
 	*p++ = '\0';
 	while (*p == ' ')
@@ -214,7 +214,7 @@ int main(int argc, char *argv[])
 	if (!p) {
 		send_error(cfd, "400 Bad Request", "bad request\n");
 		close(cfd);
-		return BRK_CMD_EXIT_FAIL;
+		return CMDFW_EXIT_FAIL;
 	}
 	*p = '\0';
 
@@ -222,7 +222,7 @@ int main(int argc, char *argv[])
 		send_error(cfd, "405 Method Not Allowed",
 			   "only GET supported\n");
 		close(cfd);
-		return BRK_CMD_EXIT_FAIL;
+		return CMDFW_EXIT_FAIL;
 	}
 
 	char *query = strchr(path, '?');
@@ -233,5 +233,5 @@ int main(int argc, char *argv[])
 
 	send_file(cfd, root, path);
 	close(cfd);
-	return BRK_CMD_EXIT_OK;
+	return CMDFW_EXIT_OK;
 }

@@ -1,4 +1,4 @@
-#include <brk/cmd.h>
+#include <libcmdfw.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <stdbool.h>
@@ -131,12 +131,12 @@ int main(int argc, char *argv[])
 	unsigned char *buf = NULL;
 	unsigned long long in_records = 0;
 	unsigned long long out_records = 0;
-	int ret = BRK_CMD_EXIT_FAIL;
+	int ret = CMDFW_EXIT_FAIL;
 
-	brk_cmd_init(argc, argv);
+	cmdfw_init(argc, argv);
 
 	if (argc > 1 && !strcmp(argv[1], "--help"))
-		brk_cmd_help_exit(usage);
+		cmdfw_help_exit(usage);
 
 	for (int i = 1; i < argc; i++) {
 		const char *arg = argv[i];
@@ -149,32 +149,32 @@ int main(int argc, char *argv[])
 			unsigned long long n;
 
 			if (parse_number(arg + 3, &n) != 0 || !n)
-				brk_cmd_usage(usage);
+				cmdfw_usage(usage);
 			o.block_size = (size_t)n;
 		} else if (!strncmp(arg, "count=", 6)) {
 			if (parse_number(arg + 6, &o.count) != 0)
-				brk_cmd_usage(usage);
+				cmdfw_usage(usage);
 			o.count_set = true;
 		} else if (!strncmp(arg, "skip=", 5)) {
 			if (parse_number(arg + 5, &o.skip) != 0)
-				brk_cmd_usage(usage);
+				cmdfw_usage(usage);
 		} else if (!strncmp(arg, "seek=", 5)) {
 			if (parse_number(arg + 5, &o.seek) != 0)
-				brk_cmd_usage(usage);
+				cmdfw_usage(usage);
 		} else if (!strncmp(arg, "conv=", 5)) {
 			if (parse_conv(arg + 5, &o) != 0)
-				brk_cmd_usage(usage);
+				cmdfw_usage(usage);
 		} else if (!strcmp(arg, "status=none")) {
 			o.status = false;
 		} else {
-			brk_cmd_usage(usage);
+			cmdfw_usage(usage);
 		}
 	}
 
 	if (o.input) {
 		in_fd = open(o.input, O_RDONLY);
 		if (in_fd < 0)
-			return brk_cmd_fail("%s: %s", o.input, strerror(errno));
+			return cmdfw_fail("%s: %s", o.input, strerror(errno));
 	}
 	if (o.output) {
 		int flags = O_WRONLY | O_CREAT;
@@ -183,7 +183,7 @@ int main(int argc, char *argv[])
 			flags |= O_TRUNC;
 		out_fd = open(o.output, flags, 0666);
 		if (out_fd < 0) {
-			brk_cmd_error("%s: %s", o.output, strerror(errno));
+			cmdfw_error("%s: %s", o.output, strerror(errno));
 			goto out;
 		}
 	}
@@ -204,12 +204,12 @@ int main(int argc, char *argv[])
 				if (r < 0) {
 					if (errno == EINTR)
 						continue;
-					brk_cmd_error("%s: %s", o.input,
+					cmdfw_error("%s: %s", o.input,
 						      strerror(errno));
 					goto out;
 				}
 				if (r == 0) {
-					brk_cmd_error("%s: unexpected EOF",
+					cmdfw_error("%s: unexpected EOF",
 						      o.input);
 					goto out;
 				}
@@ -221,7 +221,7 @@ int main(int argc, char *argv[])
 	if (o.seek) {
 		if (lseek(out_fd, (off_t)(o.seek * o.block_size), SEEK_SET) <
 		    0) {
-			brk_cmd_error("%s: %s", o.output ? o.output : "stdout",
+			cmdfw_error("%s: %s", o.output ? o.output : "stdout",
 				      strerror(errno));
 			goto out;
 		}
@@ -229,7 +229,7 @@ int main(int argc, char *argv[])
 
 	buf = malloc(o.block_size);
 	if (!buf) {
-		brk_cmd_error("out of memory");
+		cmdfw_error("out of memory");
 		goto out;
 	}
 
@@ -246,7 +246,7 @@ int main(int argc, char *argv[])
 			if (n < 0) {
 				if (errno == EINTR)
 					continue;
-				brk_cmd_error("%s: %s",
+				cmdfw_error("%s: %s",
 					      o.input ? o.input : "stdin",
 					      strerror(errno));
 				goto out;
@@ -267,7 +267,7 @@ int main(int argc, char *argv[])
 		}
 
 		if (write_all(out_fd, buf, wr) != 0) {
-			brk_cmd_error("%s: %s", o.output ? o.output : "stdout",
+			cmdfw_error("%s: %s", o.output ? o.output : "stdout",
 				      strerror(errno));
 			goto out;
 		}
@@ -278,7 +278,7 @@ int main(int argc, char *argv[])
 			break;
 	}
 
-	ret = BRK_CMD_EXIT_OK;
+	ret = CMDFW_EXIT_OK;
 
 out:
 	if (buf)

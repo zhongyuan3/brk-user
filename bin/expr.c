@@ -1,4 +1,4 @@
-#include <brk/cmd.h>
+#include <libcmdfw.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -249,16 +249,16 @@ int main(int argc, char *argv[])
 		.index = 0,
 	};
 
-	brk_cmd_init(argc, argv);
+	cmdfw_init(argc, argv);
 	if (argc > 1 && !strcmp(argv[1], "--help"))
-		brk_cmd_help_exit(usage);
+		cmdfw_help_exit(usage);
 	if (argc < 2)
-		brk_cmd_usage(usage);
+		cmdfw_usage(usage);
 
 	struct val result = parse_or(&p);
 
 	if (p.error || p.index != p.argc) {
-		brk_cmd_error("invalid expression");
+		cmdfw_error("invalid expression");
 		return 2;
 	}
 

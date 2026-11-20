@@ -1,4 +1,4 @@
-#include <brk/cmd.h>
+#include <libcmdfw.h>
 #include <errno.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -15,12 +15,12 @@ static const char help[] =
 	"  -u       print only lines that occur once\n"
 	"  --help   display this help and exit";
 
-static const struct brk_cmd_option opts[] = {
-	{ 'c', 'c', NULL, BRK_CMD_OPT_NO_ARG },
-	{ 'd', 'd', NULL, BRK_CMD_OPT_NO_ARG },
-	{ 'u', 'u', NULL, BRK_CMD_OPT_NO_ARG },
-	{ BRK_CMD_OPT_HELP, 0, "help", BRK_CMD_OPT_NO_ARG },
-	BRK_CMD_OPTION_END,
+static const struct cmdfw_option opts[] = {
+	{ 'c', 'c', NULL, CMDFW_OPT_NO_ARG },
+	{ 'd', 'd', NULL, CMDFW_OPT_NO_ARG },
+	{ 'u', 'u', NULL, CMDFW_OPT_NO_ARG },
+	{ CMDFW_OPT_HELP, 0, "help", CMDFW_OPT_NO_ARG },
+	CMDFW_OPTION_END,
 };
 
 static void emit_line(const char *line, unsigned long count, bool show_count,
@@ -39,7 +39,7 @@ static void emit_line(const char *line, unsigned long count, bool show_count,
 
 int main(int argc, char *argv[])
 {
-	struct brk_cmd_optctx ctx;
+	struct cmdfw_optctx ctx;
 	FILE *f = stdin;
 	char *line = NULL;
 	size_t cap = 0;
@@ -49,16 +49,16 @@ int main(int argc, char *argv[])
 	bool only_dup = false;
 	bool only_unique = false;
 	int opt;
-	int ret = BRK_CMD_EXIT_OK;
+	int ret = CMDFW_EXIT_OK;
 
-	brk_cmd_init(argc, argv);
-	brk_cmd_optctx_init(&ctx, argc, argv);
+	cmdfw_init(argc, argv);
+	cmdfw_optctx_init(&ctx, argc, argv);
 
-	while ((opt = brk_cmd_optparse(&ctx, opts)) != 0) {
+	while ((opt = cmdfw_optparse(&ctx, opts)) != 0) {
 		if (opt == '?' || opt == ':')
-			return BRK_CMD_EXIT_USAGE;
-		if (opt == BRK_CMD_OPT_HELP)
-			brk_cmd_help_exit(help);
+			return CMDFW_EXIT_USAGE;
+		if (opt == CMDFW_OPT_HELP)
+			cmdfw_help_exit(help);
 		if (opt == 'c')
 			show_count = true;
 		if (opt == 'd')
@@ -67,15 +67,15 @@ int main(int argc, char *argv[])
 			only_unique = true;
 	}
 
-	if (brk_cmd_operand_count(&ctx) > 1)
-		brk_cmd_usage(help);
-	if (brk_cmd_operand_count(&ctx) == 1) {
-		const char *path = brk_cmd_operand(&ctx, 0);
+	if (cmdfw_operand_count(&ctx) > 1)
+		cmdfw_usage(help);
+	if (cmdfw_operand_count(&ctx) == 1) {
+		const char *path = cmdfw_operand(&ctx, 0);
 
 		if (strcmp(path, "-")) {
 			f = fopen(path, "r");
 			if (!f)
-				return brk_cmd_fail_errno(path);
+				return cmdfw_fail_errno(path);
 		}
 	}
 
@@ -100,14 +100,14 @@ int main(int argc, char *argv[])
 		}
 		prev = strdup(line);
 		if (!prev) {
-			ret = brk_cmd_fail("out of memory");
+			ret = cmdfw_fail("out of memory");
 			break;
 		}
 		count = 1;
 	}
 
 	if (ferror(f)) {
-		ret = brk_cmd_fail_errno("read");
+		ret = cmdfw_fail_errno("read");
 	} else if (prev) {
 		emit_line(prev, count, show_count, only_dup, only_unique);
 	}

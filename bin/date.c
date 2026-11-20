@@ -1,4 +1,4 @@
-#include <brk/cmd.h>
+#include <libcmdfw.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
@@ -40,10 +40,10 @@ int main(int argc, char *argv[])
 	bool utc = false;
 	int arg = 1;
 
-	brk_cmd_init(argc, argv);
+	cmdfw_init(argc, argv);
 
 	if (arg < argc && !strcmp(argv[arg], "--help"))
-		brk_cmd_help_exit(usage);
+		cmdfw_help_exit(usage);
 	if (arg < argc && !strcmp(argv[arg], "-u")) {
 		utc = true;
 		arg++;
@@ -52,19 +52,19 @@ int main(int argc, char *argv[])
 		if (!strcmp(argv[arg], "+%s"))
 			epoch = true;
 		else {
-			brk_cmd_error("unsupported format '%s'", argv[arg]);
-			return BRK_CMD_EXIT_FAIL;
+			cmdfw_error("unsupported format '%s'", argv[arg]);
+			return CMDFW_EXIT_FAIL;
 		}
 	} else if (arg < argc) {
-		brk_cmd_usage(usage);
+		cmdfw_usage(usage);
 	}
 
 	if (gettimeofday(&tv, NULL) != 0)
-		return brk_cmd_fail_errno("gettimeofday failed");
+		return cmdfw_fail_errno("gettimeofday failed");
 
 	if (epoch) {
 		printf("%ld\n", tv.tv_sec);
-		return BRK_CMD_EXIT_OK;
+		return CMDFW_EXIT_OK;
 	}
 
 	long offset = utc ? 0 : brk_tz_offset();
@@ -92,5 +92,5 @@ int main(int argc, char *argv[])
 		       abs / 3600, (abs % 3600) / 60);
 	}
 
-	return BRK_CMD_EXIT_OK;
+	return CMDFW_EXIT_OK;
 }

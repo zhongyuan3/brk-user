@@ -1,4 +1,4 @@
-#include <brk/cmd.h>
+#include <libcmdfw.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -10,10 +10,10 @@ static const char usage[] = "Usage: expand [-t LIST] [FILE...]\n"
 			    "  -t LIST  set tab stops (default 8)\n"
 			    "  --help   display this help and exit";
 
-static const struct brk_cmd_option opts[] = {
-	{ 't', 't', "tabs", BRK_CMD_OPT_REQUIRED_ARG },
-	{ BRK_CMD_OPT_HELP, 0, "help", BRK_CMD_OPT_NO_ARG },
-	BRK_CMD_OPTION_END,
+static const struct cmdfw_option opts[] = {
+	{ 't', 't', "tabs", CMDFW_OPT_REQUIRED_ARG },
+	{ CMDFW_OPT_HELP, 0, "help", CMDFW_OPT_NO_ARG },
+	CMDFW_OPTION_END,
 };
 
 struct tabs {
@@ -95,34 +95,34 @@ static void expand_stream(FILE *fp, const struct tabs *t)
 
 int main(int argc, char *argv[])
 {
-	struct brk_cmd_optctx ctx;
+	struct cmdfw_optctx ctx;
 	struct tabs tabs = { 0 };
 	int opt;
 
-	brk_cmd_init(argc, argv);
-	brk_cmd_optctx_init(&ctx, argc, argv);
+	cmdfw_init(argc, argv);
+	cmdfw_optctx_init(&ctx, argc, argv);
 
-	while ((opt = brk_cmd_optparse(&ctx, opts)) != 0) {
+	while ((opt = cmdfw_optparse(&ctx, opts)) != 0) {
 		if (opt == '?' || opt == ':')
-			return BRK_CMD_EXIT_USAGE;
-		if (opt == BRK_CMD_OPT_HELP)
-			brk_cmd_help_exit(usage);
+			return CMDFW_EXIT_USAGE;
+		if (opt == CMDFW_OPT_HELP)
+			cmdfw_help_exit(usage);
 		if (opt == 't' && parse_tabs(ctx.arg, &tabs) != 0)
-			brk_cmd_usage(usage);
+			cmdfw_usage(usage);
 	}
 
-	if (brk_cmd_operand_count(&ctx) == 0) {
+	if (cmdfw_operand_count(&ctx) == 0) {
 		expand_stream(stdin, &tabs);
-		return BRK_CMD_EXIT_OK;
+		return CMDFW_EXIT_OK;
 	}
 
-	int ret = BRK_CMD_EXIT_OK;
-	for (int i = 0; i < brk_cmd_operand_count(&ctx); i++) {
-		const char *path = brk_cmd_operand(&ctx, i);
+	int ret = CMDFW_EXIT_OK;
+	for (int i = 0; i < cmdfw_operand_count(&ctx); i++) {
+		const char *path = cmdfw_operand(&ctx, i);
 		FILE *fp = !strcmp(path, "-") ? stdin : fopen(path, "r");
 
 		if (!fp) {
-			ret = brk_cmd_fail_errno(path);
+			ret = cmdfw_fail_errno(path);
 			continue;
 		}
 		expand_stream(fp, &tabs);

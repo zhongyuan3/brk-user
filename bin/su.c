@@ -1,4 +1,4 @@
-#include <brk/cmd.h>
+#include <libcmdfw.h>
 #include <errno.h>
 #include <pwd.h>
 #include <brk/pwutil.h>
@@ -21,7 +21,7 @@ static int change_to_home(const struct passwd *pw)
 	if (!pw->pw_dir || !pw->pw_dir[0])
 		return 0;
 	if (chdir(pw->pw_dir) != 0) {
-		brk_cmd_warn("cannot change directory to %s: %s", pw->pw_dir,
+		cmdfw_warn("cannot change directory to %s: %s", pw->pw_dir,
 			     strerror(errno));
 		return -1;
 	}
@@ -38,7 +38,7 @@ int main(int argc, char *argv[])
 	char term[64];
 	const char *old_term;
 
-	brk_cmd_init(argc, argv);
+	cmdfw_init(argc, argv);
 
 	if (argi < argc) {
 		if (!strcmp(argv[argi], "-") || !strcmp(argv[argi], "-l") ||
@@ -49,35 +49,35 @@ int main(int argc, char *argv[])
 	}
 
 	if (argc > argi + 1)
-		brk_cmd_usage(usage);
+		cmdfw_usage(usage);
 	user = argi < argc ? argv[argi] : "root";
 
 	pw = getpwnam(user);
 	if (!pw)
-		return brk_cmd_fail("unknown user '%s'", user);
+		return cmdfw_fail("unknown user '%s'", user);
 
 	if (real != 0) {
 		struct spwd *sp = getspnam(user);
 		char password[128];
 
 		if (!sp || !sp->sp_pwdp[0])
-			return brk_cmd_fail("no password entry for '%s'", user);
+			return cmdfw_fail("no password entry for '%s'", user);
 
 		fputs("Password: ", stdout);
 		fflush(stdout);
 		if (read_password(password, sizeof(password)) < 0)
-			return BRK_CMD_EXIT_FAIL;
+			return CMDFW_EXIT_FAIL;
 		if (pw_verify(password, sp->sp_pwdp) != 0) {
-			brk_cmd_error("incorrect password");
+			cmdfw_error("incorrect password");
 			sleep(1);
-			return BRK_CMD_EXIT_FAIL;
+			return CMDFW_EXIT_FAIL;
 		}
 	}
 
 	if (setgid(pw->pw_gid) != 0)
-		return brk_cmd_fail_errno("setgid failed");
+		return cmdfw_fail_errno("setgid failed");
 	if (setuid(pw->pw_uid) != 0)
-		return brk_cmd_fail_errno("setuid failed");
+		return cmdfw_fail_errno("setuid failed");
 
 	if (login)
 		(void)change_to_home(pw);
@@ -90,10 +90,10 @@ int main(int argc, char *argv[])
 	}
 
 	if (login) {
-		if (brk_cmd_env_login(pw, term[0] ? term : NULL) != 0)
-			return brk_cmd_fail("cannot set login environment");
-	} else if (brk_cmd_env_user(pw) != 0) {
-		return brk_cmd_fail("cannot set user environment");
+		if (cmdfw_env_login(pw, term[0] ? term : NULL) != 0)
+			return cmdfw_fail("cannot set login environment");
+	} else if (cmdfw_env_user(pw) != 0) {
+		return cmdfw_fail("cannot set user environment");
 	}
 
 	const char *shell = (pw->pw_shell && pw->pw_shell[0]) ? pw->pw_shell :
@@ -114,5 +114,5 @@ int main(int argc, char *argv[])
 	char *sh_argv[] = { (char *)argv0, NULL };
 
 	execv(shell, sh_argv);
-	return brk_cmd_fail_errno("exec shell failed");
+	return cmdfw_fail_errno("exec shell failed");
 }

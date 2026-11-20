@@ -1,4 +1,4 @@
-#include <brk/cmd.h>
+#include <libcmdfw.h>
 #include <ctype.h>
 #include <errno.h>
 #include <stdbool.h>
@@ -171,7 +171,7 @@ static int write_all(const unsigned char *buf, size_t len)
 
 int main(int argc, char *argv[])
 {
-	struct brk_cmd_optctx ctx;
+	struct cmdfw_optctx ctx;
 	struct tr_set set1 = { 0 };
 	struct tr_set set2 = { 0 };
 	unsigned char map[256];
@@ -181,40 +181,40 @@ int main(int argc, char *argv[])
 	bool squeeze_chars = false;
 	int opt;
 
-	brk_cmd_init(argc, argv);
-	brk_cmd_optctx_init(&ctx, argc, argv);
+	cmdfw_init(argc, argv);
+	cmdfw_optctx_init(&ctx, argc, argv);
 
-	static const struct brk_cmd_option opts[] = {
-		{ 'd', 'd', NULL, BRK_CMD_OPT_NO_ARG },
-		{ 's', 's', NULL, BRK_CMD_OPT_NO_ARG },
-		{ BRK_CMD_OPT_HELP, 0, "help", BRK_CMD_OPT_NO_ARG },
-		BRK_CMD_OPTION_END,
+	static const struct cmdfw_option opts[] = {
+		{ 'd', 'd', NULL, CMDFW_OPT_NO_ARG },
+		{ 's', 's', NULL, CMDFW_OPT_NO_ARG },
+		{ CMDFW_OPT_HELP, 0, "help", CMDFW_OPT_NO_ARG },
+		CMDFW_OPTION_END,
 	};
 
-	while ((opt = brk_cmd_optparse(&ctx, opts)) != 0) {
+	while ((opt = cmdfw_optparse(&ctx, opts)) != 0) {
 		if (opt == '?' || opt == ':')
-			return BRK_CMD_EXIT_USAGE;
-		if (opt == BRK_CMD_OPT_HELP)
-			brk_cmd_help_exit(help);
+			return CMDFW_EXIT_USAGE;
+		if (opt == CMDFW_OPT_HELP)
+			cmdfw_help_exit(help);
 		if (opt == 'd')
 			delete_chars = true;
 		if (opt == 's')
 			squeeze_chars = true;
 	}
 
-	if (brk_cmd_operand_count(&ctx) < 1 || brk_cmd_operand_count(&ctx) > 2)
-		brk_cmd_usage(help);
-	if (delete_chars && brk_cmd_operand_count(&ctx) != 1)
-		brk_cmd_usage(help);
-	if (!delete_chars && !squeeze_chars && brk_cmd_operand_count(&ctx) != 2)
-		brk_cmd_usage(help);
+	if (cmdfw_operand_count(&ctx) < 1 || cmdfw_operand_count(&ctx) > 2)
+		cmdfw_usage(help);
+	if (delete_chars && cmdfw_operand_count(&ctx) != 1)
+		cmdfw_usage(help);
+	if (!delete_chars && !squeeze_chars && cmdfw_operand_count(&ctx) != 2)
+		cmdfw_usage(help);
 
-	if (parse_set(brk_cmd_operand(&ctx, 0), &set1) != 0)
-		return brk_cmd_fail("invalid SET1");
+	if (parse_set(cmdfw_operand(&ctx, 0), &set1) != 0)
+		return cmdfw_fail("invalid SET1");
 
-	if (brk_cmd_operand_count(&ctx) == 2 &&
-	    parse_set(brk_cmd_operand(&ctx, 1), &set2) != 0)
-		return brk_cmd_fail("invalid SET2");
+	if (cmdfw_operand_count(&ctx) == 2 &&
+	    parse_set(cmdfw_operand(&ctx, 1), &set2) != 0)
+		return cmdfw_fail("invalid SET2");
 
 	for (unsigned int i = 0; i < 256; i++)
 		map[i] = (unsigned char)i;
@@ -247,7 +247,7 @@ int main(int argc, char *argv[])
 		if (n < 0) {
 			if (errno == EINTR)
 				continue;
-			return brk_cmd_fail_errno("read");
+			return cmdfw_fail_errno("read");
 		}
 		if (n == 0)
 			break;
@@ -270,13 +270,13 @@ int main(int argc, char *argv[])
 
 			if (out_len == sizeof(out)) {
 				if (write_all(out, out_len) != 0)
-					return brk_cmd_fail_errno("write");
+					return cmdfw_fail_errno("write");
 				out_len = 0;
 			}
 		}
 	}
 
 	if (out_len && write_all(out, out_len) != 0)
-		return brk_cmd_fail_errno("write");
-	return BRK_CMD_EXIT_OK;
+		return cmdfw_fail_errno("write");
+	return CMDFW_EXIT_OK;
 }

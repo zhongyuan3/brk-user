@@ -1,6 +1,6 @@
-#include <brk/cmd.h>
-#include <pwd.h>
 #include <brk/pwutil.h>
+#include <libcmdfw.h>
+#include <pwd.h>
 #include <shadow.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -40,7 +40,7 @@ static int login_as(const char *user)
 		strncpy(term, old_term, sizeof(term) - 1);
 		term[sizeof(term) - 1] = '\0';
 	}
-	if (brk_cmd_env_login(pw, term[0] ? term : NULL) != 0)
+	if (cmdfw_env_login(pw, term[0] ? term : NULL) != 0)
 		return -1;
 
 	const char *shell = (pw->pw_shell && pw->pw_shell[0]) ? pw->pw_shell :
@@ -65,10 +65,10 @@ int main(int argc, char *argv[])
 {
 	char user[64];
 
-	brk_cmd_init(argc, argv);
+	cmdfw_init(argc, argv);
 
 	if (argc > 2)
-		brk_cmd_usage(usage);
+		cmdfw_usage(usage);
 
 	if (argc > 1) {
 		strncpy(user, argv[1], sizeof(user) - 1);
@@ -77,7 +77,7 @@ int main(int argc, char *argv[])
 		fputs("login: ", stdout);
 		fflush(stdout);
 		if (!fgets(user, sizeof(user), stdin))
-			return BRK_CMD_EXIT_FAIL;
+			return CMDFW_EXIT_FAIL;
 
 		size_t len = strlen(user);
 
@@ -86,10 +86,10 @@ int main(int argc, char *argv[])
 	}
 
 	if (!user[0] || login_as(user) != 0) {
-		brk_cmd_error("login incorrect");
+		cmdfw_error("login incorrect");
 		sleep(1);
-		return BRK_CMD_EXIT_FAIL;
+		return CMDFW_EXIT_FAIL;
 	}
 
-	return BRK_CMD_EXIT_OK;
+	return CMDFW_EXIT_OK;
 }

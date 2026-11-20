@@ -1,4 +1,4 @@
-#include <brk/cmd.h>
+#include <libcmdfw.h>
 #include <brk/limits.h>
 #include <errno.h>
 #include <stdio.h>
@@ -157,21 +157,21 @@ static int resolve_path(const char *path, char *out, size_t cap)
 
 int main(int argc, char *argv[])
 {
-	int ret = BRK_CMD_EXIT_OK;
+	int ret = CMDFW_EXIT_OK;
 
-	brk_cmd_init(argc, argv);
+	cmdfw_init(argc, argv);
 
 	if (argc > 1 && !strcmp(argv[1], "--help"))
-		brk_cmd_help_exit(help);
+		cmdfw_help_exit(help);
 	if (argc < 2)
-		brk_cmd_usage(help);
+		cmdfw_usage(help);
 
 	for (int i = 1; i < argc; i++) {
 		char out[PATH_MAX];
 
 		if (resolve_path(argv[i], out, sizeof(out)) != 0) {
-			brk_cmd_error("%s: %s", argv[i], strerror(errno));
-			ret = BRK_CMD_EXIT_FAIL;
+			cmdfw_error("%s: %s", argv[i], strerror(errno));
+			ret = CMDFW_EXIT_FAIL;
 			continue;
 		}
 		puts(out);

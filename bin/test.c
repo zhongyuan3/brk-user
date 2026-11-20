@@ -1,4 +1,4 @@
-#include <brk/cmd.h>
+#include <libcmdfw.h>
 #include <errno.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -91,19 +91,19 @@ static int eval(int argc, char **argv)
 	if (argc == 3)
 		return eval_binary(argv[0], argv[1], argv[2]);
 
-	brk_cmd_usage(usage);
+	cmdfw_usage(usage);
 	return 2;
 }
 
 int main(int argc, char *argv[])
 {
-	bool bracket = brk_cmd_basename(argv[0])[0] == '[';
+	bool bracket = cmdfw_basename(argv[0])[0] == '[';
 
-	brk_cmd_init(argc, argv);
+	cmdfw_init(argc, argv);
 
 	if (bracket) {
 		if (argc < 2 || strcmp(argv[argc - 1], "]"))
-			brk_cmd_usage(usage);
+			cmdfw_usage(usage);
 		argc--;
 	}
 

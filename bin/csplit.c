@@ -1,4 +1,4 @@
-#include <brk/cmd.h>
+#include <libcmdfw.h>
 #include <errno.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -9,13 +9,13 @@ static const char usage[] =
 	"Usage: csplit [-s] [-f PREFIX] [-n DIGITS] FILE PATTERN...\n"
 	"Split FILE at line numbers or /literal/ patterns.";
 
-static const struct brk_cmd_option opts[] = {
-	{ 's', 's', "silent", BRK_CMD_OPT_NO_ARG },
-	{ 'f', 'f', "prefix", BRK_CMD_OPT_REQUIRED_ARG },
-	{ 'n', 'n', "digits", BRK_CMD_OPT_REQUIRED_ARG },
-	{ 'k', 'k', "keep-files", BRK_CMD_OPT_NO_ARG },
-	{ BRK_CMD_OPT_HELP, 0, "help", BRK_CMD_OPT_NO_ARG },
-	BRK_CMD_OPTION_END,
+static const struct cmdfw_option opts[] = {
+	{ 's', 's', "silent", CMDFW_OPT_NO_ARG },
+	{ 'f', 'f', "prefix", CMDFW_OPT_REQUIRED_ARG },
+	{ 'n', 'n', "digits", CMDFW_OPT_REQUIRED_ARG },
+	{ 'k', 'k', "keep-files", CMDFW_OPT_NO_ARG },
+	{ CMDFW_OPT_HELP, 0, "help", CMDFW_OPT_NO_ARG },
+	CMDFW_OPTION_END,
 };
 
 static int output_piece(const char *prefix, int digits, int index, char **lines,
@@ -49,20 +49,20 @@ static int output_piece(const char *prefix, int digits, int index, char **lines,
 
 int main(int argc, char *argv[])
 {
-	struct brk_cmd_optctx ctx;
+	struct cmdfw_optctx ctx;
 	const char *prefix = "xx";
 	int digits = 2;
 	bool silent = false;
 	int opt;
 
-	brk_cmd_init(argc, argv);
-	brk_cmd_optctx_init(&ctx, argc, argv);
+	cmdfw_init(argc, argv);
+	cmdfw_optctx_init(&ctx, argc, argv);
 
-	while ((opt = brk_cmd_optparse(&ctx, opts)) != 0) {
+	while ((opt = cmdfw_optparse(&ctx, opts)) != 0) {
 		if (opt == '?' || opt == ':')
-			return BRK_CMD_EXIT_USAGE;
-		if (opt == BRK_CMD_OPT_HELP)
-			brk_cmd_help_exit(usage);
+			return CMDFW_EXIT_USAGE;
+		if (opt == CMDFW_OPT_HELP)
+			cmdfw_help_exit(usage);
 		if (opt == 's')
 			silent = true;
 		if (opt == 'f')
@@ -70,19 +70,19 @@ int main(int argc, char *argv[])
 		if (opt == 'n') {
 			long v;
 
-			if (brk_cmd_parse_long(ctx.arg, &v, 1, 8) != 0)
-				brk_cmd_usage(usage);
+			if (cmdfw_parse_long(ctx.arg, &v, 1, 8) != 0)
+				cmdfw_usage(usage);
 			digits = (int)v;
 		}
 	}
 
-	if (brk_cmd_operand_count(&ctx) < 2)
-		brk_cmd_usage(usage);
+	if (cmdfw_operand_count(&ctx) < 2)
+		cmdfw_usage(usage);
 
-	const char *path = brk_cmd_operand(&ctx, 0);
+	const char *path = cmdfw_operand(&ctx, 0);
 	FILE *fp = !strcmp(path, "-") ? stdin : fopen(path, "r");
 	if (!fp)
-		return brk_cmd_fail_errno(path);
+		return cmdfw_fail_errno(path);
 
 	char **lines = NULL;
 	size_t count = 0, cap = 0;
@@ -116,15 +116,15 @@ int main(int argc, char *argv[])
 	size_t current = 0;
 	int out_index = 0;
 
-	for (int i = 1; i < brk_cmd_operand_count(&ctx); i++) {
-		const char *pat = brk_cmd_operand(&ctx, i);
+	for (int i = 1; i < cmdfw_operand_count(&ctx); i++) {
+		const char *pat = cmdfw_operand(&ctx, i);
 		size_t split;
 
 		if (pat[0] == '/' && pat[1]) {
 			size_t plen = strlen(pat);
 
 			if (plen < 2 || pat[plen - 1] != '/') {
-				brk_cmd_error("invalid pattern: %s", pat);
+				cmdfw_error("invalid pattern: %s", pat);
 				goto fail;
 			}
 			char *needle = strndup(pat + 1, plen - 2);
@@ -140,7 +140,7 @@ int main(int argc, char *argv[])
 			}
 			free(needle);
 			if (split == count) {
-				brk_cmd_error("pattern not found: %s", pat);
+				cmdfw_error("pattern not found: %s", pat);
 				goto fail;
 			}
 		} else {
@@ -148,19 +148,19 @@ int main(int argc, char *argv[])
 			unsigned long v = strtoul(pat, &end, 10);
 
 			if (*end || v == 0 || v > count) {
-				brk_cmd_error("invalid line number: %s", pat);
+				cmdfw_error("invalid line number: %s", pat);
 				goto fail;
 			}
 			split = (size_t)v - 1;
 		}
 
 		if (split < current) {
-			brk_cmd_error("split point out of order");
+			cmdfw_error("split point out of order");
 			goto fail;
 		}
 		if (output_piece(prefix, digits, out_index++, lines, current,
 				 split, silent) != 0) {
-			brk_cmd_error_errno("cannot write output");
+			cmdfw_error_errno("cannot write output");
 			goto fail;
 		}
 		current = split;
@@ -168,20 +168,20 @@ int main(int argc, char *argv[])
 
 	if (output_piece(prefix, digits, out_index++, lines, current, count,
 			 silent) != 0) {
-		brk_cmd_error_errno("cannot write output");
+		cmdfw_error_errno("cannot write output");
 		goto fail;
 	}
 
 	for (size_t i = 0; i < count; i++)
 		free(lines[i]);
 	free(lines);
-	return BRK_CMD_EXIT_OK;
+	return CMDFW_EXIT_OK;
 
 oom:
-	brk_cmd_error("out of memory");
+	cmdfw_error("out of memory");
 fail:
 	for (size_t i = 0; i < count; i++)
 		free(lines[i]);
 	free(lines);
-	return BRK_CMD_EXIT_FAIL;
+	return CMDFW_EXIT_FAIL;
 }

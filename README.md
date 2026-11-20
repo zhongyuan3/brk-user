@@ -12,10 +12,10 @@ bin/                    # commands installed under /bin (sh/, cc/, *.c)
 sbin/                   # commands installed under /sbin (init/)
 usr/
 ├── bin/                # commands installed under /usr/bin (brktest/, *.c)
-├── include/            # public headers (brk/cmd.h, cc.h, POSIX headers)
+├── include/            # public headers (libcmdfw.h, cc.h, POSIX headers)
 └── lib/
     ├── libc/           # BRK C library (libc API; math/ vendored from musl)
-    └── libcmd/         # command helper library (brk_cmd_* API)
+    └── libcmdfw/         # command helper library (cmdfw_* API)
 vendor/
 └── lua/                # vendored Lua 5.5.1 (installed as lua)
 tests/                  # host float validation + cc/libc/lua suites
@@ -30,8 +30,8 @@ installed to `/bin`, one under `usr/bin/` to `/usr/bin`, `sbin/` to
 `vendor/`, `tests/` and `scripts/` are host-side assets organized by
 role instead of install location.
 
-The `libc` and `libcmd` sources are archived into separate `libc.a` and
-`libcmd.a` archives; every user program links both.  `make lib` builds
+The `libc` and `libcmdfw` sources are archived into separate `libc.a` and
+`libcmdfw.a` archives; every user program links both.  `make lib` builds
 them.  A future on-target toolchain would install `usr/include` and
 the archives under `/usr` the same way.
 
@@ -55,7 +55,7 @@ command directory into a single executable named after that directory.
 # Build all user commands
 make
 
-# Build libc.a and libcmd.a only
+# Build libc.a and libcmdfw.a only
 make lib
 
 # Build the host-side version of cc
@@ -214,7 +214,7 @@ coalescing, invalid sizes and concurrent allocation.  See
 ### Lua
 
 `vendor/lua` hosts Lua 5.5.1 unmodified; the build links it statically
-against `libc.a` and `libcmd.a` and installs it as `/bin/lua`.  It exercises
+against `libc.a` and `libcmdfw.a` and installs it as `/bin/lua`.  It exercises
 the whole
 floating-point stack: the vendored musl-derived libm, correctly rounded
 `strtod` and printf conversions, `setjmp`-based error handling and the

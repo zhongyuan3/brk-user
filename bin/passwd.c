@@ -1,4 +1,4 @@
-#include <brk/cmd.h>
+#include <libcmdfw.h>
 #include <pwd.h>
 #include <brk/pwutil.h>
 #include <shadow.h>
@@ -72,10 +72,10 @@ int main(int argc, char *argv[])
 	char hash[PW_HASH_BUF_LEN];
 	uid_t real = getuid();
 
-	brk_cmd_init(argc, argv);
+	cmdfw_init(argc, argv);
 
 	if (argc > 2)
-		brk_cmd_usage(usage);
+		cmdfw_usage(usage);
 
 	if (argc > 1) {
 		target = argv[1];
@@ -86,45 +86,45 @@ int main(int argc, char *argv[])
 	}
 
 	if (!pw || !target)
-		return brk_cmd_fail("unknown user");
+		return cmdfw_fail("unknown user");
 
 	if (real != 0) {
 		if (pw->pw_uid != real)
-			return brk_cmd_fail("permission denied");
+			return cmdfw_fail("permission denied");
 		sp = getspnam(target);
 		if (!sp || !sp->sp_pwdp[0])
-			return brk_cmd_fail("no password entry for '%s'",
+			return cmdfw_fail("no password entry for '%s'",
 					    target);
 		fputs("Current password: ", stdout);
 		fflush(stdout);
 		if (read_password(oldpass, sizeof(oldpass)) < 0)
-			return BRK_CMD_EXIT_FAIL;
+			return CMDFW_EXIT_FAIL;
 		if (pw_verify(oldpass, sp->sp_pwdp) != 0) {
-			brk_cmd_error("incorrect password");
+			cmdfw_error("incorrect password");
 			sleep(1);
-			return BRK_CMD_EXIT_FAIL;
+			return CMDFW_EXIT_FAIL;
 		}
 	}
 
 	fputs("New password: ", stdout);
 	fflush(stdout);
 	if (read_password(newpass, sizeof(newpass)) < 0)
-		return BRK_CMD_EXIT_FAIL;
+		return CMDFW_EXIT_FAIL;
 	if (!newpass[0])
-		return brk_cmd_fail("empty password not allowed");
+		return cmdfw_fail("empty password not allowed");
 
 	fputs("Retype new password: ", stdout);
 	fflush(stdout);
 	if (read_password(confirm, sizeof(confirm)) < 0)
-		return BRK_CMD_EXIT_FAIL;
+		return CMDFW_EXIT_FAIL;
 	if (strcmp(newpass, confirm))
-		return brk_cmd_fail("passwords do not match");
+		return cmdfw_fail("passwords do not match");
 
 	if (pw_generate(newpass, hash, sizeof(hash)) != 0)
-		return brk_cmd_fail("failed to hash password");
+		return cmdfw_fail("failed to hash password");
 	if (update_shadow(target, hash) != 0)
-		return brk_cmd_fail_errno("failed to update /etc/shadow");
+		return cmdfw_fail_errno("failed to update /etc/shadow");
 
 	printf("password updated for %s\n", target);
-	return BRK_CMD_EXIT_OK;
+	return CMDFW_EXIT_OK;
 }

@@ -1,4 +1,4 @@
-#include <brk/cmd.h>
+#include <libcmdfw.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <stdbool.h>
@@ -14,12 +14,12 @@ static const char usage[] = "Usage: wc [-lwc] [FILE...]\n"
 			    "  -c       count bytes\n"
 			    "  --help   display this help and exit";
 
-static const struct brk_cmd_option opts[] = {
-	{ 'l', 'l', NULL, BRK_CMD_OPT_NO_ARG },
-	{ 'w', 'w', NULL, BRK_CMD_OPT_NO_ARG },
-	{ 'c', 'c', NULL, BRK_CMD_OPT_NO_ARG },
-	{ BRK_CMD_OPT_HELP, 0, "help", BRK_CMD_OPT_NO_ARG },
-	BRK_CMD_OPTION_END,
+static const struct cmdfw_option opts[] = {
+	{ 'l', 'l', NULL, CMDFW_OPT_NO_ARG },
+	{ 'w', 'w', NULL, CMDFW_OPT_NO_ARG },
+	{ 'c', 'c', NULL, CMDFW_OPT_NO_ARG },
+	{ CMDFW_OPT_HELP, 0, "help", CMDFW_OPT_NO_ARG },
+	CMDFW_OPTION_END,
 };
 
 struct wc_count {
@@ -41,7 +41,7 @@ static int count_fd(int fd, struct wc_count *c)
 		if (rcnt < 0) {
 			if (errno == EINTR)
 				continue;
-			return brk_cmd_fail_errno("read error");
+			return cmdfw_fail_errno("read error");
 		}
 		if (rcnt == 0)
 			break;
@@ -58,7 +58,7 @@ static int count_fd(int fd, struct wc_count *c)
 			}
 		}
 	}
-	return BRK_CMD_EXIT_OK;
+	return CMDFW_EXIT_OK;
 }
 
 static void print_count(const struct wc_count *c, bool l, bool w, bool b,
@@ -88,20 +88,20 @@ static void print_count(const struct wc_count *c, bool l, bool w, bool b,
 
 int main(int argc, char *argv[])
 {
-	struct brk_cmd_optctx ctx;
+	struct cmdfw_optctx ctx;
 	bool show_l = false, show_w = false, show_c = false;
 	struct wc_count total = { 0, 0, 0 };
 	int opt;
-	int ret = BRK_CMD_EXIT_OK;
+	int ret = CMDFW_EXIT_OK;
 
-	brk_cmd_init(argc, argv);
-	brk_cmd_optctx_init(&ctx, argc, argv);
+	cmdfw_init(argc, argv);
+	cmdfw_optctx_init(&ctx, argc, argv);
 
-	while ((opt = brk_cmd_optparse(&ctx, opts)) != 0) {
+	while ((opt = cmdfw_optparse(&ctx, opts)) != 0) {
 		if (opt == '?' || opt == ':')
-			return BRK_CMD_EXIT_USAGE;
-		if (opt == BRK_CMD_OPT_HELP)
-			brk_cmd_help_exit(usage);
+			return CMDFW_EXIT_USAGE;
+		if (opt == CMDFW_OPT_HELP)
+			cmdfw_help_exit(usage);
 		if (opt == 'l')
 			show_l = true;
 		if (opt == 'w')
@@ -113,26 +113,26 @@ int main(int argc, char *argv[])
 	if (!show_l && !show_w && !show_c)
 		show_l = show_w = show_c = true;
 
-	if (brk_cmd_operand_count(&ctx) == 0) {
+	if (cmdfw_operand_count(&ctx) == 0) {
 		struct wc_count c;
 
-		if (count_fd(STDIN_FILENO, &c) != BRK_CMD_EXIT_OK)
-			return BRK_CMD_EXIT_FAIL;
+		if (count_fd(STDIN_FILENO, &c) != CMDFW_EXIT_OK)
+			return CMDFW_EXIT_FAIL;
 		print_count(&c, show_l, show_w, show_c, "");
-		return BRK_CMD_EXIT_OK;
+		return CMDFW_EXIT_OK;
 	}
 
-	for (int i = 0; i < brk_cmd_operand_count(&ctx); i++) {
-		const char *path = brk_cmd_operand(&ctx, i);
+	for (int i = 0; i < cmdfw_operand_count(&ctx); i++) {
+		const char *path = cmdfw_operand(&ctx, i);
 		struct wc_count c;
 		int fd = open(path, O_RDONLY);
 
 		if (fd < 0) {
-			ret = brk_cmd_fail_errno("open failed");
+			ret = cmdfw_fail_errno("open failed");
 			continue;
 		}
-		if (count_fd(fd, &c) != BRK_CMD_EXIT_OK) {
-			ret = BRK_CMD_EXIT_FAIL;
+		if (count_fd(fd, &c) != CMDFW_EXIT_OK) {
+			ret = CMDFW_EXIT_FAIL;
 		} else {
 			print_count(&c, show_l, show_w, show_c, path);
 			total.lines += c.lines;
@@ -142,7 +142,7 @@ int main(int argc, char *argv[])
 		close(fd);
 	}
 
-	if (brk_cmd_operand_count(&ctx) > 1)
+	if (cmdfw_operand_count(&ctx) > 1)
 		print_count(&total, show_l, show_w, show_c, "total");
 
 	return ret;

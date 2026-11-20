@@ -1,4 +1,4 @@
-#include <brk/cmd.h>
+#include <libcmdfw.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -53,22 +53,22 @@ static void mode_string(unsigned mode, char out[11])
 
 int main(int argc, char *argv[])
 {
-	struct brk_cmd_optctx ctx;
-	int ret = BRK_CMD_EXIT_OK;
+	struct cmdfw_optctx ctx;
+	int ret = CMDFW_EXIT_OK;
 
-	brk_cmd_init(argc, argv);
-	brk_cmd_optctx_init(&ctx, argc, argv);
+	cmdfw_init(argc, argv);
+	cmdfw_optctx_init(&ctx, argc, argv);
 
-	if (brk_cmd_operand_count(&ctx) == 0)
-		brk_cmd_usage(usage);
+	if (cmdfw_operand_count(&ctx) == 0)
+		cmdfw_usage(usage);
 
-	for (int i = 0; i < brk_cmd_operand_count(&ctx); i++) {
-		const char *path = brk_cmd_operand(&ctx, i);
+	for (int i = 0; i < cmdfw_operand_count(&ctx); i++) {
+		const char *path = cmdfw_operand(&ctx, i);
 		struct stat st;
 		char mode[11];
 
 		if (stat(path, &st) != 0) {
-			ret = brk_cmd_fail_errno("cannot stat");
+			ret = cmdfw_fail_errno("cannot stat");
 			continue;
 		}
 

@@ -1,4 +1,4 @@
-#include <brk/cmd.h>
+#include <libcmdfw.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -7,11 +7,11 @@
 static const char usage[] = "Usage: diff [-q] FILE1 FILE2\n"
 			    "Compare two files line by line.";
 
-static const struct brk_cmd_option opts[] = {
-	{ 'q', 'q', "brief", BRK_CMD_OPT_NO_ARG },
-	{ 'u', 'u', "unified", BRK_CMD_OPT_NO_ARG },
-	{ BRK_CMD_OPT_HELP, 0, "help", BRK_CMD_OPT_NO_ARG },
-	BRK_CMD_OPTION_END,
+static const struct cmdfw_option opts[] = {
+	{ 'q', 'q', "brief", CMDFW_OPT_NO_ARG },
+	{ 'u', 'u', "unified", CMDFW_OPT_NO_ARG },
+	{ CMDFW_OPT_HELP, 0, "help", CMDFW_OPT_NO_ARG },
+	CMDFW_OPTION_END,
 };
 
 static int read_lines(FILE *fp, char ***lines_out, size_t *count_out)
@@ -64,42 +64,42 @@ struct diff_op {
 
 int main(int argc, char *argv[])
 {
-	struct brk_cmd_optctx ctx;
+	struct cmdfw_optctx ctx;
 	bool brief = false;
 	int opt;
-	int ret = BRK_CMD_EXIT_OK;
+	int ret = CMDFW_EXIT_OK;
 
-	brk_cmd_init(argc, argv);
-	brk_cmd_optctx_init(&ctx, argc, argv);
+	cmdfw_init(argc, argv);
+	cmdfw_optctx_init(&ctx, argc, argv);
 
-	while ((opt = brk_cmd_optparse(&ctx, opts)) != 0) {
+	while ((opt = cmdfw_optparse(&ctx, opts)) != 0) {
 		if (opt == '?' || opt == ':')
-			return BRK_CMD_EXIT_USAGE;
-		if (opt == BRK_CMD_OPT_HELP)
-			brk_cmd_help_exit(usage);
+			return CMDFW_EXIT_USAGE;
+		if (opt == CMDFW_OPT_HELP)
+			cmdfw_help_exit(usage);
 		if (opt == 'q')
 			brief = true;
 	}
 
-	brk_cmd_require_operand_count(&ctx, 2, usage);
-	const char *pa = brk_cmd_operand(&ctx, 0);
-	const char *pb = brk_cmd_operand(&ctx, 1);
+	cmdfw_require_operand_count(&ctx, 2, usage);
+	const char *pa = cmdfw_operand(&ctx, 0);
+	const char *pb = cmdfw_operand(&ctx, 1);
 	FILE *fa = !strcmp(pa, "-") ? stdin : fopen(pa, "r");
 	FILE *fb = !strcmp(pb, "-") ? stdin : fopen(pb, "r");
 
 	if (!fa)
-		return brk_cmd_fail_errno(pa);
+		return cmdfw_fail_errno(pa);
 	if (!fb) {
 		if (fa != stdin)
 			fclose(fa);
-		return brk_cmd_fail_errno(pb);
+		return cmdfw_fail_errno(pb);
 	}
 
 	char **a = NULL, **b = NULL;
 	size_t na = 0, nb = 0;
 
 	if (read_lines(fa, &a, &na) != 0 || read_lines(fb, &b, &nb) != 0) {
-		ret = brk_cmd_fail("out of memory");
+		ret = cmdfw_fail("out of memory");
 		goto out;
 	}
 
@@ -110,7 +110,7 @@ int main(int argc, char *argv[])
 	if (same)
 		goto out;
 
-	ret = BRK_CMD_EXIT_FAIL;
+	ret = CMDFW_EXIT_FAIL;
 	if (brief) {
 		printf("Files %s and %s differ\n", pa, pb);
 		goto out;
@@ -119,18 +119,18 @@ int main(int argc, char *argv[])
 	size_t cells = (na + 1) * (nb + 1);
 
 	if (nb && cells / (nb + 1) != na + 1) {
-		ret = brk_cmd_fail("files too large");
+		ret = cmdfw_fail("files too large");
 		goto out;
 	}
 	if (cells > 16 * 1024 * 1024) {
-		ret = brk_cmd_fail("files too large");
+		ret = cmdfw_fail("files too large");
 		goto out;
 	}
 
 	int *dp = calloc(cells, sizeof(*dp));
 
 	if (!dp) {
-		ret = brk_cmd_fail("out of memory");
+		ret = cmdfw_fail("out of memory");
 		goto out;
 	}
 
@@ -152,7 +152,7 @@ int main(int argc, char *argv[])
 
 	if (!ops) {
 		free(dp);
-		ret = brk_cmd_fail("out of memory");
+		ret = cmdfw_fail("out of memory");
 		goto out;
 	}
 

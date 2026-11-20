@@ -1,4 +1,4 @@
-#include <brk/cmd.h>
+#include <libcmdfw.h>
 #include <errno.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -20,10 +20,10 @@ static const char usage[] =
 	"  -m MODE  set file permission bits (octal)\n"
 	"  --help   display this help and exit";
 
-static const struct brk_cmd_option opts[] = {
-	{ 'm', 'm', "mode", BRK_CMD_OPT_REQUIRED_ARG },
-	{ BRK_CMD_OPT_HELP, 0, "help", BRK_CMD_OPT_NO_ARG },
-	BRK_CMD_OPTION_END,
+static const struct cmdfw_option opts[] = {
+	{ 'm', 'm', "mode", CMDFW_OPT_REQUIRED_ARG },
+	{ CMDFW_OPT_HELP, 0, "help", CMDFW_OPT_NO_ARG },
+	CMDFW_OPTION_END,
 };
 
 static int parse_mode(const char *s, mode_t *out)
@@ -56,51 +56,51 @@ static int parse_number(const char *s, unsigned long max, unsigned long *out)
 
 int main(int argc, char *argv[])
 {
-	struct brk_cmd_optctx ctx;
+	struct cmdfw_optctx ctx;
 	mode_t perm = 0666;
 	mode_t mode;
 	dev_t dev = 0;
 	char type;
 	int opt;
 
-	brk_cmd_init(argc, argv);
-	brk_cmd_optctx_init(&ctx, argc, argv);
+	cmdfw_init(argc, argv);
+	cmdfw_optctx_init(&ctx, argc, argv);
 
-	while ((opt = brk_cmd_optparse(&ctx, opts)) != 0) {
+	while ((opt = cmdfw_optparse(&ctx, opts)) != 0) {
 		if (opt == '?' || opt == ':')
-			return BRK_CMD_EXIT_USAGE;
-		if (opt == BRK_CMD_OPT_HELP)
-			brk_cmd_help_exit(usage);
+			return CMDFW_EXIT_USAGE;
+		if (opt == CMDFW_OPT_HELP)
+			cmdfw_help_exit(usage);
 		if (opt == 'm' && parse_mode(ctx.arg, &perm) != 0)
-			brk_cmd_usage(usage);
+			cmdfw_usage(usage);
 	}
 
-	if (brk_cmd_operand_count(&ctx) < 2)
-		brk_cmd_usage(usage);
+	if (cmdfw_operand_count(&ctx) < 2)
+		cmdfw_usage(usage);
 
-	const char *path = brk_cmd_operand(&ctx, 0);
-	const char *type_s = brk_cmd_operand(&ctx, 1);
+	const char *path = cmdfw_operand(&ctx, 0);
+	const char *type_s = cmdfw_operand(&ctx, 1);
 
 	if (!type_s[0] || type_s[1])
-		brk_cmd_usage(usage);
+		cmdfw_usage(usage);
 	type = type_s[0];
 
 	switch (type) {
 	case 'p':
-		if (brk_cmd_operand_count(&ctx) != 2)
-			brk_cmd_usage(usage);
+		if (cmdfw_operand_count(&ctx) != 2)
+			cmdfw_usage(usage);
 		mode = S_IFIFO | perm;
 		break;
 	case 'b':
 	case 'c': {
 		unsigned long major, minor;
 
-		if (brk_cmd_operand_count(&ctx) != 4)
-			brk_cmd_usage(usage);
-		if (parse_number(brk_cmd_operand(&ctx, 2), 255, &major) != 0 ||
-		    parse_number(brk_cmd_operand(&ctx, 3), 0xfffff, &minor) !=
+		if (cmdfw_operand_count(&ctx) != 4)
+			cmdfw_usage(usage);
+		if (parse_number(cmdfw_operand(&ctx, 2), 255, &major) != 0 ||
+		    parse_number(cmdfw_operand(&ctx, 3), 0xfffff, &minor) !=
 			    0)
-			brk_cmd_usage(usage);
+			cmdfw_usage(usage);
 
 		mode = (type == 'b' ? S_IFBLK : S_IFCHR) | perm;
 		dev = (dev_t)((major << 20) | minor);
@@ -109,11 +109,11 @@ int main(int argc, char *argv[])
 		break;
 	}
 	default:
-		brk_cmd_usage(usage);
+		cmdfw_usage(usage);
 	}
 
 	if (mknod(path, mode, dev) != 0)
-		return brk_cmd_fail("%s: %s", path, strerror(errno));
+		return cmdfw_fail("%s: %s", path, strerror(errno));
 
-	return BRK_CMD_EXIT_OK;
+	return CMDFW_EXIT_OK;
 }

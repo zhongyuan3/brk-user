@@ -1,4 +1,4 @@
-#include <brk/cmd.h>
+#include <libcmdfw.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -13,25 +13,25 @@ int main(int argc, char *argv[])
 	char *end;
 	unsigned long seconds;
 
-	brk_cmd_init(argc, argv);
+	cmdfw_init(argc, argv);
 
 	if (argc > 1 && !strcmp(argv[1], "--help"))
-		brk_cmd_help_exit(help);
+		cmdfw_help_exit(help);
 	if (argc != 1)
-		brk_cmd_usage(help);
+		cmdfw_usage(help);
 
 	f = fopen("/proc/uptime", "r");
 	if (!f)
-		return brk_cmd_fail_errno("/proc/uptime");
+		return cmdfw_fail_errno("/proc/uptime");
 	if (!fgets(buf, sizeof(buf), f)) {
 		fclose(f);
-		return brk_cmd_fail("/proc/uptime is empty");
+		return cmdfw_fail("/proc/uptime is empty");
 	}
 	fclose(f);
 
 	seconds = strtoul(buf, &end, 10);
 	if (end == buf)
-		return brk_cmd_fail("cannot parse /proc/uptime");
+		return cmdfw_fail("cannot parse /proc/uptime");
 
 	unsigned long days = seconds / 86400;
 	unsigned long rem = seconds % 86400;
@@ -41,5 +41,5 @@ int main(int argc, char *argv[])
 
 	printf("up %lu day%s, %02lu:%02lu:%02lu\n", days, days == 1 ? "" : "s",
 	       hours, minutes, secs);
-	return BRK_CMD_EXIT_OK;
+	return CMDFW_EXIT_OK;
 }

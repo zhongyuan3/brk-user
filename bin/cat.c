@@ -1,6 +1,6 @@
-#include <brk/cmd.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <libcmdfw.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
@@ -12,10 +12,10 @@ static const char usage[] = "Usage: cat [-n] [FILE...]\n"
 			    "  -n       number output lines\n"
 			    "  --help   display this help and exit";
 
-static const struct brk_cmd_option opts[] = {
-	{ 'n', 'n', NULL, BRK_CMD_OPT_NO_ARG },
-	{ BRK_CMD_OPT_HELP, 0, "help", BRK_CMD_OPT_NO_ARG },
-	BRK_CMD_OPTION_END,
+static const struct cmdfw_option opts[] = {
+	{ 'n', 'n', NULL, CMDFW_OPT_NO_ARG },
+	{ CMDFW_OPT_HELP, 0, "help", CMDFW_OPT_NO_ARG },
+	CMDFW_OPTION_END,
 };
 
 static unsigned long line_no = 1;
@@ -86,44 +86,44 @@ static int cat(int fd, int number_lines)
 		if (rcnt < 0) {
 			if (errno == EINTR)
 				continue;
-			return brk_cmd_fail_errno("read error");
+			return cmdfw_fail_errno("read error");
 		}
 		if (rcnt == 0)
 			break;
 		if (number_lines) {
 			if (cat_numbered(buf, (size_t)rcnt))
-				return brk_cmd_fail_errno("write error");
+				return cmdfw_fail_errno("write error");
 		} else if (write_all(buf, (size_t)rcnt)) {
-			return brk_cmd_fail_errno("write error");
+			return cmdfw_fail_errno("write error");
 		}
 	}
-	return BRK_CMD_EXIT_OK;
+	return CMDFW_EXIT_OK;
 }
 
 int main(int argc, char *argv[])
 {
-	struct brk_cmd_optctx ctx;
+	struct cmdfw_optctx ctx;
 	int number_lines = 0;
 	int opt;
-	int ret = BRK_CMD_EXIT_OK;
+	int ret = CMDFW_EXIT_OK;
 
-	brk_cmd_init(argc, argv);
-	brk_cmd_optctx_init(&ctx, argc, argv);
+	cmdfw_init(argc, argv);
+	cmdfw_optctx_init(&ctx, argc, argv);
 
-	while ((opt = brk_cmd_optparse(&ctx, opts)) != 0) {
+	while ((opt = cmdfw_optparse(&ctx, opts)) != 0) {
 		if (opt == '?' || opt == ':')
-			return BRK_CMD_EXIT_USAGE;
-		if (opt == BRK_CMD_OPT_HELP)
-			brk_cmd_help_exit(usage);
+			return CMDFW_EXIT_USAGE;
+		if (opt == CMDFW_OPT_HELP)
+			cmdfw_help_exit(usage);
 		if (opt == 'n')
 			number_lines = 1;
 	}
 
-	if (brk_cmd_operand_count(&ctx) == 0)
+	if (cmdfw_operand_count(&ctx) == 0)
 		return cat(STDIN_FILENO, number_lines);
 
-	for (int i = 0; i < brk_cmd_operand_count(&ctx); i++) {
-		const char *path = brk_cmd_operand(&ctx, i);
+	for (int i = 0; i < cmdfw_operand_count(&ctx); i++) {
+		const char *path = cmdfw_operand(&ctx, i);
 		int fd;
 
 		if (!strcmp(path, "-")) {
@@ -131,13 +131,13 @@ int main(int argc, char *argv[])
 		} else {
 			fd = open(path, O_RDONLY);
 			if (fd < 0) {
-				ret = brk_cmd_fail_errno("open failed");
+				ret = cmdfw_fail_errno("open failed");
 				continue;
 			}
 		}
 
-		if (cat(fd, number_lines) != BRK_CMD_EXIT_OK)
-			ret = BRK_CMD_EXIT_FAIL;
+		if (cat(fd, number_lines) != CMDFW_EXIT_OK)
+			ret = CMDFW_EXIT_FAIL;
 
 		if (fd != STDIN_FILENO)
 			close(fd);

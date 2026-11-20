@@ -1,4 +1,4 @@
-#include <brk/cmd.h>
+#include <libcmdfw.h>
 #include <brk/limits.h>
 #include <dirent.h>
 #include <errno.h>
@@ -298,7 +298,7 @@ static int ls_long(const char *path, char **names, size_t n,
 		groups = calloc(n, sizeof(*groups));
 		times = calloc(n, sizeof(*times));
 		if (!sts || !users || !groups || !times) {
-			brk_cmd_fail_errno("calloc failed");
+			cmdfw_fail_errno("calloc failed");
 			goto out;
 		}
 	}
@@ -306,7 +306,7 @@ static int ls_long(const char *path, char **names, size_t n,
 	for (size_t i = 0; i < n; i++) {
 		strlcpy(sep, names[i], pb_len);
 		if (lstat(path_buf, &sts[i]) != 0) {
-			brk_cmd_fail_errno("lstat failed");
+			cmdfw_fail_errno("lstat failed");
 			goto out;
 		}
 		format_user(sts[i].st_uid, users[i], 32);
@@ -412,7 +412,7 @@ static void print_columns(char **names, size_t n, unsigned term_cols)
 
 	widths = malloc(n * sizeof(*widths));
 	if (!widths) {
-		brk_cmd_error_errno("malloc failed");
+		cmdfw_error_errno("malloc failed");
 		return;
 	}
 	for (size_t i = 0; i < n; i++)
@@ -481,7 +481,7 @@ static int collect_names(int fd, bool all, char ***out_names, size_t *out_n)
 			void *nb = realloc(buf, new_cap);
 
 			if (!nb) {
-				ret = brk_cmd_fail_errno("realloc failed");
+				ret = cmdfw_fail_errno("realloc failed");
 				goto out;
 			}
 			buf = nb;
@@ -489,7 +489,7 @@ static int collect_names(int fd, bool all, char ***out_names, size_t *out_n)
 		}
 		r = posix_getdents(fd, buf + len, cap - len, 0);
 		if (r < 0) {
-			ret = brk_cmd_fail_errno("posix_getdents failed");
+			ret = cmdfw_fail_errno("posix_getdents failed");
 			goto out;
 		}
 		if (r == 0)
@@ -513,7 +513,7 @@ static int collect_names(int fd, bool all, char ***out_names, size_t *out_n)
 			char **nn = realloc(names, nc * sizeof(*names));
 
 			if (!nn) {
-				ret = brk_cmd_fail_errno("realloc failed");
+				ret = cmdfw_fail_errno("realloc failed");
 				goto out;
 			}
 			names = nn;
@@ -521,7 +521,7 @@ static int collect_names(int fd, bool all, char ***out_names, size_t *out_n)
 		}
 		names[n] = dup_name(nm);
 		if (!names[n]) {
-			ret = brk_cmd_fail_errno("malloc failed");
+			ret = cmdfw_fail_errno("malloc failed");
 			goto out;
 		}
 		n++;
@@ -584,12 +584,12 @@ static int ls_one(const char *path, const struct ls_args *args)
 
 	if (args->long_format) {
 		if (lstat(path, &st) != 0)
-			return brk_cmd_fail_errno("lstat failed");
+			return cmdfw_fail_errno("lstat failed");
 
 		if (S_ISDIR(st.st_mode)) {
 			fd = open(path, O_RDONLY);
 			if (fd < 0)
-				return brk_cmd_fail_errno("open failed");
+				return cmdfw_fail_errno("open failed");
 			ret = ls_dir(fd, path, args);
 			close(fd);
 			return ret;
@@ -608,11 +608,11 @@ static int ls_one(const char *path, const struct ls_args *args)
 
 	fd = open(path, O_RDONLY);
 	if (fd < 0)
-		return brk_cmd_fail_errno("open failed");
+		return cmdfw_fail_errno("open failed");
 
 	if (fstat(fd, &st)) {
 		close(fd);
-		return brk_cmd_fail_errno("stat failed");
+		return cmdfw_fail_errno("stat failed");
 	}
 
 	if (S_ISDIR(st.st_mode)) {
@@ -626,7 +626,7 @@ static int ls_one(const char *path, const struct ls_args *args)
 
 static void print_help(void)
 {
-	printf("Usage: %s [OPTION]... [FILE]...\n", brk_cmd_progname());
+	printf("Usage: %s [OPTION]... [FILE]...\n", cmdfw_progname());
 	printf("List directory contents.\n\n");
 	printf("  -a, --all                  do not ignore entries starting with .\n");
 	printf("  -h, --human-readable       with -l, print sizes in powers of 1024 (e.g. 1K 234M)\n");
@@ -634,27 +634,27 @@ static void print_help(void)
 	printf("      --help                 display this help and exit\n");
 }
 
-static const struct brk_cmd_option ls_opts[] = {
-	{ 'a', 'a', "all", BRK_CMD_OPT_NO_ARG },
-	{ 'l', 'l', NULL, BRK_CMD_OPT_NO_ARG },
-	{ 'h', 'h', "human-readable", BRK_CMD_OPT_NO_ARG },
-	{ BRK_CMD_OPT_HELP, 0, "help", BRK_CMD_OPT_NO_ARG },
-	BRK_CMD_OPTION_END,
+static const struct cmdfw_option ls_opts[] = {
+	{ 'a', 'a', "all", CMDFW_OPT_NO_ARG },
+	{ 'l', 'l', NULL, CMDFW_OPT_NO_ARG },
+	{ 'h', 'h', "human-readable", CMDFW_OPT_NO_ARG },
+	{ CMDFW_OPT_HELP, 0, "help", CMDFW_OPT_NO_ARG },
+	CMDFW_OPTION_END,
 };
 
-static int parse_args(struct brk_cmd_optctx *ctx, struct ls_args *a)
+static int parse_args(struct cmdfw_optctx *ctx, struct ls_args *a)
 {
 	int opt;
 
 	memset(a, 0, sizeof(*a));
-	while ((opt = brk_cmd_optparse(ctx, ls_opts)) != 0) {
+	while ((opt = cmdfw_optparse(ctx, ls_opts)) != 0) {
 		switch (opt) {
 		case '?':
 		case ':':
-			return BRK_CMD_EXIT_USAGE;
-		case BRK_CMD_OPT_HELP:
+			return CMDFW_EXIT_USAGE;
+		case CMDFW_OPT_HELP:
 			print_help();
-			exit(BRK_CMD_EXIT_OK);
+			exit(CMDFW_EXIT_OK);
 		case 'a':
 			a->all = true;
 			break;
@@ -667,34 +667,34 @@ static int parse_args(struct brk_cmd_optctx *ctx, struct ls_args *a)
 		}
 	}
 
-	if (brk_cmd_operand_count(ctx) > 256)
-		return brk_cmd_fail("too many paths");
+	if (cmdfw_operand_count(ctx) > 256)
+		return cmdfw_fail("too many paths");
 
-	return BRK_CMD_EXIT_OK;
+	return CMDFW_EXIT_OK;
 }
 
 int main(int argc, char *argv[])
 {
 	struct ls_args opt;
-	struct brk_cmd_optctx ctx;
+	struct cmdfw_optctx ctx;
 	int err;
 
-	brk_cmd_init(argc, argv);
-	brk_cmd_optctx_init(&ctx, argc, argv);
+	cmdfw_init(argc, argv);
+	cmdfw_optctx_init(&ctx, argc, argv);
 	err = parse_args(&ctx, &opt);
 	if (err)
 		return err;
 
-	if (brk_cmd_operand_count(&ctx) == 0)
+	if (cmdfw_operand_count(&ctx) == 0)
 		return ls_one(".", &opt);
 
-	if (brk_cmd_operand_count(&ctx) == 1)
-		return ls_one(brk_cmd_operand(&ctx, 0), &opt);
+	if (cmdfw_operand_count(&ctx) == 1)
+		return ls_one(cmdfw_operand(&ctx, 0), &opt);
 
 	bool has_error = false;
 
-	for (int j = 0; j < brk_cmd_operand_count(&ctx); j++) {
-		const char *p = brk_cmd_operand(&ctx, j);
+	for (int j = 0; j < cmdfw_operand_count(&ctx); j++) {
+		const char *p = cmdfw_operand(&ctx, j);
 
 		printf("%s:\n", p);
 		err = ls_one(p, &opt);
@@ -702,5 +702,5 @@ int main(int argc, char *argv[])
 			has_error = true;
 	}
 
-	return has_error ? BRK_CMD_EXIT_USAGE : BRK_CMD_EXIT_OK;
+	return has_error ? CMDFW_EXIT_USAGE : CMDFW_EXIT_OK;
 }

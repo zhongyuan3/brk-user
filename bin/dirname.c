@@ -1,4 +1,4 @@
-#include <brk/cmd.h>
+#include <libcmdfw.h>
 #include <brk/limits.h>
 #include <string.h>
 
@@ -9,15 +9,15 @@ int main(int argc, char *argv[])
 {
 	char path[PATH_MAX];
 
-	brk_cmd_init(argc, argv);
+	cmdfw_init(argc, argv);
 
 	if (argc > 1 && !strcmp(argv[1], "--help"))
-		brk_cmd_help_exit(help);
+		cmdfw_help_exit(help);
 	if (argc != 2)
-		brk_cmd_usage(help);
+		cmdfw_usage(help);
 
 	if (strlen(argv[1]) >= sizeof(path))
-		return brk_cmd_fail("path too long");
+		return cmdfw_fail("path too long");
 	strcpy(path, argv[1]);
 
 	size_t len = strlen(path);
@@ -25,17 +25,17 @@ int main(int argc, char *argv[])
 		path[--len] = '\0';
 	if (len == 0) {
 		puts(".");
-		return BRK_CMD_EXIT_OK;
+		return CMDFW_EXIT_OK;
 	}
 
 	char *slash = strrchr(path, '/');
 	if (!slash) {
 		puts(".");
-		return BRK_CMD_EXIT_OK;
+		return CMDFW_EXIT_OK;
 	}
 	if (slash == path) {
 		puts("/");
-		return BRK_CMD_EXIT_OK;
+		return CMDFW_EXIT_OK;
 	}
 
 	*slash = '\0';
@@ -43,5 +43,5 @@ int main(int argc, char *argv[])
 	while (len > 1 && path[len - 1] == '/')
 		path[--len] = '\0';
 	puts(path);
-	return BRK_CMD_EXIT_OK;
+	return CMDFW_EXIT_OK;
 }

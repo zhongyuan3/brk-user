@@ -1,15 +1,15 @@
-#include <brk/cmd.h>
+#include <libcmdfw.h>
 #include <unistd.h>
 
 int main(int argc, char *argv[])
 {
-	struct brk_cmd_optctx ctx;
+	struct cmdfw_optctx ctx;
 
-	brk_cmd_init(argc, argv);
-	brk_cmd_optctx_init(&ctx, argc, argv);
-	if (brk_cmd_operand_count(&ctx) > 0)
-		brk_cmd_usage("Usage: sync");
+	cmdfw_init(argc, argv);
+	cmdfw_optctx_init(&ctx, argc, argv);
+	if (cmdfw_operand_count(&ctx) > 0)
+		cmdfw_usage("Usage: sync");
 
 	sync();
-	return BRK_CMD_EXIT_OK;
+	return CMDFW_EXIT_OK;
 }

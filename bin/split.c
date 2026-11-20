@@ -1,4 +1,4 @@
-#include <brk/cmd.h>
+#include <libcmdfw.h>
 #include <errno.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -17,13 +17,13 @@ static const char usage[] =
 	"  -d             use numeric suffixes\n"
 	"  --help         display this help and exit";
 
-static const struct brk_cmd_option opts[] = {
-	{ 'l', 'l', "lines", BRK_CMD_OPT_REQUIRED_ARG },
-	{ 'b', 'b', "bytes", BRK_CMD_OPT_REQUIRED_ARG },
-	{ 'a', 'a', "suffix-length", BRK_CMD_OPT_REQUIRED_ARG },
-	{ 'd', 'd', "numeric-suffixes", BRK_CMD_OPT_NO_ARG },
-	{ BRK_CMD_OPT_HELP, 0, "help", BRK_CMD_OPT_NO_ARG },
-	BRK_CMD_OPTION_END,
+static const struct cmdfw_option opts[] = {
+	{ 'l', 'l', "lines", CMDFW_OPT_REQUIRED_ARG },
+	{ 'b', 'b', "bytes", CMDFW_OPT_REQUIRED_ARG },
+	{ 'a', 'a', "suffix-length", CMDFW_OPT_REQUIRED_ARG },
+	{ 'd', 'd', "numeric-suffixes", CMDFW_OPT_NO_ARG },
+	{ CMDFW_OPT_HELP, 0, "help", CMDFW_OPT_NO_ARG },
+	CMDFW_OPTION_END,
 };
 
 static int make_name(char *out, size_t size, const char *prefix,
@@ -51,62 +51,62 @@ static int make_name(char *out, size_t size, const char *prefix,
 
 int main(int argc, char *argv[])
 {
-	struct brk_cmd_optctx ctx;
+	struct cmdfw_optctx ctx;
 	unsigned long lines = 1000;
 	unsigned long bytes = 0;
 	int suffix_len = 2;
 	bool numeric = false;
 	int opt;
 
-	brk_cmd_init(argc, argv);
-	brk_cmd_optctx_init(&ctx, argc, argv);
+	cmdfw_init(argc, argv);
+	cmdfw_optctx_init(&ctx, argc, argv);
 
-	while ((opt = brk_cmd_optparse(&ctx, opts)) != 0) {
+	while ((opt = cmdfw_optparse(&ctx, opts)) != 0) {
 		if (opt == '?' || opt == ':')
-			return BRK_CMD_EXIT_USAGE;
-		if (opt == BRK_CMD_OPT_HELP)
-			brk_cmd_help_exit(usage);
+			return CMDFW_EXIT_USAGE;
+		if (opt == CMDFW_OPT_HELP)
+			cmdfw_help_exit(usage);
 		if (opt == 'l' &&
-		    brk_cmd_parse_ulong(ctx.arg, &lines, 1, 0x7fffffffUL) != 0)
-			brk_cmd_usage(usage);
+		    cmdfw_parse_ulong(ctx.arg, &lines, 1, 0x7fffffffUL) != 0)
+			cmdfw_usage(usage);
 		if (opt == 'b' &&
-		    brk_cmd_parse_ulong(ctx.arg, &bytes, 1, 0x7fffffffUL) != 0)
-			brk_cmd_usage(usage);
+		    cmdfw_parse_ulong(ctx.arg, &bytes, 1, 0x7fffffffUL) != 0)
+			cmdfw_usage(usage);
 		if (opt == 'a') {
 			long v;
 
-			if (brk_cmd_parse_long(ctx.arg, &v, 1, 8) != 0)
-				brk_cmd_usage(usage);
+			if (cmdfw_parse_long(ctx.arg, &v, 1, 8) != 0)
+				cmdfw_usage(usage);
 			suffix_len = (int)v;
 		}
 		if (opt == 'd')
 			numeric = true;
 	}
 
-	const char *file = brk_cmd_operand(&ctx, 0);
-	const char *prefix = brk_cmd_operand(&ctx, 1);
+	const char *file = cmdfw_operand(&ctx, 0);
+	const char *prefix = cmdfw_operand(&ctx, 1);
 	if (!file)
 		file = "-";
 	if (!prefix)
 		prefix = "x";
-	if (brk_cmd_operand_count(&ctx) > 2)
-		brk_cmd_usage(usage);
+	if (cmdfw_operand_count(&ctx) > 2)
+		cmdfw_usage(usage);
 
 	FILE *in = !strcmp(file, "-") ? stdin : fopen(file, "r");
 	if (!in)
-		return brk_cmd_fail_errno(file);
+		return cmdfw_fail_errno(file);
 
 	unsigned long index = 0;
 	unsigned long count = 0;
 	FILE *out = NULL;
 	char name[512];
-	int ret = BRK_CMD_EXIT_OK;
+	int ret = CMDFW_EXIT_OK;
 
 	if (bytes) {
 		unsigned char *buf = malloc(bytes);
 
 		if (!buf) {
-			ret = brk_cmd_fail("out of memory");
+			ret = cmdfw_fail("out of memory");
 			goto done;
 		}
 
@@ -118,18 +118,18 @@ int main(int argc, char *argv[])
 			if (!out) {
 				if (make_name(name, sizeof(name), prefix, index,
 					      suffix_len, numeric) != 0) {
-					ret = brk_cmd_fail("suffix exhausted");
+					ret = cmdfw_fail("suffix exhausted");
 					break;
 				}
 				out = fopen(name, "w");
 				if (!out) {
-					ret = brk_cmd_fail_errno(name);
+					ret = cmdfw_fail_errno(name);
 					break;
 				}
 				index++;
 			}
 			if (fwrite(buf, 1, n, out) != n) {
-				ret = brk_cmd_fail_errno(name);
+				ret = cmdfw_fail_errno(name);
 				break;
 			}
 			if (n < bytes) {
@@ -150,19 +150,19 @@ int main(int argc, char *argv[])
 			if (!out) {
 				if (make_name(name, sizeof(name), prefix, index,
 					      suffix_len, numeric) != 0) {
-					ret = brk_cmd_fail("suffix exhausted");
+					ret = cmdfw_fail("suffix exhausted");
 					break;
 				}
 				out = fopen(name, "w");
 				if (!out) {
-					ret = brk_cmd_fail_errno(name);
+					ret = cmdfw_fail_errno(name);
 					break;
 				}
 				index++;
 				count = 0;
 			}
 			if (fwrite(line, 1, (size_t)n, out) != (size_t)n) {
-				ret = brk_cmd_fail_errno(name);
+				ret = cmdfw_fail_errno(name);
 				break;
 			}
 			count++;

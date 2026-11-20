@@ -1,4 +1,4 @@
-#include <brk/cmd.h>
+#include <libcmdfw.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -119,7 +119,7 @@ int main(int argc, char *argv[])
 	unsigned int row, col;
 	int n;
 
-	brk_cmd_init(argc, argv);
+	cmdfw_init(argc, argv);
 
 	if (argc < 2) {
 		usage();
@@ -135,7 +135,7 @@ int main(int argc, char *argv[])
 		return 0;
 	}
 
-	if (brk_cmd_term_check() != 0)
+	if (cmdfw_term_check() != 0)
 		return 1;
 
 	cap = argv[1];

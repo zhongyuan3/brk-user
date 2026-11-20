@@ -1,4 +1,4 @@
-#include <brk/cmd.h>
+#include <libcmdfw.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -13,10 +13,10 @@ static const char usage[] = "Usage: mkfifo [-m MODE] NAME...\n"
 			    "  -m MODE  set file permission bits (octal)\n"
 			    "  --help   display this help and exit";
 
-static const struct brk_cmd_option opts[] = {
-	{ 'm', 'm', "mode", BRK_CMD_OPT_REQUIRED_ARG },
-	{ BRK_CMD_OPT_HELP, 0, "help", BRK_CMD_OPT_NO_ARG },
-	BRK_CMD_OPTION_END,
+static const struct cmdfw_option opts[] = {
+	{ 'm', 'm', "mode", CMDFW_OPT_REQUIRED_ARG },
+	{ CMDFW_OPT_HELP, 0, "help", CMDFW_OPT_NO_ARG },
+	CMDFW_OPTION_END,
 };
 
 static int parse_mode(const char *s, mode_t *out)
@@ -35,32 +35,32 @@ static int parse_mode(const char *s, mode_t *out)
 
 int main(int argc, char *argv[])
 {
-	struct brk_cmd_optctx ctx;
+	struct cmdfw_optctx ctx;
 	mode_t mode = 0666;
 	int opt;
-	int ret = BRK_CMD_EXIT_OK;
+	int ret = CMDFW_EXIT_OK;
 
-	brk_cmd_init(argc, argv);
-	brk_cmd_optctx_init(&ctx, argc, argv);
+	cmdfw_init(argc, argv);
+	cmdfw_optctx_init(&ctx, argc, argv);
 
-	while ((opt = brk_cmd_optparse(&ctx, opts)) != 0) {
+	while ((opt = cmdfw_optparse(&ctx, opts)) != 0) {
 		if (opt == '?' || opt == ':')
-			return BRK_CMD_EXIT_USAGE;
-		if (opt == BRK_CMD_OPT_HELP)
-			brk_cmd_help_exit(usage);
+			return CMDFW_EXIT_USAGE;
+		if (opt == CMDFW_OPT_HELP)
+			cmdfw_help_exit(usage);
 		if (opt == 'm' && parse_mode(ctx.arg, &mode) != 0)
-			brk_cmd_usage(usage);
+			cmdfw_usage(usage);
 	}
 
-	if (brk_cmd_operand_count(&ctx) == 0)
-		brk_cmd_usage(usage);
+	if (cmdfw_operand_count(&ctx) == 0)
+		cmdfw_usage(usage);
 
-	for (int i = 0; i < brk_cmd_operand_count(&ctx); i++) {
-		const char *path = brk_cmd_operand(&ctx, i);
+	for (int i = 0; i < cmdfw_operand_count(&ctx); i++) {
+		const char *path = cmdfw_operand(&ctx, i);
 
 		if (mkfifo(path, mode) != 0) {
-			brk_cmd_error("%s: %s", path, strerror(errno));
-			ret = BRK_CMD_EXIT_FAIL;
+			cmdfw_error("%s: %s", path, strerror(errno));
+			ret = CMDFW_EXIT_FAIL;
 		}
 	}
 

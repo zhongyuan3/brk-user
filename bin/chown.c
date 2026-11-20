@@ -1,4 +1,4 @@
-#include <brk/cmd.h>
+#include <libcmdfw.h>
 #include <brk/limits.h>
 #include <dirent.h>
 #include <errno.h>
@@ -50,13 +50,13 @@ static int parse_owner(const char *spec, long *uid, long *gid)
 	}
 
 	if (*owner) {
-		if (brk_cmd_parse_ulong(owner, &v, 0, 0xffffffffUL) != 0)
+		if (cmdfw_parse_ulong(owner, &v, 0, 0xffffffffUL) != 0)
 			return -1;
 		*uid = (long)v;
 	}
 
 	if (group && *group) {
-		if (brk_cmd_parse_ulong(group, &v, 0, 0xffffffffUL) != 0)
+		if (cmdfw_parse_ulong(group, &v, 0, 0xffffffffUL) != 0)
 			return -1;
 		*gid = (long)v;
 	}
@@ -72,7 +72,7 @@ static int chown_tree(const char *path, uid_t uid, gid_t gid, bool recursive)
 	struct stat st;
 
 	if (chown(path, uid, gid) != 0) {
-		brk_cmd_error("%s: %s", path, strerror(errno));
+		cmdfw_error("%s: %s", path, strerror(errno));
 		return -1;
 	}
 
@@ -84,7 +84,7 @@ static int chown_tree(const char *path, uid_t uid, gid_t gid, bool recursive)
 
 	int fd = open(path, O_RDONLY | O_DIRECTORY);
 	if (fd < 0) {
-		brk_cmd_error("%s: %s", path, strerror(errno));
+		cmdfw_error("%s: %s", path, strerror(errno));
 		return -1;
 	}
 
@@ -99,7 +99,7 @@ static int chown_tree(const char *path, uid_t uid, gid_t gid, bool recursive)
 		if (rcnt < 0) {
 			if (errno == EINTR)
 				continue;
-			brk_cmd_error("%s: %s", path, strerror(errno));
+			cmdfw_error("%s: %s", path, strerror(errno));
 			ret = -1;
 			break;
 		}
@@ -119,7 +119,7 @@ static int chown_tree(const char *path, uid_t uid, gid_t gid, bool recursive)
 
 				if (join_path(child, sizeof(child), path,
 					      d->d_name) != 0) {
-					brk_cmd_error("%s: path too long",
+					cmdfw_error("%s: path too long",
 						      path);
 					ret = -1;
 				} else if (chown_tree(child, uid, gid, true) !=
@@ -142,13 +142,13 @@ int main(int argc, char *argv[])
 	bool recursive = false;
 	long uid, gid;
 	int i = 1;
-	int ret = BRK_CMD_EXIT_OK;
+	int ret = CMDFW_EXIT_OK;
 
-	brk_cmd_init(argc, argv);
+	cmdfw_init(argc, argv);
 
 	while (i < argc) {
 		if (!strcmp(argv[i], "--help"))
-			brk_cmd_help_exit(usage);
+			cmdfw_help_exit(usage);
 		if (!strcmp(argv[i], "-R") || !strcmp(argv[i], "--recursive")) {
 			recursive = true;
 			i++;
@@ -162,14 +162,14 @@ int main(int argc, char *argv[])
 	}
 
 	if (argc - i < 2)
-		brk_cmd_usage(usage);
+		cmdfw_usage(usage);
 
 	if (parse_owner(argv[i++], &uid, &gid) != 0)
-		brk_cmd_usage(usage);
+		cmdfw_usage(usage);
 
 	for (; i < argc; i++) {
 		if (chown_tree(argv[i], (uid_t)uid, (gid_t)gid, recursive) != 0)
-			ret = BRK_CMD_EXIT_FAIL;
+			ret = CMDFW_EXIT_FAIL;
 	}
 
 	return ret;

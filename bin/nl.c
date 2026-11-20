@@ -1,4 +1,4 @@
-#include <brk/cmd.h>
+#include <libcmdfw.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,14 +16,14 @@ static const char usage[] =
 	"  -i INC     increment (default 1)\n"
 	"  --help     display this help and exit";
 
-static const struct brk_cmd_option opts[] = {
-	{ 'b', 'b', "body-numbering", BRK_CMD_OPT_REQUIRED_ARG },
-	{ 'w', 'w', "number-width", BRK_CMD_OPT_REQUIRED_ARG },
-	{ 's', 's', "number-separator", BRK_CMD_OPT_REQUIRED_ARG },
-	{ 'v', 'v', "starting-line-number", BRK_CMD_OPT_REQUIRED_ARG },
-	{ 'i', 'i', "line-increment", BRK_CMD_OPT_REQUIRED_ARG },
-	{ BRK_CMD_OPT_HELP, 0, "help", BRK_CMD_OPT_NO_ARG },
-	BRK_CMD_OPTION_END,
+static const struct cmdfw_option opts[] = {
+	{ 'b', 'b', "body-numbering", CMDFW_OPT_REQUIRED_ARG },
+	{ 'w', 'w', "number-width", CMDFW_OPT_REQUIRED_ARG },
+	{ 's', 's', "number-separator", CMDFW_OPT_REQUIRED_ARG },
+	{ 'v', 'v', "starting-line-number", CMDFW_OPT_REQUIRED_ARG },
+	{ 'i', 'i', "line-increment", CMDFW_OPT_REQUIRED_ARG },
+	{ CMDFW_OPT_HELP, 0, "help", CMDFW_OPT_NO_ARG },
+	CMDFW_OPTION_END,
 };
 
 static void unescape(char *s)
@@ -86,7 +86,7 @@ static void process(FILE *fp, char style, int width, const char *sep,
 
 int main(int argc, char *argv[])
 {
-	struct brk_cmd_optctx ctx;
+	struct cmdfw_optctx ctx;
 	char style = 't';
 	int width = 6;
 	char sepbuf[64];
@@ -95,25 +95,25 @@ int main(int argc, char *argv[])
 	long increment = 1;
 	int opt;
 
-	brk_cmd_init(argc, argv);
-	brk_cmd_optctx_init(&ctx, argc, argv);
+	cmdfw_init(argc, argv);
+	cmdfw_optctx_init(&ctx, argc, argv);
 
-	while ((opt = brk_cmd_optparse(&ctx, opts)) != 0) {
+	while ((opt = cmdfw_optparse(&ctx, opts)) != 0) {
 		if (opt == '?' || opt == ':')
-			return BRK_CMD_EXIT_USAGE;
-		if (opt == BRK_CMD_OPT_HELP)
-			brk_cmd_help_exit(usage);
+			return CMDFW_EXIT_USAGE;
+		if (opt == CMDFW_OPT_HELP)
+			cmdfw_help_exit(usage);
 		if (opt == 'b') {
 			if (!ctx.arg || !ctx.arg[0] ||
 			    !strchr("atn", ctx.arg[0]))
-				brk_cmd_usage(usage);
+				cmdfw_usage(usage);
 			style = ctx.arg[0];
 		}
 		if (opt == 'w') {
 			long v;
 
-			if (brk_cmd_parse_long(ctx.arg, &v, 1, 256) != 0)
-				brk_cmd_usage(usage);
+			if (cmdfw_parse_long(ctx.arg, &v, 1, 256) != 0)
+				cmdfw_usage(usage);
 			width = (int)v;
 		}
 		if (opt == 's') {
@@ -122,27 +122,27 @@ int main(int argc, char *argv[])
 			sep = sepbuf;
 		}
 		if (opt == 'v' &&
-		    brk_cmd_parse_long(ctx.arg, &number, 0, 0x7fffffffL) != 0)
-			brk_cmd_usage(usage);
-		if (opt == 'i' && brk_cmd_parse_long(ctx.arg, &increment, 1,
+		    cmdfw_parse_long(ctx.arg, &number, 0, 0x7fffffffL) != 0)
+			cmdfw_usage(usage);
+		if (opt == 'i' && cmdfw_parse_long(ctx.arg, &increment, 1,
 						     0x7fffffffL) != 0)
-			brk_cmd_usage(usage);
+			cmdfw_usage(usage);
 	}
 
 	if (!sep)
 		sep = "\t";
 
-	if (brk_cmd_operand_count(&ctx) == 0) {
+	if (cmdfw_operand_count(&ctx) == 0) {
 		process(stdin, style, width, sep, &number, increment);
-		return BRK_CMD_EXIT_OK;
+		return CMDFW_EXIT_OK;
 	}
 
-	for (int i = 0; i < brk_cmd_operand_count(&ctx); i++) {
-		const char *path = brk_cmd_operand(&ctx, i);
+	for (int i = 0; i < cmdfw_operand_count(&ctx); i++) {
+		const char *path = cmdfw_operand(&ctx, i);
 		FILE *fp = !strcmp(path, "-") ? stdin : fopen(path, "r");
 
 		if (!fp) {
-			brk_cmd_error_errno(path);
+			cmdfw_error_errno(path);
 			continue;
 		}
 		process(fp, style, width, sep, &number, increment);
@@ -150,5 +150,5 @@ int main(int argc, char *argv[])
 			fclose(fp);
 	}
 
-	return BRK_CMD_EXIT_OK;
+	return CMDFW_EXIT_OK;
 }

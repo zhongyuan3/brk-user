@@ -1,4 +1,4 @@
-#include <brk/cmd.h>
+#include <libcmdfw.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -9,18 +9,18 @@ static const char usage[] = "Usage: printenv [NAME]...\n"
 
 int main(int argc, char *argv[])
 {
-	brk_cmd_init(argc, argv);
+	cmdfw_init(argc, argv);
 
 	if (argc > 1 && !strcmp(argv[1], "--help"))
-		brk_cmd_help_exit(usage);
+		cmdfw_help_exit(usage);
 
 	if (argc == 1) {
 		for (char **entry = environ; entry && *entry; entry++)
 			puts(*entry);
-		return BRK_CMD_EXIT_OK;
+		return CMDFW_EXIT_OK;
 	}
 
-	int status = BRK_CMD_EXIT_OK;
+	int status = CMDFW_EXIT_OK;
 
 	for (int i = 1; i < argc; i++) {
 		const char *value = getenv(argv[i]);
@@ -28,7 +28,7 @@ int main(int argc, char *argv[])
 		if (value)
 			puts(value);
 		else
-			status = BRK_CMD_EXIT_FAIL;
+			status = CMDFW_EXIT_FAIL;
 	}
 	return status;
 }

@@ -1,4 +1,4 @@
-#include <brk/cmd.h>
+#include <libcmdfw.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <stdint.h>
@@ -59,17 +59,17 @@ static int cksum_fd(int fd, const char *name)
 
 int main(int argc, char *argv[])
 {
-	int ret = BRK_CMD_EXIT_OK;
+	int ret = CMDFW_EXIT_OK;
 
-	brk_cmd_init(argc, argv);
+	cmdfw_init(argc, argv);
 
 	if (argc > 1 && !strcmp(argv[1], "--help"))
-		brk_cmd_help_exit(usage);
+		cmdfw_help_exit(usage);
 
 	if (argc == 1) {
 		if (cksum_fd(STDIN_FILENO, NULL) != 0)
-			return brk_cmd_fail_errno("stdin");
-		return BRK_CMD_EXIT_OK;
+			return cmdfw_fail_errno("stdin");
+		return CMDFW_EXIT_OK;
 	}
 
 	for (int i = 1; i < argc; i++) {
@@ -81,15 +81,15 @@ int main(int argc, char *argv[])
 		} else {
 			fd = open(path, O_RDONLY);
 			if (fd < 0) {
-				brk_cmd_error("%s: %s", path, strerror(errno));
-				ret = BRK_CMD_EXIT_FAIL;
+				cmdfw_error("%s: %s", path, strerror(errno));
+				ret = CMDFW_EXIT_FAIL;
 				continue;
 			}
 		}
 
 		if (cksum_fd(fd, path) != 0) {
-			brk_cmd_error("%s: %s", path, strerror(errno));
-			ret = BRK_CMD_EXIT_FAIL;
+			cmdfw_error("%s: %s", path, strerror(errno));
+			ret = CMDFW_EXIT_FAIL;
 		}
 		if (fd != STDIN_FILENO)
 			close(fd);

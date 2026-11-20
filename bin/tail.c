@@ -1,4 +1,4 @@
-#include <brk/cmd.h>
+#include <libcmdfw.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -7,10 +7,10 @@
 static const char usage[] = "Usage: tail [-n N] [FILE...]\n"
 			    "Print the last N lines of each FILE (default 10).";
 
-static const struct brk_cmd_option opts[] = {
-	{ 'n', 'n', NULL, BRK_CMD_OPT_REQUIRED_ARG },
-	{ BRK_CMD_OPT_HELP, 0, "help", BRK_CMD_OPT_NO_ARG },
-	BRK_CMD_OPTION_END,
+static const struct cmdfw_option opts[] = {
+	{ 'n', 'n', NULL, CMDFW_OPT_REQUIRED_ARG },
+	{ CMDFW_OPT_HELP, 0, "help", CMDFW_OPT_NO_ARG },
+	CMDFW_OPTION_END,
 };
 
 static int tail_file(FILE *f, unsigned long n)
@@ -24,7 +24,7 @@ static int tail_file(FILE *f, unsigned long n)
 	if (n) {
 		lines = calloc(n, sizeof(*lines));
 		if (!lines)
-			return brk_cmd_fail_errno("out of memory");
+			return cmdfw_fail_errno("out of memory");
 	}
 
 	while ((len = getline(&line, &cap, f)) != -1) {
@@ -54,52 +54,52 @@ static int tail_file(FILE *f, unsigned long n)
 			for (unsigned long j = 0; j < n; j++)
 				free(lines[j]);
 			free(lines);
-			return brk_cmd_fail_errno("write failed");
+			return cmdfw_fail_errno("write failed");
 		}
 	}
 
 	for (unsigned long i = 0; i < n; i++)
 		free(lines[i]);
 	free(lines);
-	return BRK_CMD_EXIT_OK;
+	return CMDFW_EXIT_OK;
 }
 
 int main(int argc, char *argv[])
 {
-	struct brk_cmd_optctx ctx;
+	struct cmdfw_optctx ctx;
 	unsigned long n = 10;
 	int opt;
-	int ret = BRK_CMD_EXIT_OK;
+	int ret = CMDFW_EXIT_OK;
 
-	brk_cmd_init(argc, argv);
-	brk_cmd_optctx_init(&ctx, argc, argv);
+	cmdfw_init(argc, argv);
+	cmdfw_optctx_init(&ctx, argc, argv);
 
-	while ((opt = brk_cmd_optparse(&ctx, opts)) != 0) {
+	while ((opt = cmdfw_optparse(&ctx, opts)) != 0) {
 		if (opt == '?' || opt == ':')
-			return BRK_CMD_EXIT_USAGE;
-		if (opt == BRK_CMD_OPT_HELP)
-			brk_cmd_help_exit(usage);
+			return CMDFW_EXIT_USAGE;
+		if (opt == CMDFW_OPT_HELP)
+			cmdfw_help_exit(usage);
 		if (opt == 'n') {
-			if (brk_cmd_parse_ulong(ctx.arg, &n, 0, 1000000) != 0)
-				return BRK_CMD_EXIT_FAIL;
+			if (cmdfw_parse_ulong(ctx.arg, &n, 0, 1000000) != 0)
+				return CMDFW_EXIT_FAIL;
 		}
 	}
 
-	if (brk_cmd_operand_count(&ctx) == 0)
+	if (cmdfw_operand_count(&ctx) == 0)
 		return tail_file(stdin, n);
 
-	for (int i = 0; i < brk_cmd_operand_count(&ctx); i++) {
-		const char *path = brk_cmd_operand(&ctx, i);
+	for (int i = 0; i < cmdfw_operand_count(&ctx); i++) {
+		const char *path = cmdfw_operand(&ctx, i);
 		FILE *f = fopen(path, "r");
 
 		if (!f) {
-			ret = brk_cmd_fail_errno("cannot open");
+			ret = cmdfw_fail_errno("cannot open");
 			continue;
 		}
-		if (brk_cmd_operand_count(&ctx) > 1)
+		if (cmdfw_operand_count(&ctx) > 1)
 			printf("==> %s <==\n", path);
-		if (tail_file(f, n) != BRK_CMD_EXIT_OK)
-			ret = BRK_CMD_EXIT_FAIL;
+		if (tail_file(f, n) != CMDFW_EXIT_OK)
+			ret = CMDFW_EXIT_FAIL;
 		fclose(f);
 	}
 

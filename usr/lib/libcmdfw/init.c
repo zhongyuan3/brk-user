@@ -1,8 +1,8 @@
-#include <brk/cmd.h>
+#include <libcmdfw.h>
 
 static const char *progname = "cmd";
 
-const char *brk_cmd_basename(const char *path)
+const char *cmdfw_basename(const char *path)
 {
 	const char *base = path;
 
@@ -17,13 +17,13 @@ const char *brk_cmd_basename(const char *path)
 	return base[0] ? base : path;
 }
 
-void brk_cmd_init(int argc, char *argv[])
+void cmdfw_init(int argc, char *argv[])
 {
 	if (argc > 0 && argv[0])
-		progname = brk_cmd_basename(argv[0]);
+		progname = cmdfw_basename(argv[0]);
 }
 
-const char *brk_cmd_progname(void)
+const char *cmdfw_progname(void)
 {
 	return progname;
 }

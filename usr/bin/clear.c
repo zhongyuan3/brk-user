@@ -1,4 +1,4 @@
-#include <brk/cmd.h>
+#include <libcmdfw.h>
 #include <errno.h>
 #include <unistd.h>
 
@@ -28,19 +28,19 @@ static int write_clear(void)
 
 int main(int argc, char *argv[])
 {
-	struct brk_cmd_optctx ctx;
+	struct cmdfw_optctx ctx;
 
-	brk_cmd_init(argc, argv);
-	brk_cmd_optctx_init(&ctx, argc, argv);
+	cmdfw_init(argc, argv);
+	cmdfw_optctx_init(&ctx, argc, argv);
 
-	if (brk_cmd_operand_count(&ctx) != 0)
-		brk_cmd_usage("Usage: clear");
+	if (cmdfw_operand_count(&ctx) != 0)
+		cmdfw_usage("Usage: clear");
 
-	if (brk_cmd_term_check() != 0)
-		return BRK_CMD_EXIT_FAIL;
+	if (cmdfw_term_check() != 0)
+		return CMDFW_EXIT_FAIL;
 
 	if (write_clear())
-		return brk_cmd_fail_errno("clear: write error");
+		return cmdfw_fail_errno("clear: write error");
 
-	return BRK_CMD_EXIT_OK;
+	return CMDFW_EXIT_OK;
 }

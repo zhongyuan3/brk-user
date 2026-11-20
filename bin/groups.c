@@ -1,7 +1,7 @@
-#include <brk/cmd.h>
 #include <brk/limits.h>
 #include <errno.h>
 #include <grp.h>
+#include <libcmdfw.h>
 #include <pwd.h>
 #include <stdio.h>
 #include <string.h>
@@ -13,9 +13,9 @@ static const char usage[] = "Usage: groups [USER...]\n"
 			    "Options:\n"
 			    "  --help   display this help and exit";
 
-static const struct brk_cmd_option opts[] = {
-	{ BRK_CMD_OPT_HELP, 0, "help", BRK_CMD_OPT_NO_ARG },
-	BRK_CMD_OPTION_END,
+static const struct cmdfw_option opts[] = {
+	{ CMDFW_OPT_HELP, 0, "help", CMDFW_OPT_NO_ARG },
+	CMDFW_OPTION_END,
 };
 
 static void print_group(gid_t gid)
@@ -76,32 +76,32 @@ static int print_user_groups(const char *user)
 
 int main(int argc, char *argv[])
 {
-	struct brk_cmd_optctx ctx;
+	struct cmdfw_optctx ctx;
 	int opt;
-	int ret = BRK_CMD_EXIT_OK;
+	int ret = CMDFW_EXIT_OK;
 
-	brk_cmd_init(argc, argv);
-	brk_cmd_optctx_init(&ctx, argc, argv);
+	cmdfw_init(argc, argv);
+	cmdfw_optctx_init(&ctx, argc, argv);
 
-	while ((opt = brk_cmd_optparse(&ctx, opts)) != 0) {
+	while ((opt = cmdfw_optparse(&ctx, opts)) != 0) {
 		if (opt == '?' || opt == ':')
-			return BRK_CMD_EXIT_USAGE;
-		if (opt == BRK_CMD_OPT_HELP)
-			brk_cmd_help_exit(usage);
+			return CMDFW_EXIT_USAGE;
+		if (opt == CMDFW_OPT_HELP)
+			cmdfw_help_exit(usage);
 	}
 
-	if (brk_cmd_operand_count(&ctx) == 0) {
+	if (cmdfw_operand_count(&ctx) == 0) {
 		if (print_current_groups() != 0)
-			return brk_cmd_fail_errno("groups");
-		return BRK_CMD_EXIT_OK;
+			return cmdfw_fail_errno("groups");
+		return CMDFW_EXIT_OK;
 	}
 
-	for (int i = 0; i < brk_cmd_operand_count(&ctx); i++) {
-		const char *user = brk_cmd_operand(&ctx, i);
+	for (int i = 0; i < cmdfw_operand_count(&ctx); i++) {
+		const char *user = cmdfw_operand(&ctx, i);
 
 		if (print_user_groups(user) != 0) {
-			brk_cmd_error("%s: %s", user, strerror(errno));
-			ret = BRK_CMD_EXIT_FAIL;
+			cmdfw_error("%s: %s", user, strerror(errno));
+			ret = CMDFW_EXIT_FAIL;
 		}
 	}
 	return ret;

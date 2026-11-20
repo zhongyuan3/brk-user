@@ -1,4 +1,4 @@
-#include <brk/cmd.h>
+#include <libcmdfw.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -8,12 +8,12 @@ static const char usage[] =
 	"Usage: join [-1 FIELD] [-2 FIELD] [-t CHAR] FILE1 FILE2\n"
 	"Join lines of two files on a common field.";
 
-static const struct brk_cmd_option opts[] = {
-	{ '1', '1', NULL, BRK_CMD_OPT_REQUIRED_ARG },
-	{ '2', '2', NULL, BRK_CMD_OPT_REQUIRED_ARG },
-	{ 't', 't', NULL, BRK_CMD_OPT_REQUIRED_ARG },
-	{ BRK_CMD_OPT_HELP, 0, "help", BRK_CMD_OPT_NO_ARG },
-	BRK_CMD_OPTION_END,
+static const struct cmdfw_option opts[] = {
+	{ '1', '1', NULL, CMDFW_OPT_REQUIRED_ARG },
+	{ '2', '2', NULL, CMDFW_OPT_REQUIRED_ARG },
+	{ 't', 't', NULL, CMDFW_OPT_REQUIRED_ARG },
+	{ CMDFW_OPT_HELP, 0, "help", CMDFW_OPT_NO_ARG },
+	CMDFW_OPTION_END,
 };
 
 #define JOIN_MAX_FIELDS 64
@@ -136,41 +136,41 @@ static void put_fields(const struct jline *l, int skip, const char *sep,
 
 int main(int argc, char *argv[])
 {
-	struct brk_cmd_optctx ctx;
+	struct cmdfw_optctx ctx;
 	int f1 = 1, f2 = 1;
 	char delim = 0;
 	char sepbuf[2] = { 0, 0 };
 	const char *sep = " ";
 	int opt;
-	int ret = BRK_CMD_EXIT_OK;
+	int ret = CMDFW_EXIT_OK;
 
-	brk_cmd_init(argc, argv);
-	brk_cmd_optctx_init(&ctx, argc, argv);
+	cmdfw_init(argc, argv);
+	cmdfw_optctx_init(&ctx, argc, argv);
 
-	while ((opt = brk_cmd_optparse(&ctx, opts)) != 0) {
+	while ((opt = cmdfw_optparse(&ctx, opts)) != 0) {
 		if (opt == '?' || opt == ':')
-			return BRK_CMD_EXIT_USAGE;
-		if (opt == BRK_CMD_OPT_HELP)
-			brk_cmd_help_exit(usage);
+			return CMDFW_EXIT_USAGE;
+		if (opt == CMDFW_OPT_HELP)
+			cmdfw_help_exit(usage);
 		if (opt == '1') {
 			long v;
 
-			if (brk_cmd_parse_long(ctx.arg, &v, 1,
-					       JOIN_MAX_FIELDS) != 0)
-				brk_cmd_usage(usage);
+			if (cmdfw_parse_long(ctx.arg, &v, 1, JOIN_MAX_FIELDS) !=
+			    0)
+				cmdfw_usage(usage);
 			f1 = (int)v;
 		}
 		if (opt == '2') {
 			long v;
 
-			if (brk_cmd_parse_long(ctx.arg, &v, 1,
-					       JOIN_MAX_FIELDS) != 0)
-				brk_cmd_usage(usage);
+			if (cmdfw_parse_long(ctx.arg, &v, 1, JOIN_MAX_FIELDS) !=
+			    0)
+				cmdfw_usage(usage);
 			f2 = (int)v;
 		}
 		if (opt == 't') {
 			if (!ctx.arg || !ctx.arg[0])
-				brk_cmd_usage(usage);
+				cmdfw_usage(usage);
 			delim = ctx.arg[0];
 			if (delim == '\\' && ctx.arg[1] == 't')
 				delim = '\t';
@@ -180,19 +180,19 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	brk_cmd_require_operand_count(&ctx, 2, usage);
-	const char *pa = brk_cmd_operand(&ctx, 0);
-	const char *pb = brk_cmd_operand(&ctx, 1);
+	cmdfw_require_operand_count(&ctx, 2, usage);
+	const char *pa = cmdfw_operand(&ctx, 0);
+	const char *pb = cmdfw_operand(&ctx, 1);
 	struct jline *a = NULL, *b = NULL;
 	size_t na = 0, nb = 0;
 
 	if (load(pa, &a, &na, delim) != 0)
-		return brk_cmd_fail_errno(pa);
+		return cmdfw_fail_errno(pa);
 	if (load(pb, &b, &nb, delim) != 0) {
 		for (size_t i = 0; i < na; i++)
 			free(a[i].raw);
 		free(a);
-		return brk_cmd_fail_errno(pb);
+		return cmdfw_fail_errno(pb);
 	}
 
 	for (size_t i = 0; i < na; i++) {

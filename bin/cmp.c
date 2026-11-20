@@ -1,4 +1,4 @@
-#include <brk/cmd.h>
+#include <libcmdfw.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <stdbool.h>
@@ -16,11 +16,11 @@ static const char help[] =
 	"  -l       print every differing byte\n"
 	"  --help   display this help and exit";
 
-static const struct brk_cmd_option opts[] = {
-	{ 's', 's', NULL, BRK_CMD_OPT_NO_ARG },
-	{ 'l', 'l', NULL, BRK_CMD_OPT_NO_ARG },
-	{ BRK_CMD_OPT_HELP, 0, "help", BRK_CMD_OPT_NO_ARG },
-	BRK_CMD_OPTION_END,
+static const struct cmdfw_option opts[] = {
+	{ 's', 's', NULL, CMDFW_OPT_NO_ARG },
+	{ 'l', 'l', NULL, CMDFW_OPT_NO_ARG },
+	{ CMDFW_OPT_HELP, 0, "help", CMDFW_OPT_NO_ARG },
+	CMDFW_OPTION_END,
 };
 
 static ssize_t read_chunk(int fd, unsigned char *buf, size_t cap)
@@ -44,44 +44,44 @@ static ssize_t read_chunk(int fd, unsigned char *buf, size_t cap)
 
 int main(int argc, char *argv[])
 {
-	struct brk_cmd_optctx ctx;
+	struct cmdfw_optctx ctx;
 	bool silent = false;
 	bool list = false;
 	int opt;
 
-	brk_cmd_init(argc, argv);
-	brk_cmd_optctx_init(&ctx, argc, argv);
+	cmdfw_init(argc, argv);
+	cmdfw_optctx_init(&ctx, argc, argv);
 
-	while ((opt = brk_cmd_optparse(&ctx, opts)) != 0) {
+	while ((opt = cmdfw_optparse(&ctx, opts)) != 0) {
 		if (opt == '?' || opt == ':')
-			return BRK_CMD_EXIT_USAGE;
-		if (opt == BRK_CMD_OPT_HELP)
-			brk_cmd_help_exit(help);
+			return CMDFW_EXIT_USAGE;
+		if (opt == CMDFW_OPT_HELP)
+			cmdfw_help_exit(help);
 		if (opt == 's')
 			silent = true;
 		if (opt == 'l')
 			list = true;
 	}
 
-	brk_cmd_require_operand_count(&ctx, 2, help);
-	if (brk_cmd_operand_count(&ctx) != 2)
-		brk_cmd_usage(help);
+	cmdfw_require_operand_count(&ctx, 2, help);
+	if (cmdfw_operand_count(&ctx) != 2)
+		cmdfw_usage(help);
 
-	const char *name1 = brk_cmd_operand(&ctx, 0);
-	const char *name2 = brk_cmd_operand(&ctx, 1);
+	const char *name1 = cmdfw_operand(&ctx, 0);
+	const char *name2 = cmdfw_operand(&ctx, 1);
 
 	if (!strcmp(name1, "-") && !strcmp(name2, "-"))
-		return brk_cmd_fail("both inputs cannot be standard input");
+		return cmdfw_fail("both inputs cannot be standard input");
 
 	int fd1 = !strcmp(name1, "-") ? STDIN_FILENO : open(name1, O_RDONLY);
 	int fd2 = !strcmp(name2, "-") ? STDIN_FILENO : open(name2, O_RDONLY);
 
 	if (fd1 < 0)
-		return brk_cmd_fail_errno(name1);
+		return cmdfw_fail_errno(name1);
 	if (fd2 < 0) {
 		if (fd1 != STDIN_FILENO)
 			close(fd1);
-		return brk_cmd_fail_errno(name2);
+		return cmdfw_fail_errno(name2);
 	}
 
 	unsigned char b1[4096];
@@ -95,7 +95,7 @@ int main(int argc, char *argv[])
 		ssize_t n2 = read_chunk(fd2, b2, sizeof(b2));
 
 		if (n1 < 0 || n2 < 0) {
-			brk_cmd_error_errno(n1 < 0 ? name1 : name2);
+			cmdfw_error_errno(n1 < 0 ? name1 : name2);
 			differ = true;
 			break;
 		}
@@ -140,5 +140,5 @@ done:
 		close(fd1);
 	if (fd2 != STDIN_FILENO)
 		close(fd2);
-	return differ ? BRK_CMD_EXIT_FAIL : BRK_CMD_EXIT_OK;
+	return differ ? CMDFW_EXIT_FAIL : CMDFW_EXIT_OK;
 }

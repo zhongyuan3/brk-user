@@ -1,4 +1,4 @@
-#include <brk/cmd.h>
+#include <libcmdfw.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -1052,56 +1052,56 @@ static void free_editor(struct editor *ed)
 
 int main(int argc, char *argv[])
 {
-	struct brk_cmd_optctx ctx;
+	struct cmdfw_optctx ctx;
 	struct editor ed;
 	struct key_state keys = { 0 };
 	char buf[128];
 	int err = 0;
 
-	brk_cmd_init(argc, argv);
-	brk_cmd_optctx_init(&ctx, argc, argv);
+	cmdfw_init(argc, argv);
+	cmdfw_optctx_init(&ctx, argc, argv);
 
-	static const struct brk_cmd_option options[] = {
-		{ 'k', 'k', "keys", BRK_CMD_OPT_NO_ARG },
-		BRK_CMD_OPTION_END,
+	static const struct cmdfw_option options[] = {
+		{ 'k', 'k', "keys", CMDFW_OPT_NO_ARG },
+		CMDFW_OPTION_END,
 	};
 	int opt;
 	int debug_keys = 0;
 
-	while ((opt = brk_cmd_optparse(&ctx, options)) > 0) {
+	while ((opt = cmdfw_optparse(&ctx, options)) > 0) {
 		if (opt == 'k')
 			debug_keys = 1;
 	}
 
-	if (brk_cmd_operand_count(&ctx) != 1)
-		brk_cmd_usage("Usage: edit [-k] FILE");
+	if (cmdfw_operand_count(&ctx) != 1)
+		cmdfw_usage("Usage: edit [-k] FILE");
 
-	if (brk_cmd_term_check() != 0)
-		return BRK_CMD_EXIT_FAIL;
+	if (cmdfw_term_check() != 0)
+		return CMDFW_EXIT_FAIL;
 
 	memset(&ed, 0, sizeof(ed));
 	ed.debug_keys = debug_keys;
-	ed.path = strdup(brk_cmd_operand(&ctx, 0));
+	ed.path = strdup(cmdfw_operand(&ctx, 0));
 	if (!ed.path)
-		brk_cmd_fail("out of memory");
+		cmdfw_fail("out of memory");
 	ed.dir = parent_dir(ed.path);
 	if (!ed.dir)
-		brk_cmd_fail("out of memory");
+		cmdfw_fail("out of memory");
 	ed.rows = 24;
 	ed.cols = 80;
 
 	if (load_file(&ed)) {
-		brk_cmd_error("cannot load %s: %s", ed.path, strerror(errno));
+		cmdfw_error("cannot load %s: %s", ed.path, strerror(errno));
 		free_editor(&ed);
-		return BRK_CMD_EXIT_FAIL;
+		return CMDFW_EXIT_FAIL;
 	}
 
 	get_winsize(&ed);
 
 	if (set_raw_mode()) {
-		brk_cmd_error("standard input is not a terminal");
+		cmdfw_error("standard input is not a terminal");
 		free_editor(&ed);
-		return BRK_CMD_EXIT_FAIL;
+		return CMDFW_EXIT_FAIL;
 	}
 
 	signal(SIGWINCH, on_winch);
@@ -1109,7 +1109,7 @@ int main(int argc, char *argv[])
 	signal(SIGHUP, on_fatal);
 
 	if (draw(&ed)) {
-		err = BRK_CMD_EXIT_FAIL;
+		err = CMDFW_EXIT_FAIL;
 		goto done;
 	}
 
@@ -1120,7 +1120,7 @@ int main(int argc, char *argv[])
 			winch_flag = 0;
 			get_winsize(&ed);
 			if (draw(&ed)) {
-				err = BRK_CMD_EXIT_FAIL;
+				err = CMDFW_EXIT_FAIL;
 				break;
 			}
 		}
@@ -1134,7 +1134,7 @@ int main(int argc, char *argv[])
 				continue;
 			snprintf(ed.status, sizeof(ed.status), "read: %s",
 				 strerror(errno));
-			err = BRK_CMD_EXIT_FAIL;
+			err = CMDFW_EXIT_FAIL;
 			break;
 		}
 
@@ -1147,7 +1147,7 @@ int main(int argc, char *argv[])
 			if (keys.esc && ++keys.ticks >= 30) {
 				reset_escape(&keys);
 				if (draw(&ed)) {
-					err = BRK_CMD_EXIT_FAIL;
+					err = CMDFW_EXIT_FAIL;
 					break;
 				}
 			}
@@ -1159,7 +1159,7 @@ int main(int argc, char *argv[])
 
 		/* Wait for an in-flight ESC sequence before redrawing. */
 		if (!keys.esc && draw(&ed)) {
-			err = BRK_CMD_EXIT_FAIL;
+			err = CMDFW_EXIT_FAIL;
 			break;
 		}
 	}

@@ -104,18 +104,18 @@ HOST_CFLAGS += -I$(BUILD_ROOT)/include
 USER_LD_SOURCE := user.ld.S
 USER_LD := $(BUILD_ROOT)/user.ld
 
-# The two userland libraries are archived separately.  libcmd.a holds
-# the command helpers, libc.a the C library; libcmd depends on libc, so
-# programs link libcmd first and libc after it.  A future on-target
+# The two userland libraries are archived separately.  libcmdfw.a holds
+# the command helpers, libc.a the C library; libcmdfw depends on libc, so
+# programs link libcmdfw first and libc after it.  A future on-target
 # toolchain would ship both archives from usr/lib into the image.
 LIBC_DIR := usr/lib/libc
-LIBCMD_DIR := usr/lib/libcmd
+LIBCMD_DIR := usr/lib/libcmdfw
 LIBC_SRCS := $(sort $(shell find $(LIBC_DIR) -name '*.c' -print))
 LIBCMD_SRCS := $(sort $(shell find $(LIBCMD_DIR) -name '*.c' -print))
 LIBC_OBJS := $(patsubst %.c,$(OBJDIR)/%.o,$(LIBC_SRCS))
 LIBCMD_OBJS := $(patsubst %.c,$(OBJDIR)/%.o,$(LIBCMD_SRCS))
 LIBC_A := $(BUILD_ROOT)/libc.a
-LIBCMD_A := $(BUILD_ROOT)/libcmd.a
+LIBCMD_A := $(BUILD_ROOT)/libcmdfw.a
 LIBS := $(LIBCMD_A) $(LIBC_A)
 
 # The command tree mirrors the root filesystem: a command under bin/ is
@@ -247,7 +247,7 @@ hooks:
 help:
 	@echo "Targets:"
 	@echo "  all          Build all user programs (default)"
-	@echo "  lib          Build libc.a and libcmd.a"
+	@echo "  lib          Build libc.a and libcmdfw.a"
 	@echo "  cc-host      Build the host-side cc helper"
 	@echo "  tests        Build libc tests under tests/libc"
 	@echo "  check        Build libc tests and run the host float validation"
@@ -271,7 +271,7 @@ help:
 	@echo "  usr/bin/            commands installed under /usr/bin (brktest/)"
 	@echo "  usr/include/        public headers"
 	@echo "  usr/lib/libc/       BRK C library"
-	@echo "  usr/lib/libcmd/     BRK command helpers"
+	@echo "  usr/lib/libcmdfw/     BRK command helpers"
 	@echo "  vendor/lua/         vendored Lua 5.5.1 (installed as lua)"
 	@echo ""
 	@echo "Configurable variables:"

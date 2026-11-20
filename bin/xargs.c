@@ -1,4 +1,4 @@
-#include <brk/cmd.h>
+#include <libcmdfw.h>
 #include <ctype.h>
 #include <errno.h>
 #include <stdbool.h>
@@ -137,7 +137,7 @@ static int run_batch(char *const *prefix, int prefix_count, char *const *tokens,
 	char **args = malloc((argc + 1) * sizeof(*args));
 
 	if (!args)
-		return BRK_CMD_EXIT_FAIL;
+		return CMDFW_EXIT_FAIL;
 
 	for (int i = 0; i < prefix_count; i++)
 		args[i] = prefix[i];
@@ -150,7 +150,7 @@ static int run_batch(char *const *prefix, int prefix_count, char *const *tokens,
 	if (pid < 0) {
 		perror("xargs: fork");
 		free(args);
-		return BRK_CMD_EXIT_FAIL;
+		return CMDFW_EXIT_FAIL;
 	}
 	if (pid == 0) {
 		execvp(args[0], args);
@@ -164,7 +164,7 @@ static int run_batch(char *const *prefix, int prefix_count, char *const *tokens,
 
 	if (waitpid(pid, &status, 0) < 0) {
 		perror("xargs: waitpid");
-		return BRK_CMD_EXIT_FAIL;
+		return CMDFW_EXIT_FAIL;
 	}
 	if (!WIFEXITED(status))
 		return 125;
@@ -180,7 +180,7 @@ static int run_batch(char *const *prefix, int prefix_count, char *const *tokens,
 
 int main(int argc, char *argv[])
 {
-	struct brk_cmd_optctx ctx;
+	struct cmdfw_optctx ctx;
 	struct token_list tokens = { 0 };
 	char *input = NULL;
 	size_t input_len = 0;
@@ -189,51 +189,51 @@ int main(int argc, char *argv[])
 	bool no_run_empty = false;
 	int opt;
 
-	brk_cmd_init(argc, argv);
-	brk_cmd_optctx_init(&ctx, argc, argv);
+	cmdfw_init(argc, argv);
+	cmdfw_optctx_init(&ctx, argc, argv);
 
-	static const struct brk_cmd_option opts[] = {
-		{ '0', '0', NULL, BRK_CMD_OPT_NO_ARG },
-		{ 'r', 'r', NULL, BRK_CMD_OPT_NO_ARG },
-		{ 'n', 'n', NULL, BRK_CMD_OPT_REQUIRED_ARG },
-		{ BRK_CMD_OPT_HELP, 0, "help", BRK_CMD_OPT_NO_ARG },
-		BRK_CMD_OPTION_END,
+	static const struct cmdfw_option opts[] = {
+		{ '0', '0', NULL, CMDFW_OPT_NO_ARG },
+		{ 'r', 'r', NULL, CMDFW_OPT_NO_ARG },
+		{ 'n', 'n', NULL, CMDFW_OPT_REQUIRED_ARG },
+		{ CMDFW_OPT_HELP, 0, "help", CMDFW_OPT_NO_ARG },
+		CMDFW_OPTION_END,
 	};
 
-	while ((opt = brk_cmd_optparse(&ctx, opts)) != 0) {
+	while ((opt = cmdfw_optparse(&ctx, opts)) != 0) {
 		if (opt == '?' || opt == ':')
-			return BRK_CMD_EXIT_USAGE;
-		if (opt == BRK_CMD_OPT_HELP)
-			brk_cmd_help_exit(help);
+			return CMDFW_EXIT_USAGE;
+		if (opt == CMDFW_OPT_HELP)
+			cmdfw_help_exit(help);
 		if (opt == '0')
 			nul_separated = true;
 		if (opt == 'r')
 			no_run_empty = true;
 		if (opt == 'n') {
-			if (brk_cmd_parse_ulong(ctx.arg, &max_args, 1,
+			if (cmdfw_parse_ulong(ctx.arg, &max_args, 1,
 						1000000) != 0)
-				return BRK_CMD_EXIT_FAIL;
+				return CMDFW_EXIT_FAIL;
 		}
 	}
 
 	if (read_all(STDIN_FILENO, &input, &input_len) != 0)
-		return brk_cmd_fail_errno("read");
+		return cmdfw_fail_errno("read");
 	if (split_tokens(input, input_len, nul_separated, &tokens) != 0) {
 		free(input);
 		free(tokens.items);
-		return brk_cmd_fail("out of memory");
+		return cmdfw_fail("out of memory");
 	}
 
 	char *default_command[] = { "echo", NULL };
 	char **prefix = &argv[ctx.index];
-	int prefix_count = brk_cmd_operand_count(&ctx);
+	int prefix_count = cmdfw_operand_count(&ctx);
 
 	if (prefix_count == 0) {
 		prefix = default_command;
 		prefix_count = 1;
 	}
 
-	int ret = BRK_CMD_EXIT_OK;
+	int ret = CMDFW_EXIT_OK;
 
 	if (tokens.len == 0) {
 		if (!no_run_empty)

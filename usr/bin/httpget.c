@@ -1,5 +1,5 @@
 #include <arpa/inet.h>
-#include <brk/cmd.h>
+#include <libcmdfw.h>
 #include <errno.h>
 #include <netdb.h>
 #include <netinet/in.h>
@@ -17,10 +17,10 @@ static const char usage[] =
 	"  -i       include response headers\n"
 	"  --help   display this help and exit";
 
-static const struct brk_cmd_option opts[] = {
-	{ 'i', 'i', NULL, BRK_CMD_OPT_NO_ARG },
-	{ BRK_CMD_OPT_HELP, 0, "help", BRK_CMD_OPT_NO_ARG },
-	BRK_CMD_OPTION_END,
+static const struct cmdfw_option opts[] = {
+	{ 'i', 'i', NULL, CMDFW_OPT_NO_ARG },
+	{ CMDFW_OPT_HELP, 0, "help", CMDFW_OPT_NO_ARG },
+	CMDFW_OPTION_END,
 };
 
 static int write_all(int fd, const char *buf, size_t len)
@@ -70,7 +70,7 @@ static int read_body(int fd, bool include_headers)
 		if (n < 0) {
 			if (errno == EINTR)
 				continue;
-			return brk_cmd_fail_errno("recv failed");
+			return cmdfw_fail_errno("recv failed");
 		}
 		if (n == 0)
 			break;
@@ -109,33 +109,33 @@ static int read_body(int fd, bool include_headers)
 		}
 
 		if (left && write_stdout(p, left) != 0)
-			return brk_cmd_fail_errno("write stdout failed");
+			return cmdfw_fail_errno("write stdout failed");
 	}
-	return BRK_CMD_EXIT_OK;
+	return CMDFW_EXIT_OK;
 }
 
 int main(int argc, char *argv[])
 {
-	struct brk_cmd_optctx ctx;
+	struct cmdfw_optctx ctx;
 	bool include_headers = false;
 	int opt;
 
-	brk_cmd_init(argc, argv);
-	brk_cmd_optctx_init(&ctx, argc, argv);
+	cmdfw_init(argc, argv);
+	cmdfw_optctx_init(&ctx, argc, argv);
 
-	while ((opt = brk_cmd_optparse(&ctx, opts)) != 0) {
+	while ((opt = cmdfw_optparse(&ctx, opts)) != 0) {
 		if (opt == '?' || opt == ':')
-			return BRK_CMD_EXIT_USAGE;
-		if (opt == BRK_CMD_OPT_HELP)
-			brk_cmd_help_exit(usage);
+			return CMDFW_EXIT_USAGE;
+		if (opt == CMDFW_OPT_HELP)
+			cmdfw_help_exit(usage);
 		if (opt == 'i')
 			include_headers = true;
 	}
 
-	if (brk_cmd_operand_count(&ctx) != 1)
-		brk_cmd_usage(usage);
+	if (cmdfw_operand_count(&ctx) != 1)
+		cmdfw_usage(usage);
 
-	const char *url = brk_cmd_operand(&ctx, 0);
+	const char *url = cmdfw_operand(&ctx, 0);
 
 	if (!strncmp(url, "http://", 7))
 		url += 7;
@@ -147,7 +147,7 @@ int main(int argc, char *argv[])
 	size_t hostlen = slash ? (size_t)(slash - url) : strlen(url);
 
 	if (!hostlen || hostlen >= sizeof(hostport))
-		return brk_cmd_fail("invalid URL");
+		return cmdfw_fail("invalid URL");
 
 	memcpy(hostport, url, hostlen);
 	hostport[hostlen] = '\0';
@@ -157,14 +157,14 @@ int main(int argc, char *argv[])
 
 	if (colon) {
 		*colon = '\0';
-		if (brk_cmd_parse_ulong(colon + 1, &port, 1, 65535) != 0)
-			return BRK_CMD_EXIT_FAIL;
+		if (cmdfw_parse_ulong(colon + 1, &port, 1, 65535) != 0)
+			return CMDFW_EXIT_FAIL;
 	}
 
 	struct hostent *he = gethostbyname(hostport);
 
 	if (!he)
-		return brk_cmd_fail("cannot resolve '%s'", hostport);
+		return cmdfw_fail("cannot resolve '%s'", hostport);
 
 	struct in_addr addr;
 
@@ -179,13 +179,13 @@ int main(int argc, char *argv[])
 	int fd = socket(AF_INET, SOCK_STREAM, 0);
 
 	if (fd < 0)
-		return brk_cmd_fail_errno("socket failed");
+		return cmdfw_fail_errno("socket failed");
 	if (connect(fd, (struct sockaddr *)&sa, sizeof(sa)) != 0) {
 		int err = errno;
 
 		close(fd);
 		errno = err;
-		return brk_cmd_fail_errno("connect failed");
+		return cmdfw_fail_errno("connect failed");
 	}
 
 	char request[1024];
@@ -199,7 +199,7 @@ int main(int argc, char *argv[])
 	if (rlen < 0 || (size_t)rlen >= sizeof(request) ||
 	    write_all(fd, request, (size_t)rlen) != 0) {
 		close(fd);
-		return brk_cmd_fail_errno("send request failed");
+		return cmdfw_fail_errno("send request failed");
 	}
 	shutdown(fd, SHUT_WR);
 

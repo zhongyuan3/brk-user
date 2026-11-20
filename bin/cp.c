@@ -1,4 +1,4 @@
-#include <brk/cmd.h>
+#include <libcmdfw.h>
 #include <brk/limits.h>
 #include <dirent.h>
 #include <errno.h>
@@ -13,10 +13,10 @@ static const char usage[] =
 	"Usage: cp [-r] SOURCE... DEST\n"
 	"Copy files.  With -r, copy directories recursively.";
 
-static const struct brk_cmd_option opts[] = {
-	{ 'r', 'r', "recursive", BRK_CMD_OPT_NO_ARG },
-	{ BRK_CMD_OPT_HELP, 0, "help", BRK_CMD_OPT_NO_ARG },
-	BRK_CMD_OPTION_END,
+static const struct cmdfw_option opts[] = {
+	{ 'r', 'r', "recursive", CMDFW_OPT_NO_ARG },
+	{ CMDFW_OPT_HELP, 0, "help", CMDFW_OPT_NO_ARG },
+	CMDFW_OPTION_END,
 };
 
 static int write_all(int fd, const char *buf, size_t len)
@@ -47,16 +47,16 @@ static int copy_file(const char *src, const char *dest)
 	int ret = -1;
 
 	if (stat(src, &st) != 0)
-		return brk_cmd_fail_errno("stat failed");
+		return cmdfw_fail_errno("stat failed");
 
 	in = open(src, O_RDONLY);
 	if (in < 0)
-		return brk_cmd_fail_errno("open failed");
+		return cmdfw_fail_errno("open failed");
 
 	out = open(dest, O_WRONLY | O_CREAT | O_TRUNC,
 		   st.st_mode & (S_IRWXU | S_IRWXG | S_IRWXO));
 	if (out < 0) {
-		brk_cmd_error_errno("open failed");
+		cmdfw_error_errno("open failed");
 		goto out;
 	}
 
@@ -66,13 +66,13 @@ static int copy_file(const char *src, const char *dest)
 		if (rcnt < 0) {
 			if (errno == EINTR)
 				continue;
-			brk_cmd_error_errno("read failed");
+			cmdfw_error_errno("read failed");
 			goto out;
 		}
 		if (rcnt == 0)
 			break;
 		if (write_all(out, buf, (size_t)rcnt)) {
-			brk_cmd_error_errno("write failed");
+			cmdfw_error_errno("write failed");
 			goto out;
 		}
 	}
@@ -107,10 +107,10 @@ static int copy_dir(const char *src, const char *dest, bool recursive)
 	int ret = -1;
 
 	if (fd < 0)
-		return brk_cmd_fail_errno("open directory failed");
+		return cmdfw_fail_errno("open directory failed");
 
 	if (mkdir(dest, 0755) != 0 && errno != EEXIST) {
-		brk_cmd_error_errno("mkdir failed");
+		cmdfw_error_errno("mkdir failed");
 		goto out;
 	}
 
@@ -121,7 +121,7 @@ static int copy_dir(const char *src, const char *dest, bool recursive)
 		if (rcnt < 0) {
 			if (errno == EINTR)
 				continue;
-			brk_cmd_error_errno("posix_getdents failed");
+			cmdfw_error_errno("posix_getdents failed");
 			goto out;
 		}
 		if (rcnt == 0)
@@ -140,7 +140,7 @@ static int copy_dir(const char *src, const char *dest, bool recursive)
 				if (join_path(sp, sizeof(sp), src, d->d_name) ||
 				    join_path(dp, sizeof(dp), dest,
 					      d->d_name)) {
-					brk_cmd_error_errno("path too long");
+					cmdfw_error_errno("path too long");
 					goto out;
 				}
 				copy_tree(sp, dp, recursive);
@@ -162,11 +162,11 @@ static int copy_tree(const char *src, const char *dest, bool recursive)
 	struct stat st;
 
 	if (stat(src, &st) != 0)
-		return brk_cmd_fail_errno("stat failed");
+		return cmdfw_fail_errno("stat failed");
 
 	if (S_ISDIR(st.st_mode)) {
 		if (!recursive)
-			return brk_cmd_fail("omitting directory '%s'", src);
+			return cmdfw_fail("omitting directory '%s'", src);
 		return copy_dir(src, dest, recursive);
 	}
 
@@ -175,51 +175,51 @@ static int copy_tree(const char *src, const char *dest, bool recursive)
 
 int main(int argc, char *argv[])
 {
-	struct brk_cmd_optctx ctx;
+	struct cmdfw_optctx ctx;
 	bool recursive = false;
 	int opt;
-	int ret = BRK_CMD_EXIT_OK;
+	int ret = CMDFW_EXIT_OK;
 	char target[PATH_MAX];
 
-	brk_cmd_init(argc, argv);
-	brk_cmd_optctx_init(&ctx, argc, argv);
+	cmdfw_init(argc, argv);
+	cmdfw_optctx_init(&ctx, argc, argv);
 
-	while ((opt = brk_cmd_optparse(&ctx, opts)) != 0) {
+	while ((opt = cmdfw_optparse(&ctx, opts)) != 0) {
 		if (opt == '?' || opt == ':')
-			return BRK_CMD_EXIT_USAGE;
-		if (opt == BRK_CMD_OPT_HELP)
-			brk_cmd_help_exit(usage);
+			return CMDFW_EXIT_USAGE;
+		if (opt == CMDFW_OPT_HELP)
+			cmdfw_help_exit(usage);
 		if (opt == 'r')
 			recursive = true;
 	}
 
-	if (brk_cmd_operand_count(&ctx) < 2)
-		brk_cmd_usage(usage);
+	if (cmdfw_operand_count(&ctx) < 2)
+		cmdfw_usage(usage);
 
 	const char *dest =
-		brk_cmd_operand(&ctx, brk_cmd_operand_count(&ctx) - 1);
+		cmdfw_operand(&ctx, cmdfw_operand_count(&ctx) - 1);
 	struct stat dst;
 	bool dest_is_dir = stat(dest, &dst) == 0 && S_ISDIR(dst.st_mode);
 
-	if (brk_cmd_operand_count(&ctx) > 2 && !dest_is_dir)
-		brk_cmd_usage(usage);
+	if (cmdfw_operand_count(&ctx) > 2 && !dest_is_dir)
+		cmdfw_usage(usage);
 
-	for (int i = 0; i < brk_cmd_operand_count(&ctx) - 1; i++) {
-		const char *src = brk_cmd_operand(&ctx, i);
+	for (int i = 0; i < cmdfw_operand_count(&ctx) - 1; i++) {
+		const char *src = cmdfw_operand(&ctx, i);
 		const char *out = dest;
 
 		if (dest_is_dir) {
 			if (join_path(target, sizeof(target), dest,
-				      brk_cmd_basename(src)) != 0) {
-				brk_cmd_error_errno("path too long");
-				ret = BRK_CMD_EXIT_FAIL;
+				      cmdfw_basename(src)) != 0) {
+				cmdfw_error_errno("path too long");
+				ret = CMDFW_EXIT_FAIL;
 				continue;
 			}
 			out = target;
 		}
 
 		if (copy_tree(src, out, recursive) != 0)
-			ret = BRK_CMD_EXIT_FAIL;
+			ret = CMDFW_EXIT_FAIL;
 	}
 
 	return ret;

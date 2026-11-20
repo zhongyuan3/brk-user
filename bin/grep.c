@@ -1,4 +1,4 @@
-#include <brk/cmd.h>
+#include <libcmdfw.h>
 #include <fcntl.h>
 #include <string.h>
 #include <unistd.h>
@@ -22,10 +22,10 @@ static const char help[] =
 	"  .        any single character\n"
 	"  *        previous atom (literal or .) zero or more times\n";
 
-static const struct brk_cmd_option opts[] = {
-	{ 'n', 'n', NULL, BRK_CMD_OPT_NO_ARG },
-	{ BRK_CMD_OPT_HELP, 0, "help", BRK_CMD_OPT_NO_ARG },
-	BRK_CMD_OPTION_END,
+static const struct cmdfw_option opts[] = {
+	{ 'n', 'n', NULL, CMDFW_OPT_NO_ARG },
+	{ CMDFW_OPT_HELP, 0, "help", CMDFW_OPT_NO_ARG },
+	CMDFW_OPTION_END,
 };
 
 static int atom_match(char atom, char c)
@@ -110,7 +110,7 @@ static int grep_file(int fd, const char *pattern, int print_line_no)
 	while (1) {
 		rcnt = read(fd, buf, sizeof(buf));
 		if (rcnt < 0)
-			return brk_cmd_fail_errno("read error");
+			return cmdfw_fail_errno("read error");
 
 		if (rcnt < 1)
 			break;
@@ -148,38 +148,38 @@ static int grep_file(int fd, const char *pattern, int print_line_no)
 		}
 	}
 
-	return found ? BRK_CMD_EXIT_OK : BRK_CMD_EXIT_FAIL;
+	return found ? CMDFW_EXIT_OK : CMDFW_EXIT_FAIL;
 }
 
 int main(int argc, char *argv[])
 {
-	struct brk_cmd_optctx ctx;
+	struct cmdfw_optctx ctx;
 	int opt;
 	int print_line_no = 0;
 
-	brk_cmd_init(argc, argv);
-	brk_cmd_optctx_init(&ctx, argc, argv);
+	cmdfw_init(argc, argv);
+	cmdfw_optctx_init(&ctx, argc, argv);
 
-	while ((opt = brk_cmd_optparse(&ctx, opts)) != 0) {
+	while ((opt = cmdfw_optparse(&ctx, opts)) != 0) {
 		if (opt == '?' || opt == ':')
-			return BRK_CMD_EXIT_USAGE;
-		if (opt == BRK_CMD_OPT_HELP)
-			brk_cmd_help_exit(help);
+			return CMDFW_EXIT_USAGE;
+		if (opt == CMDFW_OPT_HELP)
+			cmdfw_help_exit(help);
 		if (opt == 'n')
 			print_line_no = 1;
 	}
 
-	if (brk_cmd_operand_count(&ctx) < 1) {
-		brk_cmd_error("missing pattern");
+	if (cmdfw_operand_count(&ctx) < 1) {
+		cmdfw_error("missing pattern");
 		fputs("Try 'grep --help' for more information.\n", stderr);
-		return BRK_CMD_EXIT_USAGE;
+		return CMDFW_EXIT_USAGE;
 	}
-	if (brk_cmd_operand_count(&ctx) > 2)
-		return brk_cmd_fail("too many arguments");
+	if (cmdfw_operand_count(&ctx) > 2)
+		return cmdfw_fail("too many arguments");
 
-	const char *pattern = brk_cmd_operand(&ctx, 0);
-	const char *path = brk_cmd_operand_count(&ctx) > 1 ?
-				   brk_cmd_operand(&ctx, 1) :
+	const char *pattern = cmdfw_operand(&ctx, 0);
+	const char *path = cmdfw_operand_count(&ctx) > 1 ?
+				   cmdfw_operand(&ctx, 1) :
 				   NULL;
 
 	if (!path)
@@ -188,7 +188,7 @@ int main(int argc, char *argv[])
 	int fd = open(path, O_RDONLY);
 
 	if (fd < 0)
-		return brk_cmd_fail_errno("open failed");
+		return cmdfw_fail_errno("open failed");
 
 	int ret = grep_file(fd, pattern, print_line_no);
 

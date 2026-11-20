@@ -1,4 +1,4 @@
-#include <brk/cmd.h>
+#include <libcmdfw.h>
 #include <brk/limits.h>
 #include <dirent.h>
 #include <errno.h>
@@ -115,7 +115,7 @@ static int find_walk(const char *path, int depth, const struct find_opts *o)
 	int ret = 0;
 
 	if (lstat(path, &st) != 0) {
-		brk_cmd_error("%s: %s", path, strerror(errno));
+		cmdfw_error("%s: %s", path, strerror(errno));
 		return 1;
 	}
 
@@ -137,7 +137,7 @@ static int find_walk(const char *path, int depth, const struct find_opts *o)
 	int fd = open(path, O_RDONLY | O_DIRECTORY);
 
 	if (fd < 0) {
-		brk_cmd_error("%s: %s", path, strerror(errno));
+		cmdfw_error("%s: %s", path, strerror(errno));
 		return 1;
 	}
 
@@ -151,7 +151,7 @@ static int find_walk(const char *path, int depth, const struct find_opts *o)
 		if (n < 0) {
 			if (errno == EINTR)
 				continue;
-			brk_cmd_error("%s: %s", path, strerror(errno));
+			cmdfw_error("%s: %s", path, strerror(errno));
 			ret = 1;
 			break;
 		}
@@ -171,7 +171,7 @@ static int find_walk(const char *path, int depth, const struct find_opts *o)
 						   "%s/%s", path, d->d_name);
 
 				if (len < 0 || (size_t)len >= sizeof(child)) {
-					brk_cmd_error("%s: path too long",
+					cmdfw_error("%s: path too long",
 						      path);
 					ret = 1;
 				} else {
@@ -200,14 +200,14 @@ int main(int argc, char *argv[])
 	int i = 1;
 	int ret = 0;
 
-	brk_cmd_init(argc, argv);
+	cmdfw_init(argc, argv);
 
 	if (argc > 1 && !strcmp(argv[1], "--help"))
-		brk_cmd_help_exit(usage);
+		cmdfw_help_exit(usage);
 
 	while (i < argc && argv[i][0] != '-') {
 		if (npaths >= (int)(sizeof(paths) / sizeof(paths[0])))
-			brk_cmd_usage(usage);
+			cmdfw_usage(usage);
 		paths[npaths++] = argv[i++];
 	}
 
@@ -216,30 +216,30 @@ int main(int argc, char *argv[])
 
 		if (!strcmp(arg, "-name")) {
 			if (i >= argc)
-				brk_cmd_usage(usage);
+				cmdfw_usage(usage);
 			o.name = argv[i++];
 		} else if (!strcmp(arg, "-type")) {
 			if (i >= argc || !argv[i][0] || argv[i][1])
-				brk_cmd_usage(usage);
+				cmdfw_usage(usage);
 			o.type = argv[i++][0];
 		} else if (!strcmp(arg, "-maxdepth")) {
 			long v;
 
-			if (i >= argc || brk_cmd_parse_long(argv[i++], &v, 0,
+			if (i >= argc || cmdfw_parse_long(argv[i++], &v, 0,
 							    0x7fffffff) != 0)
-				brk_cmd_usage(usage);
+				cmdfw_usage(usage);
 			o.maxdepth = (int)v;
 		} else if (!strcmp(arg, "-mindepth")) {
 			long v;
 
-			if (i >= argc || brk_cmd_parse_long(argv[i++], &v, 0,
+			if (i >= argc || cmdfw_parse_long(argv[i++], &v, 0,
 							    0x7fffffff) != 0)
-				brk_cmd_usage(usage);
+				cmdfw_usage(usage);
 			o.mindepth = (int)v;
 		} else if (!strcmp(arg, "-print")) {
 			o.print = true;
 		} else {
-			brk_cmd_usage(usage);
+			cmdfw_usage(usage);
 		}
 	}
 
@@ -249,5 +249,5 @@ int main(int argc, char *argv[])
 	for (int p = 0; p < npaths; p++)
 		ret |= find_walk(paths[p], 0, &o);
 
-	return ret ? BRK_CMD_EXIT_FAIL : BRK_CMD_EXIT_OK;
+	return ret ? CMDFW_EXIT_FAIL : CMDFW_EXIT_OK;
 }

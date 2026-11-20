@@ -1,4 +1,4 @@
-#include <brk/cmd.h>
+#include <libcmdfw.h>
 #include <brk/limits.h>
 #include <ctype.h>
 #include <dirent.h>
@@ -99,18 +99,18 @@ int main(int argc, char *argv[])
 	size_t cap = 0;
 	char dbuf[4096];
 	int dfd;
-	int ret = BRK_CMD_EXIT_OK;
+	int ret = CMDFW_EXIT_OK;
 
-	brk_cmd_init(argc, argv);
+	cmdfw_init(argc, argv);
 
 	if (argc > 1 && !strcmp(argv[1], "--help"))
-		brk_cmd_help_exit(help);
+		cmdfw_help_exit(help);
 	if (argc != 1)
-		brk_cmd_usage(help);
+		cmdfw_usage(help);
 
 	dfd = open("/proc", O_RDONLY | O_DIRECTORY);
 	if (dfd < 0)
-		return brk_cmd_fail_errno("/proc");
+		return cmdfw_fail_errno("/proc");
 
 	for (;;) {
 		ssize_t n = posix_getdents(dfd, dbuf, sizeof(dbuf), 0);
@@ -118,7 +118,7 @@ int main(int argc, char *argv[])
 		if (n < 0) {
 			if (errno == EINTR)
 				continue;
-			ret = brk_cmd_fail_errno("posix_getdents /proc");
+			ret = cmdfw_fail_errno("posix_getdents /proc");
 			break;
 		}
 		if (n == 0)
@@ -151,7 +151,7 @@ int main(int argc, char *argv[])
 					infos, newcap * sizeof(*newinfos));
 
 				if (!newinfos) {
-					ret = brk_cmd_fail("out of memory");
+					ret = cmdfw_fail("out of memory");
 					close(dfd);
 					free(infos);
 					return ret;

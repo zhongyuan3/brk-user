@@ -1,4 +1,4 @@
-#include <brk/cmd.h>
+#include <libcmdfw.h>
 #include <signal.h>
 #include <string.h>
 #include <strings.h>
@@ -65,7 +65,7 @@ int main(int argc, char *argv[])
 	int sig = SIGTERM;
 	int arg = 1;
 
-	brk_cmd_init(argc, argv);
+	cmdfw_init(argc, argv);
 
 	if (arg < argc && !strcmp(argv[arg], "-l")) {
 		arg++;
@@ -73,9 +73,9 @@ int main(int argc, char *argv[])
 			if (all_digits(argv[arg])) {
 				long n;
 
-				if (brk_cmd_parse_long(argv[arg], &n, 0,
+				if (cmdfw_parse_long(argv[arg], &n, 0,
 						       NSIG - 1) != 0)
-					return BRK_CMD_EXIT_FAIL;
+					return CMDFW_EXIT_FAIL;
 				const char *nm = signal_name((int)n);
 
 				if (nm)
@@ -86,7 +86,7 @@ int main(int argc, char *argv[])
 				int num = parse_signal_name(argv[arg]);
 
 				if (num < 0)
-					return brk_cmd_fail(
+					return cmdfw_fail(
 						"unknown signal '%s'",
 						argv[arg]);
 				printf("%d\n", num);
@@ -94,7 +94,7 @@ int main(int argc, char *argv[])
 		} else {
 			list_signals();
 		}
-		return BRK_CMD_EXIT_OK;
+		return CMDFW_EXIT_OK;
 	}
 
 	if (arg < argc && argv[arg][0] == '-' && argv[arg][1]) {
@@ -104,25 +104,25 @@ int main(int argc, char *argv[])
 
 		if (named > 0) {
 			sig = named;
-		} else if (brk_cmd_parse_long(s, &n, 0, NSIG - 1) == 0) {
+		} else if (cmdfw_parse_long(s, &n, 0, NSIG - 1) == 0) {
 			sig = (int)n;
 		} else {
-			return BRK_CMD_EXIT_FAIL;
+			return CMDFW_EXIT_FAIL;
 		}
 		arg++;
 	}
 
 	if (arg >= argc)
-		brk_cmd_usage(usage);
+		cmdfw_usage(usage);
 
 	for (; arg < argc; arg++) {
 		pid_t pid;
 
-		if (brk_cmd_parse_pid(argv[arg], &pid) != 0)
-			return BRK_CMD_EXIT_FAIL;
+		if (cmdfw_parse_pid(argv[arg], &pid) != 0)
+			return CMDFW_EXIT_FAIL;
 		if (kill(pid, sig) != 0)
-			return brk_cmd_fail_errno("kill failed");
+			return cmdfw_fail_errno("kill failed");
 	}
 
-	return BRK_CMD_EXIT_OK;
+	return CMDFW_EXIT_OK;
 }

@@ -1,4 +1,4 @@
-#include <brk/cmd.h>
+#include <libcmdfw.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -14,11 +14,11 @@ static const char help[] =
 	"  -t TYPE   output type: x1, o1, u1, or c\n"
 	"  --help    display this help and exit";
 
-static const struct brk_cmd_option opts[] = {
-	{ 'A', 'A', NULL, BRK_CMD_OPT_REQUIRED_ARG },
-	{ 't', 't', NULL, BRK_CMD_OPT_REQUIRED_ARG },
-	{ BRK_CMD_OPT_HELP, 0, "help", BRK_CMD_OPT_NO_ARG },
-	BRK_CMD_OPTION_END,
+static const struct cmdfw_option opts[] = {
+	{ 'A', 'A', NULL, CMDFW_OPT_REQUIRED_ARG },
+	{ 't', 't', NULL, CMDFW_OPT_REQUIRED_ARG },
+	{ CMDFW_OPT_HELP, 0, "help", CMDFW_OPT_NO_ARG },
+	CMDFW_OPTION_END,
 };
 
 static void print_address(unsigned long offset, char base)
@@ -93,26 +93,26 @@ static int dump_fd(int fd, unsigned long *offset, char addr_base, char type)
 
 int main(int argc, char *argv[])
 {
-	struct brk_cmd_optctx ctx;
+	struct cmdfw_optctx ctx;
 	char addr_base = 'o';
 	char type = 'o';
 	int opt;
-	int ret = BRK_CMD_EXIT_OK;
+	int ret = CMDFW_EXIT_OK;
 
-	brk_cmd_init(argc, argv);
-	brk_cmd_optctx_init(&ctx, argc, argv);
+	cmdfw_init(argc, argv);
+	cmdfw_optctx_init(&ctx, argc, argv);
 
-	while ((opt = brk_cmd_optparse(&ctx, opts)) != 0) {
+	while ((opt = cmdfw_optparse(&ctx, opts)) != 0) {
 		if (opt == '?' || opt == ':')
-			return BRK_CMD_EXIT_USAGE;
-		if (opt == BRK_CMD_OPT_HELP)
-			brk_cmd_help_exit(help);
+			return CMDFW_EXIT_USAGE;
+		if (opt == CMDFW_OPT_HELP)
+			cmdfw_help_exit(help);
 		if (opt == 'A') {
 			if (ctx.arg[0] && strchr("oxdn", ctx.arg[0]) &&
 			    !ctx.arg[1])
 				addr_base = ctx.arg[0];
 			else
-				return brk_cmd_fail("invalid address base '%s'",
+				return cmdfw_fail("invalid address base '%s'",
 						    ctx.arg);
 		}
 		if (opt == 't') {
@@ -121,30 +121,30 @@ int main(int argc, char *argv[])
 			    (!ctx.arg[1] || (ctx.arg[1] == '1' && !ctx.arg[2])))
 				type = ctx.arg[0];
 			else
-				return brk_cmd_fail("unsupported type '%s'",
+				return cmdfw_fail("unsupported type '%s'",
 						    ctx.arg);
 		}
 	}
 
 	unsigned long offset = 0;
 
-	if (brk_cmd_operand_count(&ctx) == 0) {
+	if (cmdfw_operand_count(&ctx) == 0) {
 		if (dump_fd(STDIN_FILENO, &offset, addr_base, type) != 0)
-			return brk_cmd_fail_errno("read");
-		return BRK_CMD_EXIT_OK;
+			return cmdfw_fail_errno("read");
+		return CMDFW_EXIT_OK;
 	}
 
-	for (int i = 0; i < brk_cmd_operand_count(&ctx); i++) {
-		const char *path = brk_cmd_operand(&ctx, i);
+	for (int i = 0; i < cmdfw_operand_count(&ctx); i++) {
+		const char *path = cmdfw_operand(&ctx, i);
 		int fd = !strcmp(path, "-") ? STDIN_FILENO :
 					      open(path, O_RDONLY);
 
 		if (fd < 0) {
-			ret = brk_cmd_fail_errno(path);
+			ret = cmdfw_fail_errno(path);
 			continue;
 		}
 		if (dump_fd(fd, &offset, addr_base, type) != 0)
-			ret = brk_cmd_fail_errno(path);
+			ret = cmdfw_fail_errno(path);
 		if (fd != STDIN_FILENO)
 			close(fd);
 	}

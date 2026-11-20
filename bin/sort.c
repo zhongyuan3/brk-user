@@ -1,4 +1,4 @@
-#include <brk/cmd.h>
+#include <libcmdfw.h>
 #include <errno.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -88,30 +88,30 @@ static int read_lines(FILE *f, char ***lines, size_t *nr, size_t *cap)
 
 int main(int argc, char *argv[])
 {
-	struct brk_cmd_optctx ctx;
+	struct cmdfw_optctx ctx;
 	char **lines = NULL;
 	size_t nr = 0;
 	size_t cap = 0;
 	bool unique = false;
 	int opt;
-	int ret = BRK_CMD_EXIT_OK;
+	int ret = CMDFW_EXIT_OK;
 
-	brk_cmd_init(argc, argv);
-	brk_cmd_optctx_init(&ctx, argc, argv);
+	cmdfw_init(argc, argv);
+	cmdfw_optctx_init(&ctx, argc, argv);
 
-	static const struct brk_cmd_option opts[] = {
-		{ 'n', 'n', NULL, BRK_CMD_OPT_NO_ARG },
-		{ 'r', 'r', NULL, BRK_CMD_OPT_NO_ARG },
-		{ 'u', 'u', NULL, BRK_CMD_OPT_NO_ARG },
-		{ BRK_CMD_OPT_HELP, 0, "help", BRK_CMD_OPT_NO_ARG },
-		BRK_CMD_OPTION_END,
+	static const struct cmdfw_option opts[] = {
+		{ 'n', 'n', NULL, CMDFW_OPT_NO_ARG },
+		{ 'r', 'r', NULL, CMDFW_OPT_NO_ARG },
+		{ 'u', 'u', NULL, CMDFW_OPT_NO_ARG },
+		{ CMDFW_OPT_HELP, 0, "help", CMDFW_OPT_NO_ARG },
+		CMDFW_OPTION_END,
 	};
 
-	while ((opt = brk_cmd_optparse(&ctx, opts)) != 0) {
+	while ((opt = cmdfw_optparse(&ctx, opts)) != 0) {
 		if (opt == '?' || opt == ':')
-			return BRK_CMD_EXIT_USAGE;
-		if (opt == BRK_CMD_OPT_HELP)
-			brk_cmd_help_exit(help);
+			return CMDFW_EXIT_USAGE;
+		if (opt == CMDFW_OPT_HELP)
+			cmdfw_help_exit(help);
 		if (opt == 'n')
 			numeric = true;
 		if (opt == 'r')
@@ -120,22 +120,22 @@ int main(int argc, char *argv[])
 			unique = true;
 	}
 
-	if (brk_cmd_operand_count(&ctx) == 0) {
+	if (cmdfw_operand_count(&ctx) == 0) {
 		if (read_lines(stdin, &lines, &nr, &cap) != 0) {
 			free(lines);
-			return brk_cmd_fail_errno("read");
+			return cmdfw_fail_errno("read");
 		}
 	} else {
-		for (int i = 0; i < brk_cmd_operand_count(&ctx); i++) {
-			const char *path = brk_cmd_operand(&ctx, i);
+		for (int i = 0; i < cmdfw_operand_count(&ctx); i++) {
+			const char *path = cmdfw_operand(&ctx, i);
 			FILE *f = !strcmp(path, "-") ? stdin : fopen(path, "r");
 
 			if (!f) {
-				ret = brk_cmd_fail_errno(path);
+				ret = cmdfw_fail_errno(path);
 				continue;
 			}
 			if (read_lines(f, &lines, &nr, &cap) != 0)
-				ret = brk_cmd_fail_errno(path);
+				ret = cmdfw_fail_errno(path);
 			if (f != stdin)
 				fclose(f);
 		}

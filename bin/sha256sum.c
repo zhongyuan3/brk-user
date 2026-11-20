@@ -1,4 +1,4 @@
-#include <brk/cmd.h>
+#include <libcmdfw.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <brk/pwutil.h>
@@ -68,13 +68,13 @@ static int hash_file(const char *name)
 	} else {
 		fd = open(name, O_RDONLY);
 		if (fd < 0)
-			return brk_cmd_fail_errno(name);
+			return cmdfw_fail_errno(name);
 	}
 
 	if (read_all(fd, &data, &len) != 0) {
 		if (fd != STDIN_FILENO)
 			close(fd);
-		return brk_cmd_fail_errno(name);
+		return cmdfw_fail_errno(name);
 	}
 	if (fd != STDIN_FILENO)
 		close(fd);
@@ -85,24 +85,24 @@ static int hash_file(const char *name)
 	for (size_t i = 0; i < sizeof(digest); i++)
 		printf("%02x", digest[i]);
 	printf("  %s\n", name);
-	return BRK_CMD_EXIT_OK;
+	return CMDFW_EXIT_OK;
 }
 
 int main(int argc, char *argv[])
 {
-	int ret = BRK_CMD_EXIT_OK;
+	int ret = CMDFW_EXIT_OK;
 
-	brk_cmd_init(argc, argv);
+	cmdfw_init(argc, argv);
 
 	if (argc > 1 && !strcmp(argv[1], "--help"))
-		brk_cmd_help_exit(help);
+		cmdfw_help_exit(help);
 
 	if (argc == 1)
 		return hash_file("-");
 
 	for (int i = 1; i < argc; i++) {
-		if (hash_file(argv[i]) != BRK_CMD_EXIT_OK)
-			ret = BRK_CMD_EXIT_FAIL;
+		if (hash_file(argv[i]) != CMDFW_EXIT_OK)
+			ret = CMDFW_EXIT_FAIL;
 	}
 	return ret;
 }

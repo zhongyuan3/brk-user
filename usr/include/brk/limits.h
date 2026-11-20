@@ -1,5 +1,5 @@
-#ifndef BRK_LIMITS_H
-#define BRK_LIMITS_H
+#ifndef _BRK_LIMITS_H
+#define _BRK_LIMITS_H
 
 #include <uapi/limits.h>
 

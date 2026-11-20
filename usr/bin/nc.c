@@ -1,6 +1,6 @@
 #include <arpa/inet.h>
-#include <brk/cmd.h>
 #include <errno.h>
+#include <libcmdfw.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <poll.h>
@@ -23,12 +23,12 @@ static const char usage[] =
 	"\n"
 	"UDP mode sends/receives one datagram; the listener echoes it back.";
 
-static const struct brk_cmd_option opts[] = {
-	{ 'u', 'u', "udp", BRK_CMD_OPT_NO_ARG },
-	{ 'l', 'l', "listen", BRK_CMD_OPT_NO_ARG },
-	{ 'p', 'p', NULL, BRK_CMD_OPT_REQUIRED_ARG },
-	{ BRK_CMD_OPT_HELP, 0, "help", BRK_CMD_OPT_NO_ARG },
-	BRK_CMD_OPTION_END,
+static const struct cmdfw_option opts[] = {
+	{ 'u', 'u', "udp", CMDFW_OPT_NO_ARG },
+	{ 'l', 'l', "listen", CMDFW_OPT_NO_ARG },
+	{ 'p', 'p', NULL, CMDFW_OPT_REQUIRED_ARG },
+	{ CMDFW_OPT_HELP, 0, "help", CMDFW_OPT_NO_ARG },
+	CMDFW_OPTION_END,
 };
 
 static int write_all(int fd, const char *buf, size_t len)
@@ -63,7 +63,7 @@ static int tcp_relay(int fd)
 		if (ret < 0) {
 			if (errno == EINTR)
 				continue;
-			return brk_cmd_fail_errno("poll failed");
+			return cmdfw_fail_errno("poll failed");
 		}
 
 		if (stdin_open && (fds[0].revents & (POLLIN | POLLHUP))) {
@@ -73,7 +73,7 @@ static int tcp_relay(int fd)
 			if (n < 0) {
 				if (errno == EINTR)
 					continue;
-				return brk_cmd_fail_errno("read stdin failed");
+				return cmdfw_fail_errno("read stdin failed");
 			}
 			if (n == 0) {
 				stdin_open = false;
@@ -82,7 +82,7 @@ static int tcp_relay(int fd)
 			} else if (write_all(fd, buf, (size_t)n) != 0) {
 				if (errno == EPIPE || errno == ECONNRESET)
 					break;
-				return brk_cmd_fail_errno(
+				return cmdfw_fail_errno(
 					"write socket failed");
 			}
 		}
@@ -96,16 +96,16 @@ static int tcp_relay(int fd)
 					continue;
 				if (errno == ECONNRESET || errno == EPIPE)
 					break;
-				return brk_cmd_fail_errno("recv failed");
+				return cmdfw_fail_errno("recv failed");
 			}
 			if (n == 0)
 				break;
 			if (write_all(STDOUT_FILENO, buf, (size_t)n) != 0)
-				return brk_cmd_fail_errno(
+				return cmdfw_fail_errno(
 					"write stdout failed");
 		}
 	}
-	return BRK_CMD_EXIT_OK;
+	return CMDFW_EXIT_OK;
 }
 
 static int tcp_client(struct in_addr addr, unsigned int port)
@@ -118,13 +118,13 @@ static int tcp_client(struct in_addr addr, unsigned int port)
 	int fd = socket(AF_INET, SOCK_STREAM, 0);
 
 	if (fd < 0)
-		return brk_cmd_fail_errno("socket failed");
+		return cmdfw_fail_errno("socket failed");
 	if (connect(fd, (struct sockaddr *)&sa, sizeof(sa)) != 0) {
 		int err = errno;
 
 		close(fd);
 		errno = err;
-		return brk_cmd_fail_errno("connect failed");
+		return cmdfw_fail_errno("connect failed");
 	}
 	int ret = tcp_relay(fd);
 
@@ -143,21 +143,21 @@ static int tcp_server(unsigned int port)
 	int one = 1;
 
 	if (fd < 0)
-		return brk_cmd_fail_errno("socket failed");
+		return cmdfw_fail_errno("socket failed");
 	setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
 	if (bind(fd, (struct sockaddr *)&sa, sizeof(sa)) != 0) {
 		int err = errno;
 
 		close(fd);
 		errno = err;
-		return brk_cmd_fail_errno("bind failed");
+		return cmdfw_fail_errno("bind failed");
 	}
 	if (listen(fd, 1) != 0) {
 		int err = errno;
 
 		close(fd);
 		errno = err;
-		return brk_cmd_fail_errno("listen failed");
+		return cmdfw_fail_errno("listen failed");
 	}
 
 	fprintf(stderr, "nc: listening on port %u\n", port);
@@ -170,7 +170,7 @@ static int tcp_server(unsigned int port)
 
 		close(fd);
 		errno = err;
-		return brk_cmd_fail_errno("accept failed");
+		return cmdfw_fail_errno("accept failed");
 	}
 	close(fd);
 
@@ -192,19 +192,19 @@ static int udp_client(struct in_addr addr, unsigned int port)
 	ssize_t n;
 
 	if (fd < 0)
-		return brk_cmd_fail_errno("socket failed");
+		return cmdfw_fail_errno("socket failed");
 	if (connect(fd, (struct sockaddr *)&sa, sizeof(sa)) != 0) {
 		int err = errno;
 
 		close(fd);
 		errno = err;
-		return brk_cmd_fail_errno("connect failed");
+		return cmdfw_fail_errno("connect failed");
 	}
 
 	n = read(STDIN_FILENO, buf, sizeof(buf));
 	if (n < 0) {
 		close(fd);
-		return brk_cmd_fail_errno("read stdin failed");
+		return cmdfw_fail_errno("read stdin failed");
 	}
 	if (n > 0) {
 		if (send(fd, buf, (size_t)n, 0) < 0 && errno != EAGAIN) {
@@ -212,7 +212,7 @@ static int udp_client(struct in_addr addr, unsigned int port)
 
 			close(fd);
 			errno = err;
-			return brk_cmd_fail_errno("send failed");
+			return cmdfw_fail_errno("send failed");
 		}
 	}
 
@@ -222,17 +222,17 @@ static int udp_client(struct in_addr addr, unsigned int port)
 	if (ret < 0) {
 		if (errno != EINTR) {
 			close(fd);
-			return brk_cmd_fail_errno("poll failed");
+			return cmdfw_fail_errno("poll failed");
 		}
 	} else if (ret > 0 && (pfd.revents & POLLIN)) {
 		n = recv(fd, buf, sizeof(buf), 0);
 		if (n > 0 && write_all(STDOUT_FILENO, buf, (size_t)n) != 0) {
 			close(fd);
-			return BRK_CMD_EXIT_FAIL;
+			return CMDFW_EXIT_FAIL;
 		}
 	}
 	close(fd);
-	return BRK_CMD_EXIT_OK;
+	return CMDFW_EXIT_OK;
 }
 
 static int udp_server(unsigned int port)
@@ -248,13 +248,13 @@ static int udp_server(unsigned int port)
 	int fd = socket(AF_INET, SOCK_DGRAM, 0);
 
 	if (fd < 0)
-		return brk_cmd_fail_errno("socket failed");
+		return cmdfw_fail_errno("socket failed");
 	if (bind(fd, (struct sockaddr *)&sa, sizeof(sa)) != 0) {
 		int err = errno;
 
 		close(fd);
 		errno = err;
-		return brk_cmd_fail_errno("bind failed");
+		return cmdfw_fail_errno("bind failed");
 	}
 
 	fprintf(stderr, "nc: listening on udp port %u\n", port);
@@ -268,63 +268,63 @@ static int udp_server(unsigned int port)
 
 		close(fd);
 		errno = err;
-		return brk_cmd_fail_errno("recvfrom failed");
+		return cmdfw_fail_errno("recvfrom failed");
 	}
 	if (write_all(STDOUT_FILENO, buf, (size_t)n) != 0) {
 		close(fd);
-		return BRK_CMD_EXIT_FAIL;
+		return CMDFW_EXIT_FAIL;
 	}
 	sendto(fd, buf, (size_t)n, 0, (struct sockaddr *)&peer, peerlen);
 	close(fd);
-	return BRK_CMD_EXIT_OK;
+	return CMDFW_EXIT_OK;
 }
 
 int main(int argc, char *argv[])
 {
-	struct brk_cmd_optctx ctx;
+	struct cmdfw_optctx ctx;
 	bool udp = false;
 	bool listen_mode = false;
 	unsigned long local_port = 0;
 	int opt;
 
-	brk_cmd_init(argc, argv);
-	brk_cmd_optctx_init(&ctx, argc, argv);
+	cmdfw_init(argc, argv);
+	cmdfw_optctx_init(&ctx, argc, argv);
 
-	while ((opt = brk_cmd_optparse(&ctx, opts)) != 0) {
+	while ((opt = cmdfw_optparse(&ctx, opts)) != 0) {
 		if (opt == '?' || opt == ':')
-			return BRK_CMD_EXIT_USAGE;
-		if (opt == BRK_CMD_OPT_HELP)
-			brk_cmd_help_exit(usage);
+			return CMDFW_EXIT_USAGE;
+		if (opt == CMDFW_OPT_HELP)
+			cmdfw_help_exit(usage);
 		if (opt == 'u')
 			udp = true;
 		if (opt == 'l')
 			listen_mode = true;
 		if (opt == 'p') {
-			if (brk_cmd_parse_ulong(ctx.arg, &local_port, 0,
+			if (cmdfw_parse_ulong(ctx.arg, &local_port, 0,
 						65535) != 0)
-				return BRK_CMD_EXIT_FAIL;
+				return CMDFW_EXIT_FAIL;
 		}
 	}
 
 	if (listen_mode) {
 		if (!local_port) {
-			if (brk_cmd_operand_count(&ctx) != 1)
-				brk_cmd_usage(usage);
-			if (brk_cmd_parse_ulong(brk_cmd_operand(&ctx, 0),
+			if (cmdfw_operand_count(&ctx) != 1)
+				cmdfw_usage(usage);
+			if (cmdfw_parse_ulong(cmdfw_operand(&ctx, 0),
 						&local_port, 1, 65535) != 0)
-				return BRK_CMD_EXIT_FAIL;
+				return CMDFW_EXIT_FAIL;
 		}
 		if (udp)
 			return udp_server((unsigned int)local_port);
 		return tcp_server((unsigned int)local_port);
 	}
 
-	if (brk_cmd_operand_count(&ctx) != 2)
-		brk_cmd_usage(usage);
+	if (cmdfw_operand_count(&ctx) != 2)
+		cmdfw_usage(usage);
 
 	struct in_addr addr;
 	unsigned long port;
-	const char *host = brk_cmd_operand(&ctx, 0);
+	const char *host = cmdfw_operand(&ctx, 0);
 
 	if (!strcmp(host, "localhost")) {
 		addr.s_addr = INADDR_LOOPBACK;
@@ -332,11 +332,11 @@ int main(int argc, char *argv[])
 		struct hostent *he = gethostbyname(host);
 
 		if (!he)
-			return brk_cmd_fail("cannot resolve '%s'", host);
+			return cmdfw_fail("cannot resolve '%s'", host);
 		memcpy(&addr.s_addr, he->h_addr, 4);
 	}
-	if (brk_cmd_parse_ulong(brk_cmd_operand(&ctx, 1), &port, 1, 65535) != 0)
-		return BRK_CMD_EXIT_FAIL;
+	if (cmdfw_parse_ulong(cmdfw_operand(&ctx, 1), &port, 1, 65535) != 0)
+		return CMDFW_EXIT_FAIL;
 
 	if (udp)
 		return udp_client(addr, (unsigned int)port);

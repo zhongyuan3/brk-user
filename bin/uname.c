@@ -1,4 +1,4 @@
-#include <brk/cmd.h>
+#include <libcmdfw.h>
 #include <stdbool.h>
 #include <sys/utsname.h>
 #include <unistd.h>
@@ -15,33 +15,33 @@ static const char usage[] = "Usage: uname [-asnrvm]\n"
 			    "  -m       print the machine hardware name\n"
 			    "  --help   display this help and exit";
 
-static const struct brk_cmd_option opts[] = {
-	{ 'a', 'a', "all", BRK_CMD_OPT_NO_ARG },
-	{ 's', 's', NULL, BRK_CMD_OPT_NO_ARG },
-	{ 'n', 'n', NULL, BRK_CMD_OPT_NO_ARG },
-	{ 'r', 'r', NULL, BRK_CMD_OPT_NO_ARG },
-	{ 'v', 'v', NULL, BRK_CMD_OPT_NO_ARG },
-	{ 'm', 'm', NULL, BRK_CMD_OPT_NO_ARG },
-	{ BRK_CMD_OPT_HELP, 0, "help", BRK_CMD_OPT_NO_ARG },
-	BRK_CMD_OPTION_END,
+static const struct cmdfw_option opts[] = {
+	{ 'a', 'a', "all", CMDFW_OPT_NO_ARG },
+	{ 's', 's', NULL, CMDFW_OPT_NO_ARG },
+	{ 'n', 'n', NULL, CMDFW_OPT_NO_ARG },
+	{ 'r', 'r', NULL, CMDFW_OPT_NO_ARG },
+	{ 'v', 'v', NULL, CMDFW_OPT_NO_ARG },
+	{ 'm', 'm', NULL, CMDFW_OPT_NO_ARG },
+	{ CMDFW_OPT_HELP, 0, "help", CMDFW_OPT_NO_ARG },
+	CMDFW_OPTION_END,
 };
 
 int main(int argc, char *argv[])
 {
-	struct brk_cmd_optctx ctx;
+	struct cmdfw_optctx ctx;
 	struct utsname u;
 	bool all = false, s = false, n = false, r = false, v = false, m = false;
 	bool first = true;
 	int opt;
 
-	brk_cmd_init(argc, argv);
-	brk_cmd_optctx_init(&ctx, argc, argv);
+	cmdfw_init(argc, argv);
+	cmdfw_optctx_init(&ctx, argc, argv);
 
-	while ((opt = brk_cmd_optparse(&ctx, opts)) != 0) {
+	while ((opt = cmdfw_optparse(&ctx, opts)) != 0) {
 		if (opt == '?' || opt == ':')
-			return BRK_CMD_EXIT_USAGE;
-		if (opt == BRK_CMD_OPT_HELP)
-			brk_cmd_help_exit(usage);
+			return CMDFW_EXIT_USAGE;
+		if (opt == CMDFW_OPT_HELP)
+			cmdfw_help_exit(usage);
 		if (opt == 'a')
 			all = true;
 		if (opt == 's')
@@ -62,7 +62,7 @@ int main(int argc, char *argv[])
 		s = n = r = v = m = true;
 
 	if (uname(&u) != 0)
-		return brk_cmd_fail_errno("uname failed");
+		return cmdfw_fail_errno("uname failed");
 
 #define EMIT(field)                   \
 	do {                          \
@@ -83,5 +83,5 @@ int main(int argc, char *argv[])
 	if (m)
 		EMIT(u.machine);
 	putchar('\n');
-	return BRK_CMD_EXIT_OK;
+	return CMDFW_EXIT_OK;
 }
