@@ -80,17 +80,33 @@ Useful variables:
 | --------------------- | ------------------------------------------------ |
 | `CROSS_COMPILE`       | Cross-toolchain prefix                           |
 | `BUILD_ROOT`          | Userland/rootfs build directory, default `build` |
+| `BUILD`               | Userland build type, `debug` (default) or `release` |
 | `KERNEL_ROOT`         | Kernel tree, default `../brk`                    |
 | `KERNEL_ARCH`         | Kernel architecture, default `riscv`             |
 | `KERNEL_BUILD`        | Kernel build type, default `debug`               |
 | `KERNEL_BUILD_ROOT`   | Kernel build directory, derived from the above   |
 | `KERNEL_MAKE_ARGS`    | Extra arguments passed to the kernel make        |
-| `ROOTFS_IMG`          | Rootfs image path, default `build/rootfs.img`    |
+| `ROOTFS_IMG`          | Rootfs image path, default `build/<BUILD>/rootfs.img` |
 | `M` / `SMP`           | QEMU RAM size / CPU count, defaults `128M` / `3` |
 | `QEMU` / `GDB`        | Tool paths used by the boot/debug targets        |
 | `EXTRA_QEMU_OPTS`     | Extra QEMU arguments                             |
 | `HOSTCC`              | Host C compiler for `cc-host`                    |
 | `LIBGCC`              | Optional libgcc fallback                         |
+
+Mirroring the kernel's `BUILD` knob, userland objects, programs,
+archives and the rootfs image all live under `build/<BUILD>/`, so the
+`debug` and `release` trees never overwrite each other.  `debug` builds
+with `-Og -ggdb` and frame pointers for guest debugging; `release`
+builds with `-O2`, `-DNDEBUG` and `--gc-sections` for size.  Objects
+also depend on a build-flag signature stamp
+(`build/<BUILD>/.build-flags`): changing the compiler or any flag entry
+in the Makefile rebuilds the whole variant instead of silently mixing
+old and new objects.
+
+One escape hatch exists for per-program flags: setting `CFLAGS_<prog>`
+in the Makefile appends to every compile and the final link of that
+program only, which is how vendored Lua opts out of `-Werror`
+(`CFLAGS_lua := -Wno-error`) without weakening any other command.
 
 The build copies the kernel UAPI headers from
 `$(KERNEL_ROOT)/include/uapi` into the private build include directory.
@@ -116,8 +132,9 @@ make dts
 ```
 
 `run`, `debug` and `gdb-server` build the kernel through `KERNEL_ROOT` before
-starting QEMU. Use `KERNEL_BUILD=release` to boot a release kernel. The rootfs
-image is written to `build/rootfs.img` by default.
+starting QEMU. Use `KERNEL_BUILD=release` to boot a release kernel, and
+`BUILD=release` to boot release userland as well. The rootfs image is
+written to `build/<BUILD>/rootfs.img` by default.
 
 The rootfs script builds the user commands and libc tests, then installs:
 

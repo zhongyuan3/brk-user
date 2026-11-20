@@ -22,7 +22,12 @@ case $BUILD_ROOT in
 /*) ;;
 *) BUILD_ROOT="$USER_ROOT/$BUILD_ROOT" ;;
 esac
-BIN_DIR="$BUILD_ROOT/bin"
+# The userland build type selects the variant subdirectory the same way
+# the Makefile does, so debug and release binaries never mix in one
+# image.
+BUILD=${BUILD:-debug}
+VARIANT_ROOT="$BUILD_ROOT/$BUILD"
+BIN_DIR="$VARIANT_ROOT/bin"
 ROOTFS_TREE="$BUILD_ROOT/rootfs-tree"
 
 KERNEL_ROOT=${KERNEL_ROOT:-"$USER_ROOT/../brk"}
@@ -52,6 +57,7 @@ fi
 }
 
 make -C "$USER_ROOT" KERNEL_ROOT="$KERNEL_ROOT" BUILD_ROOT="$BUILD_ROOT" \
+	BUILD="$BUILD" \
 	${CROSS_COMPILE:+CROSS_COMPILE="$CROSS_COMPILE"} \
 	${LIBGCC:+LIBGCC="$LIBGCC"} all tests
 
@@ -136,8 +142,8 @@ fi
 
 # libc tests are built as normal library-linked executables; install
 # those alongside their sources so they can be run directly inside BRK.
-if [[ -d $BUILD_ROOT/tests/libc ]]; then
-	for test_bin in "$BUILD_ROOT"/tests/libc/*; do
+if [[ -d $VARIANT_ROOT/tests/libc ]]; then
+	for test_bin in "$VARIANT_ROOT"/tests/libc/*; do
 		[[ -f $test_bin ]] || continue
 		"$BRKFS" cp "$test_bin" \
 			"/home/tests/libc/${test_bin##*/}" "$IMG"

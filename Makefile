@@ -1,6 +1,17 @@
 BUILD_ROOT ?= build
-OBJDIR := $(BUILD_ROOT)/obj
-BINDIR := $(BUILD_ROOT)/bin
+# Normalize once: the build-flag signature embeds -I$(BUILD_ROOT)/include,
+# and scripts/mkrootfs.sh re-enters make with an absolute BUILD_ROOT.  A
+# single canonical spelling keeps that signature stable across direct
+# makes and script re-entries, so the two never invalidate each other.
+BUILD_ROOT := $(abspath $(BUILD_ROOT))
+# Userland build type, mirroring the kernel's BUILD knob: debug binaries
+# carry full debug information, release binaries are optimized for size.
+# Objects, programs and the rootfs image live under BUILD_ROOT/$(BUILD) so
+# the variants never overwrite each other.
+BUILD ?= debug
+USER_BUILD_ROOT ?= $(BUILD_ROOT)/$(BUILD)
+OBJDIR := $(USER_BUILD_ROOT)/obj
+BINDIR := $(USER_BUILD_ROOT)/bin
 
 ifeq ($(V),1)
 Q :=
@@ -45,7 +56,7 @@ UAPI_DIR := $(BUILD_ROOT)/include/uapi
 UAPI_STAMP := $(UAPI_DIR)/.stamp
 UAPI_HEADERS := $(wildcard $(UAPI_SRC)/*.h)
 
-ROOTFS_IMG ?= $(BUILD_ROOT)/rootfs.img
+ROOTFS_IMG ?= $(USER_BUILD_ROOT)/rootfs.img
 MKROOTFS := scripts/mkrootfs.sh
 M ?= 128M
 SMP ?= 3
@@ -81,7 +92,6 @@ RANLIB := $(CROSS_COMPILE)ranlib
 HOSTCC ?= cc
 
 CFLAGS := -std=gnu11
-CFLAGS += -O2
 CFLAGS += -Wall -Wextra -Werror
 CFLAGS += -march=rv64gc
 CFLAGS += -ffreestanding -nostdinc
@@ -98,11 +108,34 @@ LDFLAGS := -nostdlib -no-pie -z max-page-size=4096 -static
 LIBGCC ?= -lgcc
 LDLIBS := $(LIBGCC)
 
+# Build variants, mirroring the kernel's BUILD types: debug keeps
+# frame pointers and full DWARF for guest debugging, release optimizes
+# for size and drops sections the linker cannot reach.
+ifeq ($(BUILD),debug)
+CFLAGS += -Og
+CFLAGS += -ggdb
+CFLAGS += -gdwarf-4
+CFLAGS += -fno-omit-frame-pointer
+else ifeq ($(BUILD),release)
+CFLAGS += -O2
+CFLAGS += -DNDEBUG
+CFLAGS += -fomit-frame-pointer
+CFLAGS += -fno-unwind-tables
+CFLAGS += -fno-asynchronous-unwind-tables
+CFLAGS += -ffunction-sections
+CFLAGS += -fdata-sections
+# The kernel links through $(LD) directly and passes --gc-sections bare;
+# userland links through the gcc driver, which wants the -Wl, spelling.
+LDFLAGS += -Wl,--gc-sections
+else
+$(error Unknown build type '$(BUILD)')
+endif
+
 HOST_CFLAGS ?= -std=gnu11 -O2 -Wall -Wextra -Werror
 HOST_CFLAGS += -I$(BUILD_ROOT)/include
 
 USER_LD_SOURCE := user.ld.S
-USER_LD := $(BUILD_ROOT)/user.ld
+USER_LD := $(USER_BUILD_ROOT)/user.ld
 
 # The two userland libraries are archived separately.  libcmdfw.a holds
 # the command helpers, libc.a the C library; libcmdfw depends on libc, so
@@ -114,8 +147,10 @@ LIBC_SRCS := $(sort $(shell find $(LIBC_DIR) -name '*.c' -print))
 LIBCMD_SRCS := $(sort $(shell find $(LIBCMD_DIR) -name '*.c' -print))
 LIBC_OBJS := $(patsubst %.c,$(OBJDIR)/%.o,$(LIBC_SRCS))
 LIBCMD_OBJS := $(patsubst %.c,$(OBJDIR)/%.o,$(LIBCMD_SRCS))
-LIBC_A := $(BUILD_ROOT)/libc.a
-LIBCMD_A := $(BUILD_ROOT)/libcmdfw.a
+# The archives are compiled with the variant flags, so they live in the
+# variant root and debug/release libraries never overwrite each other.
+LIBC_A := $(USER_BUILD_ROOT)/libc.a
+LIBCMD_A := $(USER_BUILD_ROOT)/libcmdfw.a
 LIBS := $(LIBCMD_A) $(LIBC_A)
 
 # The command tree mirrors the root filesystem: a command under bin/ is
@@ -135,15 +170,31 @@ USER_DIR_PROGS := $(notdir $(USER_DIRS))
 USER_DIR_SRCS := $(sort $(foreach d,$(USER_DIRS),\
 	$(shell find $(d) -name '*.c' -print)))
 
+# Per-program flag escape hatch: CFLAGS_<prog> is appended when compiling
+# any object of that program and when linking it, so a single program can
+# opt out of a global flag without weakening the rest of the tree.
+
 # Vendored third-party sources live under vendor/ and are compiled with
 # warnings visible but without -Werror, mirroring the kernel's vendor/
 # policy. Lua 5.5.1 builds every file except luac.c, the standalone
 # bytecode-compiler frontend with its own main().
 LUA_DIR := vendor/lua
-LUA_CFLAGS := $(filter-out -Werror,$(CFLAGS))
+CFLAGS_lua := -Wno-error
 LUA_SRCS := $(sort $(filter-out $(LUA_DIR)/luac.c,\
 	$(wildcard $(LUA_DIR)/*.c)))
 LUA_OBJS := $(patsubst $(LUA_DIR)/%.c,$(OBJDIR)/vendor/lua/%.o,$(LUA_SRCS))
+
+# Rebuild everything when the compiler or flags change.  The stamp rule
+# below runs on every build but only rewrites the file when this signature
+# changed; every object depends on the stamp, so a changed signature
+# outdates the whole tree at once.  Extend the signature when adding a
+# new CFLAGS_<prog> or another build input.
+FLAGS_STAMP := $(USER_BUILD_ROOT)/.build-flags
+FLAGS_DEP := $(FLAGS_STAMP)
+FLAGS_SIGNATURE := BUILD=$(BUILD) CC=$(CC) AR=$(AR) RANLIB=$(RANLIB) \
+	CFLAGS=$(CFLAGS) LDFLAGS=$(LDFLAGS) LDLIBS=$(LDLIBS) \
+	HOSTCC=$(HOSTCC) HOST_CFLAGS=$(HOST_CFLAGS) \
+	CFLAGS_lua=$(CFLAGS_lua)
 
 USER_PROGS := $(sort $(USER_SINGLE_PROGS) $(USER_DIR_PROGS)) lua
 USER_BINS := $(addprefix $(BINDIR)/,$(USER_PROGS))
@@ -155,7 +206,7 @@ DEPS := $(LIBC_OBJS:.o=.d) $(LIBCMD_OBJS:.o=.d) $(USER_OBJS:.o=.d) \
 # libc tests are normal library-linked programs under tests/libc.
 TEST_SRCS := $(sort $(wildcard tests/libc/*.c))
 TEST_OBJS := $(patsubst tests/%.c,$(OBJDIR)/tests/%.o,$(TEST_SRCS))
-TEST_BINS := $(patsubst tests/%.c,$(BUILD_ROOT)/tests/%,$(TEST_SRCS))
+TEST_BINS := $(patsubst tests/%.c,$(USER_BUILD_ROOT)/tests/%,$(TEST_SRCS))
 DEPS += $(TEST_OBJS:.o=.d)
 
 # Keep object files around for debugging and incremental rebuilds.
@@ -169,7 +220,7 @@ DEPS += $(CC_HOST_OBJS:.o=.d)
 
 .PHONY: all lib cc-host tests check check-in-system host-tests clean \
 	help hooks list-progs kernel rootfs run debug gdb-server gdb-client \
-	dtb dts
+	dtb dts FORCE
 
 all: $(USER_BINS)
 
@@ -208,11 +259,13 @@ rootfs:
 	$(Q)rm -f $(ROOTFS_IMG)
 	$(Q)KERNEL_ROOT="$(abspath $(KERNEL_ROOT))" \
 		BUILD_ROOT="$(abspath $(BUILD_ROOT))" \
+		BUILD="$(BUILD)" \
 		$(MKROOTFS) "$(ROOTFS_IMG)"
 
 $(ROOTFS_IMG): $(ROOTFS_DEPS)
 	$(Q)KERNEL_ROOT="$(abspath $(KERNEL_ROOT))" \
 		BUILD_ROOT="$(abspath $(BUILD_ROOT))" \
+		BUILD="$(BUILD)" \
 		$(MKROOTFS) "$@"
 
 run: $(ROOTFS_IMG) kernel
@@ -277,12 +330,13 @@ help:
 	@echo "Configurable variables:"
 	@echo "  CROSS_COMPILE=<prefix>"
 	@echo "  BUILD_ROOT=<path>       default: build"
+	@echo "  BUILD=<type>            default: debug (debug|release)"
 	@echo "  KERNEL_ROOT=<path>      default: ../brk"
 	@echo "  KERNEL_ARCH=<arch>      default: riscv"
 	@echo "  KERNEL_BUILD=<type>     default: debug (debug|release)"
 	@echo "  KERNEL_BUILD_ROOT=<path>  default: KERNEL_ROOT/build/ARCH/BUILD"
 	@echo "  KERNEL_MAKE_ARGS=...    extra arguments passed to the kernel make"
-	@echo "  ROOTFS_IMG=<path>       default: BUILD_ROOT/rootfs.img"
+	@echo "  ROOTFS_IMG=<path>       default: BUILD_ROOT/BUILD/rootfs.img"
 	@echo "  M=<size>                default: 128M"
 	@echo "  SMP=<n>                 default: 3"
 	@echo "  QEMU=<path>             default: qemu-system-riscv64"
@@ -304,18 +358,21 @@ $(UAPI_STAMP): $(UAPI_SRC) $(UAPI_HEADERS) | $(BUILD_ROOT)
 	cp $(UAPI_HEADERS) $(UAPI_DIR)/
 	touch $@
 
-$(USER_LD): $(USER_LD_SOURCE) | $(BUILD_ROOT)
+$(USER_LD): $(USER_LD_SOURCE) $(FLAGS_DEP) | $(BUILD_ROOT)
+	@mkdir -p $(dir $@)
 	$(CPP) $(CFLAGS) -P -o $@ $<
 
-$(OBJDIR)/%.o: %.c | $(UAPI_STAMP)
+$(OBJDIR)/%.o: %.c $(FLAGS_DEP) | $(UAPI_STAMP)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-$(OBJDIR)/tests/%.o: tests/%.c | $(UAPI_STAMP)
+$(OBJDIR)/tests/%.o: tests/%.c $(FLAGS_DEP) | $(UAPI_STAMP)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-$(CC_HOST_OBJDIR)/%.o: %.c $(UAPI_STAMP) | $(UAPI_STAMP)
+# The host cc helper builds with the host toolchain but shares the build
+# flag signature, so host flag changes rebuild it as well.
+$(CC_HOST_OBJDIR)/%.o: %.c $(UAPI_STAMP) $(FLAGS_DEP)
 	@mkdir -p $(dir $@)
 	$(HOSTCC) $(HOST_CFLAGS) -MMD -MP -c -o $@ $<
 
@@ -329,16 +386,23 @@ $(LIBCMD_A): $(LIBCMD_OBJS)
 	$(AR) rcs $@ $^
 	$(RANLIB) $@
 
-# $(1) command name, $(2) source root (bin, usr/bin, sbin)
+# $(1) command name, $(2) source root (bin, usr/bin, sbin).  The
+# target-specific CFLAGS append is the per-program escape hatch: setting
+# CFLAGS_<name> in this file adds flags to every object of that program
+# and to its link, leaving every other program untouched.
 define ADD_SINGLE_PROGRAM
+$(OBJDIR)/$(2)/$(1).o: CFLAGS += $$(CFLAGS_$(1))
 $(BINDIR)/$(1): $(OBJDIR)/$(2)/$(1).o $(LIBS) $(USER_LD) | $(BINDIR)
-	$(CC) $(CFLAGS) $(LDFLAGS) -T $(USER_LD) -o $$@ $$< $(LIBS) $(LDLIBS)
+	$(CC) $(CFLAGS) $$(CFLAGS_$(1)) $(LDFLAGS) -T $(USER_LD) -o $$@ $$< $(LIBS) $(LDLIBS)
 endef
 
-# $(1) command name, $(2) source root
+# $(1) command name, $(2) source root.  The pattern-specific CFLAGS
+# append covers every object of the directory command, however deep its
+# sources nest.
 define ADD_DIR_PROGRAM
+$(OBJDIR)/$(2)/$(1)/%.o: CFLAGS += $$(CFLAGS_$(1))
 $(BINDIR)/$(1): $(patsubst %.c,$(OBJDIR)/%.o,$(filter $(2)/$(1)/%,$(USER_DIR_SRCS))) $(LIBS) $(USER_LD) | $(BINDIR)
-	$(CC) $(CFLAGS) $(LDFLAGS) -T $(USER_LD) -o $$@ $$(filter $(OBJDIR)/%.o,$$^) $(LIBS) $(LDLIBS)
+	$(CC) $(CFLAGS) $$(CFLAGS_$(1)) $(LDFLAGS) -T $(USER_LD) -o $$@ $$(filter $(OBJDIR)/%.o,$$^) $(LIBS) $(LDLIBS)
 endef
 
 $(foreach d,$(CMD_DIRS),\
@@ -348,15 +412,15 @@ $(foreach d,$(USER_DIRS),\
 	$(eval $(call ADD_DIR_PROGRAM,$(notdir $(d)),$(patsubst %/,%,$(dir $(d))))))
 
 # Vendored Lua interpreter: linked from vendor/lua (see its README).
-$(OBJDIR)/vendor/lua/%.o: $(LUA_DIR)/%.c | $(UAPI_STAMP)
+$(OBJDIR)/vendor/lua/%.o: $(LUA_DIR)/%.c $(FLAGS_DEP) | $(UAPI_STAMP)
 	@mkdir -p $(dir $@)
-	$(CC) $(LUA_CFLAGS) -c -o $@ $<
+	$(CC) $(CFLAGS) $(CFLAGS_lua) -c -o $@ $<
 
 $(BINDIR)/lua: $(LUA_OBJS) $(LIBS) $(USER_LD) | $(BINDIR)
-	$(CC) $(LUA_CFLAGS) $(LDFLAGS) -T $(USER_LD) -o $@ $(LUA_OBJS) \
+	$(CC) $(CFLAGS) $(CFLAGS_lua) $(LDFLAGS) -T $(USER_LD) -o $@ $(LUA_OBJS) \
 		$(LIBS) $(LDLIBS)
 
-$(BUILD_ROOT)/tests/%: $(OBJDIR)/tests/%.o $(LIBS) $(USER_LD)
+$(USER_BUILD_ROOT)/tests/%: $(OBJDIR)/tests/%.o $(LIBS) $(USER_LD)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(LDFLAGS) -T $(USER_LD) -o $@ $< $(LIBS) $(LDLIBS)
 
@@ -365,5 +429,18 @@ $(CC_HOST): $(CC_HOST_OBJS)
 
 clean:
 	$(RM) -rf $(BUILD_ROOT)
+
+# Runs on every build but only rewrites the stamp file when the signature
+# changed (see FLAGS_SIGNATURE above); the rewrite outdates every object at
+# once, so stale objects never mix with new flags.
+$(FLAGS_STAMP): FORCE
+	$(Q)mkdir -p $(dir $@)
+	$(Q)printf '%s\n' '$(FLAGS_SIGNATURE)' > $@.tmp
+	$(Q)if cmp -s $@.tmp $@; then \
+		rm -f $@.tmp; \
+	else \
+		mv -f $@.tmp $@; \
+		echo "  SYNC    $@ (build flags changed)"; \
+	fi
 
 -include $(DEPS)

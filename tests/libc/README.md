@@ -9,8 +9,9 @@ Build the test binaries:
 make -C brk-user tests
 ```
 
-The binaries are written to `brk-user/build/tests/libc/`. Regenerating the
-rootfs also builds and installs them:
+The binaries are written to `brk-user/build/<BUILD>/tests/libc/`
+(`BUILD` defaults to `debug`). Regenerating the rootfs also builds and
+installs them:
 
 ```sh
 make -C brk-user rootfs

@@ -27,11 +27,16 @@
 
 /*
  * The vendored musl engine keeps its own idioms (`*d & (1 << sh) - 1`,
- * unsigned/int mixes in the scaling loops).  Silence the warnings
- * rather than rewriting the algorithm.
+ * unsigned/int mixes in the scaling loops) and branch pairs whose
+ * initialization only the -O2 optimizer can prove (`estr` is set by
+ * the non-'f' branch at the l computation and only used by the same
+ * branch at output time, with t unchanged in between; -Og's weaker
+ * dataflow flags it anyway).  Silence the warnings rather than
+ * rewriting the algorithm.
  */
 #pragma GCC diagnostic ignored "-Wsign-compare"
 #pragma GCC diagnostic ignored "-Wparentheses"
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
