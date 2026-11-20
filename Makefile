@@ -261,10 +261,10 @@ help:
 	@echo "  src/brksh/          the shell (installed as sh)"
 	@echo "  src/brkcc/          the on-target C compiler (installed as cc)"
 	@echo "  src/brktest/        the libc/system test harness"
-	@echo "  src/libbrkc/         BRK C library"
-	@echo "  src/libbrkcmd/       BRK command helpers"
-	@echo "  src/include/         public headers"
-	@echo "  vendor/lua/          vendored Lua 5.5.1 (installed as lua)"
+	@echo "  src/libbrkc/        BRK C library"
+	@echo "  src/libbrkcmd/      BRK command helpers"
+	@echo "  src/include/        public headers"
+	@echo "  vendor/lua/         vendored Lua 5.5.1 (installed as lua)"
 	@echo ""
 	@echo "Configurable variables:"
 	@echo "  CROSS_COMPILE=<prefix>"
@@ -287,8 +287,9 @@ $(BUILD_ROOT):
 $(BINDIR): | $(BUILD_ROOT)
 	mkdir -p $@
 
-# Copy only the kernel UAPI headers into a private include root.  Kernel
-# implementation headers under src/include/brk/ stay invisible to userland.
+# Copy only the kernel UAPI headers into a private include root: the
+# kernel's implementation headers (everything outside include/uapi) are
+# never exposed to userland builds.
 $(UAPI_STAMP): $(UAPI_SRC) $(UAPI_HEADERS) | $(BUILD_ROOT)
 	$(RM) -rf $(UAPI_DIR)
 	mkdir -p $(UAPI_DIR)

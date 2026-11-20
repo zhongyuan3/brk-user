@@ -27,6 +27,8 @@ tests/
 ├── cc/                 # sources compiled by the on-target cc
 ├── libc/               # tests linked against libuser.a
 └── lua/                # smoke test run by the vendored interpreter
+etc/                    # copied into the rootfs as /etc
+scripts/                # rootfs packaging and host-side utilities
 ```
 
 The `libbrkc` and `libbrkcmd` sources are archived together into a single
@@ -121,7 +123,7 @@ The rootfs script builds the user commands and libc tests, then installs:
 
 - `init` under `/sbin`
 - test and system tools such as `brktest`, `stat` and `httpd` under `/usr/bin`
-- other commands under `/bin`
+- other commands under `/bin`, plus `test` a second time as `/bin/[`
 - `/etc` configuration files
 - `tests/` under `/home/tests`
 - libc test binaries under `/home/tests/libc`
@@ -129,6 +131,20 @@ The rootfs script builds the user commands and libc tests, then installs:
 
 `KERNEL_ROOT` and `TOOLS_ROOT` can be overridden when the kernel or
 `brk-tools` repositories are checked out elsewhere.
+
+### Accounts and password hashes
+
+`etc/passwd`, `etc/group` and `etc/shadow` seed the rootfs `/etc`.  The
+`shadow` hashes use the BRK `$sha256$` scheme, `hex(SHA256(salt + password))`;
+`scripts/pwutil.py` generates, verifies and updates them:
+
+```sh
+scripts/pwutil.py list etc/shadow
+scripts/pwutil.py passwd user   # prompts, then updates etc/shadow
+```
+
+Since `etc/shadow` is committed with seeded hashes for the preconfigured
+accounts, treat them as public test credentials, not secrets.
 
 ## Tests
 
@@ -191,8 +207,8 @@ coalescing, invalid sizes and concurrent allocation.  See
 
 ### Lua
 
-`src/cmd/lua` vendors Lua 5.5.1 unmodified and links it statically against
-`libuser.a`; the build installs it as `/bin/lua`.  It exercises the whole
+`vendor/lua` hosts Lua 5.5.1 unmodified; the build links it statically
+against `libuser.a` and installs it as `/bin/lua`.  It exercises the whole
 floating-point stack: the vendored musl-derived libm, correctly rounded
 `strtod` and printf conversions, `setjmp`-based error handling and the
 kernel's FP context switching.  The in-system smoke test:

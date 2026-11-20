@@ -27,7 +27,7 @@ CC=${HOSTCC:-cc}
 
 if [[ ! -d $UAPI_INCLUDE/uapi ]]; then
 	echo "${0##*/}: missing $UAPI_INCLUDE/uapi" >&2
-	echo "Run 'make host-tests' (or 'make all') to stage the kernel UAPI headers." >&2
+	echo "Run 'make host-tests' (or 'make all') to stage them." >&2
 	exit 1
 fi
 
