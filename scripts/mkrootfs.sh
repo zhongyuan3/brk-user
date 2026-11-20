@@ -118,6 +118,10 @@ for name in "${bins[@]}"; do
 	"$BRKFS" cp --parents "$BIN_DIR/$name" "/bin/$name" "$IMG"
 done
 
+# `[` is a second name for the test command, as on classic Unix; ship it
+# as a copy of the test binary instead of a dedicated wrapper source.
+"$BRKFS" cp --parents "$BIN_DIR/test" "/bin/[" "$IMG"
+
 if [[ -d $USER_ROOT/etc ]]; then
 	# The shadow file holds password hashes; it must stay root-only even
 	# on the host side so the mode survives the copy into the image.
