@@ -123,10 +123,13 @@ done
 "$BRKFS" cp --parents "$BIN_DIR/test" "/bin/[" "$IMG"
 
 if [[ -d $USER_ROOT/etc ]]; then
-	# The shadow file holds password hashes; it must stay root-only even
-	# on the host side so the mode survives the copy into the image.
-	[[ -f $USER_ROOT/etc/shadow ]] && chmod 0600 "$USER_ROOT/etc/shadow"
-	"$BRKFS" cp -r --parents "$USER_ROOT/etc" "/etc" "$IMG"
+	# Stage /etc through the build tree so packaging never mutates a
+	# tracked source file: shadow holds password hashes and must be
+	# root-only in the image, but the checkout keeps its own mode.
+	rm -rf "$ROOTFS_TREE/etc"
+	cp -r "$USER_ROOT/etc" "$ROOTFS_TREE/etc"
+	[[ -f $ROOTFS_TREE/etc/shadow ]] && chmod 0600 "$ROOTFS_TREE/etc/shadow"
+	"$BRKFS" cp -r --parents "$ROOTFS_TREE/etc" "/etc" "$IMG"
 fi
 
 if [[ -d $USER_ROOT/tests ]]; then
