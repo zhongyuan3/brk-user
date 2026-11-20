@@ -1,4 +1,4 @@
-#include <brk/lengthof.h>
+#include "../internal/lengthof.h"
 #include <errno.h>
 #include <stddef.h>
 

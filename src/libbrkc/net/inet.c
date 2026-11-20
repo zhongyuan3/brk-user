@@ -1,5 +1,5 @@
 #include <arpa/inet.h>
-#include <brk/bits.h>
+#include "../internal/bits.h"
 #include <stdio.h>
 #include <string.h>
 
