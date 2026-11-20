@@ -22,6 +22,7 @@ src/
 vendor/
 └── lua/                # vendored Lua 5.5.1 (installed as lua)
 tests/
+├── host/               # host-compiled float validation (math, strtod, printf)
 ├── cc/                 # sources compiled by the on-target cc
 ├── libc/               # tests linked against libuser.a
 └── lua/                # smoke test run by the vendored interpreter
@@ -130,6 +131,36 @@ The rootfs script builds the user commands and libc tests, then installs:
 
 ## Tests
 
+The suites live in different places because they run differently:
+
+| Suite                           | Sources       | Runs        | Entry point |
+| ------------------------------- | ------------- | ----------- | ----------- |
+| libc/system functional + stress | `src/brktest` | inside BRK  | `/usr/bin/brktest all` |
+| libc unit tests                 | `tests/libc`  | inside BRK  | `/home/tests/libc/alloc` |
+| cc tests                        | `tests/cc`    | inside BRK  | compile with the on-target cc |
+| Lua smoke test                  | `tests/lua`   | inside BRK  | `lua /home/tests/lua/smoke.lua` |
+| float engine validation         | `tests/host`  | on the host | `make host-tests` |
+
+### brktest
+
+The libc and system test harness is installed under `/usr/bin` and runs
+TAP-style suites inside BRK:
+
+```sh
+/usr/bin/brktest functional
+/usr/bin/brktest all
+```
+
+See [`src/brktest/README.md`](src/brktest/README.md) for suite names,
+options and stress-test usage.  `scripts/run-brktest.sh` boots BRK in QEMU,
+runs a target inside the guest and reports whether it passed:
+
+```sh
+scripts/run-brktest.sh all
+```
+
+### cc tests
+
 The `cc` tests are ordinary source files copied into the rootfs.  Compile and
 run them inside BRK with the on-target compiler:
 
@@ -145,11 +176,14 @@ See [`tests/cc/README.md`](tests/cc/README.md) for the full list and expected
 outputs.  The compiler implementation is documented in
 [`src/brkcc/README.md`](src/brkcc/README.md).
 
+### libc tests
+
 Libc tests are linked into `libuser` programs and installed as executables:
 
 ```sh
 /home/tests/libc/alloc
 ```
+
 The allocator test covers small and large allocations, `calloc`, `realloc`,
 coalescing, invalid sizes and concurrent allocation.  See
 [`tests/libc/README.md`](tests/libc/README.md) for details.
@@ -166,22 +200,18 @@ kernel's FP context switching.  The in-system smoke test:
 lua /home/tests/lua/smoke.lua
 ```
 
-The math, strtod and printf-float engines are pure arithmetic and are
-validated on the host against glibc (2 ULP bound) by:
+### Host float validation
+
+The math, strtod and printf-float engines are pure arithmetic with no OS
+dependencies, so their host behavior transfers to the riscv64 build
+unchanged.  `tests/host/run.sh` compiles them straight from the libbrkc
+sources and compares against glibc: math within 2 ULP, strtod for value,
+endptr and errno agreement, printf byte-for-byte with `%a` checked by
+round-trip.  No kernel boot is needed:
 
 ```sh
-scripts/math_host_test.sh
+make host-tests
 ```
-
-The libc and system test harness can also be run directly:
-
-```sh
-/usr/bin/brktest functional
-/usr/bin/brktest all
-```
-
-See [`src/brktest/README.md`](src/brktest/README.md) for suite names,
-options and stress-test usage.
 
 ## License
 

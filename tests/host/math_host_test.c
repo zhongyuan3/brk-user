@@ -9,7 +9,7 @@
  * consistent) and linked with this driver, which compares every function
  * against glibc libm and requires agreement within 2 ULP.
  *
- * Build:  see scripts/math-host-test.sh
+ * Build:  see tests/host/run.sh, or: make host-tests
  */
 
 #include <math.h>

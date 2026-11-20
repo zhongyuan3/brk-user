@@ -3,7 +3,7 @@
  * The scanner is pure arithmetic and string walking with no OS
  * dependencies, so host results transfer to the riscv64 build.
  *
- * Build:  cc -O2 -o /tmp/strtod_host_test strtod_host_test.c
+ * Build:  see tests/host/run.sh, or: make host-tests
  */
 
 #include <errno.h>
@@ -14,8 +14,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* The vendored scanner is renamed at compile time by the build below;
- * declare the interface here. */
+/* The vendored scanner is renamed to brk_strtod at compile time by the
+ * tests/host/run.sh build; declare the interface here. */
 double brk_strtod(const char *s, char **p);
 
 static int failures;

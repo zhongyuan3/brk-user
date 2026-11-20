@@ -6,7 +6,7 @@
  * %a output is not byte-compatible with the musl form (both are valid
  * C99 renderings), so %a is validated by round-trip through strtod.
  *
- * Build:  cc -O2 -o /tmp/fmtfp_host_test fmt_fp_host_test.c
+ * Build:  see tests/host/run.sh, or: make host-tests
  */
 
 #include <float.h>
