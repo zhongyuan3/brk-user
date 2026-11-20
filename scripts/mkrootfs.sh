@@ -117,8 +117,8 @@ install_cmds bin /bin
 install_cmds sbin /sbin
 install_cmds usr/bin /usr/bin
 
-# The Lua interpreter is vendored under vendor/lua, organized by origin
-# rather than by install location; it installs under /bin like the
+# The Lua interpreter is vendored under vendor/lua-5.5.1, organized by
+# origin rather than by install location; it installs under /bin like the
 # other user commands.
 "$BRKFS" cp --parents "$BIN_DIR/lua" "/bin/lua" "$IMG"
 

@@ -17,7 +17,7 @@ usr/
     ├── libc/           # BRK C library (libc API; math/ vendored from musl)
     └── libcmdfw/         # command helper library (cmdfw_* API)
 vendor/
-└── lua/                # vendored Lua 5.5.1 (installed as lua)
+└── lua-5.5.1/          # upstream Lua 5.5.1 tree, copied verbatim (installed as lua)
 tests/                  # host float validation + cc/libc/lua suites
 etc/                    # copied into the rootfs as /etc
 scripts/                # rootfs packaging and host-side utilities
@@ -230,12 +230,16 @@ coalescing, invalid sizes and concurrent allocation.  See
 
 ### Lua
 
-`vendor/lua` hosts Lua 5.5.1 unmodified; the build links it statically
-against `libc.a` and `libcmdfw.a` and installs it as `/bin/lua`.  It exercises
-the whole
-floating-point stack: the vendored musl-derived libm, correctly rounded
-`strtod` and printf conversions, `setjmp`-based error handling and the
-kernel's FP context switching.  The in-system smoke test:
+`vendor/lua-5.5.1` is a verbatim copy of the upstream Lua 5.5.1 release
+tree (https://www.lua.org, MIT license, as carried by the file headers),
+so it can be diffed against the tarball at any time; the sources live
+under `src/`.  The build compiles every `src/*.c` except `luac.c`, the
+standalone bytecode-compiler frontend with its own `main()`, links the
+interpreter statically against `libc.a` and `libcmdfw.a` and installs it
+as `/bin/lua`.  It exercises the whole floating-point stack: the
+vendored musl-derived libm, correctly rounded `strtod` and printf
+conversions, `setjmp`-based error handling and the kernel's FP context
+switching.  The in-system smoke test:
 
 ```sh
 lua /home/tests/lua/smoke.lua

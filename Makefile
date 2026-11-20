@@ -174,15 +174,17 @@ USER_DIR_SRCS := $(sort $(foreach d,$(USER_DIRS),\
 # any object of that program and when linking it, so a single program can
 # opt out of a global flag without weakening the rest of the tree.
 
-# Vendored third-party sources live under vendor/ and are compiled with
-# warnings visible but without -Werror, mirroring the kernel's vendor/
-# policy. Lua 5.5.1 builds every file except luac.c, the standalone
-# bytecode-compiler frontend with its own main().
-LUA_DIR := vendor/lua
+# Vendored third-party sources live under vendor/ as byte-for-byte
+# copies of the upstream release trees and compile with warnings visible
+# but without -Werror, mirroring the kernel's vendor/ policy.  The Lua
+# tree keeps the upstream layout (sources under src/) including files
+# the build never touches: luac.c, the standalone bytecode-compiler
+# frontend with its own main(), and the upstream Makefiles.
+LUA_DIR := vendor/lua-5.5.1/src
 CFLAGS_lua := -Wno-error
 LUA_SRCS := $(sort $(filter-out $(LUA_DIR)/luac.c,\
 	$(wildcard $(LUA_DIR)/*.c)))
-LUA_OBJS := $(patsubst $(LUA_DIR)/%.c,$(OBJDIR)/vendor/lua/%.o,$(LUA_SRCS))
+LUA_OBJS := $(patsubst $(LUA_DIR)/%.c,$(OBJDIR)/$(LUA_DIR)/%.o,$(LUA_SRCS))
 
 # Rebuild everything when the compiler or flags change.  The stamp rule
 # below runs on every build but only rewrites the file when this signature
@@ -325,7 +327,7 @@ help:
 	@echo "  usr/include/        public headers"
 	@echo "  usr/lib/libc/       BRK C library"
 	@echo "  usr/lib/libcmdfw/     BRK command helpers"
-	@echo "  vendor/lua/         vendored Lua 5.5.1 (installed as lua)"
+	@echo "  vendor/lua-5.5.1/   vendored Lua 5.5.1 (installed as lua)"
 	@echo ""
 	@echo "Configurable variables:"
 	@echo "  CROSS_COMPILE=<prefix>"
@@ -411,8 +413,9 @@ $(foreach d,$(CMD_DIRS),\
 $(foreach d,$(USER_DIRS),\
 	$(eval $(call ADD_DIR_PROGRAM,$(notdir $(d)),$(patsubst %/,%,$(dir $(d))))))
 
-# Vendored Lua interpreter: linked from vendor/lua (see its README).
-$(OBJDIR)/vendor/lua/%.o: $(LUA_DIR)/%.c $(FLAGS_DEP) | $(UAPI_STAMP)
+# Vendored Lua interpreter: linked from vendor/lua-5.5.1 (see the Lua
+# section of the top-level README for provenance and build policy).
+$(OBJDIR)/$(LUA_DIR)/%.o: $(LUA_DIR)/%.c $(FLAGS_DEP) | $(UAPI_STAMP)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(CFLAGS_lua) -c -o $@ $<
 
