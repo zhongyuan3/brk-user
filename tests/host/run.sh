@@ -18,11 +18,11 @@ set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 USER_ROOT=$(cd "$SCRIPT_DIR/../.." && pwd)
-SRC_INCLUDE="$USER_ROOT/src/include"
+SRC_INCLUDE="$USER_ROOT/include"
 BUILD_ROOT=${BUILD_ROOT:-"$USER_ROOT/build"}
 UAPI_INCLUDE="$BUILD_ROOT/include"
-MATH_DIR="$USER_ROOT/src/libbrkc/math"
-STDIO_DIR="$USER_ROOT/src/libbrkc/stdio"
+MATH_DIR="$USER_ROOT/libbrkc/math"
+STDIO_DIR="$USER_ROOT/libbrkc/stdio"
 CC=${HOSTCC:-cc}
 
 if [[ ! -d $UAPI_INCLUDE/uapi ]]; then
@@ -63,7 +63,7 @@ echo "== strtod: vendored scanner vs glibc =="
 
 # Rename strtod to brk_strtod so both implementations can coexist.
 $CC -O2 -Wall -nostdinc -I"$SRC_INCLUDE" -I"$UAPI_INCLUDE" \
-	-Dstrtod=brk_strtod -c "$USER_ROOT/src/libbrkc/stdlib/strtod.c" \
+	-Dstrtod=brk_strtod -c "$USER_ROOT/libbrkc/stdlib/strtod.c" \
 	-o "$OUT/strtod-engine.o"
 $CC -O2 -Wall -c "$SCRIPT_DIR/strtod_host_test.c" -o "$OUT/strtod_host_test.o"
 $CC -o "$OUT/strtod_host_test" "$OUT/strtod_host_test.o" \

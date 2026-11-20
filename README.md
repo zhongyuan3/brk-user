@@ -8,18 +8,16 @@ configurable with `KERNEL_ROOT`.
 ## Layout
 
 ```text
-src/
-├── init/               # the init program (PID 1, installed as /sbin/init)
-├── brksh/              # the shell (installed as sh)
-├── brkcc/              # on-target C compiler (installed as cc)
-├── brktest/            # libc/system test harness
-├── cmd/                # single-file user commands
-├── libbrkc/            # BRK C library (libc API)
-├── libbrkc/math/       # double-precision libm (vendored from musl)
-├── libbrkcmd/          # command helper library (brk_cmd_* API)
-├── include/            # public headers
-├── include/brk/cmd.h   # command helper API
-└── user.ld.S           # user program linker script
+include/                # public headers (include/brk/cmd.h: command helper API)
+libbrkc/                # BRK C library (libc API)
+libbrkc/math/           # double-precision libm (vendored from musl)
+libbrkcmd/              # command helper library (brk_cmd_* API)
+cmd/                    # single-file user commands
+brksh/                  # the shell (installed as sh)
+brkcc/                  # on-target C compiler (installed as cc)
+brktest/                # libc/system test harness
+init/                   # the init program (PID 1, installed as /sbin/init)
+user.ld.S               # user program linker script
 vendor/
 └── lua/                # vendored Lua 5.5.1 (installed as lua)
 tests/
@@ -35,8 +33,8 @@ The `libbrkc` and `libbrkcmd` sources are archived together into a single
 `libuser.a`; every user program links `libuser.a` and nothing else.
 `make lib` builds it.
 
-A command is either a single source file (`src/cmd/foo.c`) or a directory of
-sources (`src/cmd/foo/**/*.c`).  The build system links all sources in a
+A command is either a single source file (`cmd/foo.c`) or a directory of
+sources (`cmd/foo/**/*.c`).  The build system links all sources in a
 command directory into a single executable named after that directory.
 
 ## Requirements
@@ -127,7 +125,7 @@ The rootfs script builds the user commands and libc tests, then installs:
 - `/etc` configuration files
 - `tests/` under `/home/tests`
 - libc test binaries under `/home/tests/libc`
-- `src/brkcc/include/cc.h` under `/usr/include/cc.h`
+- `brkcc/include/cc.h` under `/usr/include/cc.h`
 
 `KERNEL_ROOT` and `TOOLS_ROOT` can be overridden when the kernel or
 `brk-tools` repositories are checked out elsewhere.
@@ -152,7 +150,7 @@ The suites live in different places because they run differently:
 
 | Suite                           | Sources       | Runs        | Entry point |
 | ------------------------------- | ------------- | ----------- | ----------- |
-| libc/system functional + stress | `src/brktest` | inside BRK  | `/usr/bin/brktest all` |
+| libc/system functional + stress | `brktest/`    | inside BRK  | `/usr/bin/brktest all` |
 | libc unit tests                 | `tests/libc`  | inside BRK  | `/home/tests/libc/alloc` |
 | cc tests                        | `tests/cc`    | inside BRK  | compile with the on-target cc |
 | Lua smoke test                  | `tests/lua`   | inside BRK  | `lua /home/tests/lua/smoke.lua` |
@@ -173,7 +171,7 @@ TAP-style suites inside BRK:
 /usr/bin/brktest all
 ```
 
-See [`src/brktest/README.md`](src/brktest/README.md) for suite names,
+See [`brktest/README.md`](brktest/README.md) for suite names,
 options and stress-test usage.  `scripts/run-brktest.sh` boots BRK in QEMU,
 runs a target inside the guest and reports whether it passed:
 
@@ -196,7 +194,7 @@ cc /home/tests/cc/multi_a.c /home/tests/cc/multi_b.c -o /tmp/multi
 
 See [`tests/cc/README.md`](tests/cc/README.md) for the full list and expected
 outputs.  The compiler implementation is documented in
-[`src/brkcc/README.md`](src/brkcc/README.md).
+[`brkcc/README.md`](brkcc/README.md).
 
 ### libc tests
 

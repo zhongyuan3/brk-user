@@ -1,6 +1,6 @@
 # cc — A Lightweight User-Space C Compiler for BRK
 
-`src/brkcc/` is a small C compiler that runs in BRK/RISC-V64 user space. It does not depend on the target machine's `as`/`ld`; instead, it performs lexing, preprocessing, parsing, code generation, linking, and ELF writing itself. The compiler itself still uses this repository's `libuser.a`, but **the generated programs do not link against libuser**—they depend only on kernel system calls.
+`brkcc/` is a small C compiler that runs in BRK/RISC-V64 user space. It does not depend on the target machine's `as`/`ld`; instead, it performs lexing, preprocessing, parsing, code generation, linking, and ELF writing itself. The compiler itself still uses this repository's `libuser.a`, but **the generated programs do not link against libuser**—they depend only on kernel system calls.
 
 ## Quick Start
 
@@ -10,7 +10,7 @@ Build user programs (including `/bin/cc`):
 make -C brk-user
 ```
 
-Regenerate the rootfs (this installs `cc` to `/bin/cc`, `src/brkcc/include/cc.h` to `/usr/include/cc.h`, and copies `tests/` to `/home/tests`):
+Regenerate the rootfs (this installs `cc` to `/bin/cc`, `brkcc/include/cc.h` to `/usr/include/cc.h`, and copies `tests/` to `/home/tests`):
 
 ```sh
 make -C brk-user rootfs CROSS_COMPILE=riscv64-unknown-elf-
@@ -61,7 +61,7 @@ Not supported:
 - `#` stringification, `##` token pasting
 - `#include` followed by a macro name
 - Macro invocations spanning physical lines (a macro invocation must be within the same logical line)
-- Complex standard headers (the target machine provides only a minimal `src/brkcc/include/cc.h`)
+- Complex standard headers (the target machine provides only a minimal `brkcc/include/cc.h`)
 
 ## Supported C Subset
 
@@ -144,7 +144,7 @@ int putchar(int c);
 int puts(const char *s);
 ```
 
-`src/brkcc/include/cc.h` provides these prototypes as well as `NULL`, `EOF`, and `O_*` constants.
+`brkcc/include/cc.h` provides these prototypes as well as `NULL`, `EOF`, and `O_*` constants.
 
 ## Multi-File and Linking
 
@@ -213,7 +213,7 @@ In addition, the kernel currently does not save floating-point context, so gener
 
 ## Implementation Structure
 
-`src/brkcc/` is divided by stage:
+`brkcc/` is divided by stage:
 
 - `brkcc.h`: shared types, symbol tables, and function declarations between modules
 - `util.c`: memory allocation, error handling, and byte buffers
@@ -243,7 +243,7 @@ Build only the host version (for quickly inspecting generated ELF files):
 
 ```sh
 make -C brk-user cc-host
-./brk-user/build/cc-host -I brk-user/src/include \
+./brk-user/build/cc-host -I brk-user/include \
     -o /tmp/hello.elf brk-user/tests/cc/hello.c
 riscv64-unknown-elf-readelf -h -l /tmp/hello.elf
 ```

@@ -91,7 +91,7 @@ done
 
 # Programs installed outside /bin.  init is PID 1 and belongs under
 # /sbin; the diagnostic and admin tools live under /usr/bin.  Their
-# sources live outside src/cmd as well (src/init, src/brktest, ...).
+# sources live outside cmd/ as well (init/, brktest/, ...).
 SYSTEM_BINS=(init)
 USR_BINS=(brktest clear df edit fallocate httpd httpget nc netstat stat
 	  tput)
@@ -146,11 +146,11 @@ if [[ -d $BUILD_ROOT/tests/libc ]]; then
 	done
 fi
 
-# src/brkcc/include/cc.h is the runtime header for programs compiled by
+# brkcc/include/cc.h is the runtime header for programs compiled by
 # the on-target cc: a raw-syscall subset with no libuser dependency.  It
 # is the only header installed into the image under /usr/include.
-if [[ -f $USER_ROOT/src/brkcc/include/cc.h ]]; then
-	"$BRKFS" cp "$USER_ROOT/src/brkcc/include/cc.h" "/usr/include/cc.h" "$IMG"
+if [[ -f $USER_ROOT/brkcc/include/cc.h ]]; then
+	"$BRKFS" cp "$USER_ROOT/brkcc/include/cc.h" "/usr/include/cc.h" "$IMG"
 fi
 
 for doc in README.md README.cn.md LICENSE; do

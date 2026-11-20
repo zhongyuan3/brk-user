@@ -57,7 +57,8 @@ EXTRA_QEMU_OPTS ?=
 # packaging script, userland sources, headers or binaries change.
 ROOTFS_DEPS := $(MKROOTFS) Makefile $(UAPI_HEADERS) \
 	$(wildcard $(BINDIR)/*) \
-	$(shell find src etc tests vendor -type f 2>/dev/null)
+	$(shell find include libbrkc libbrkcmd cmd brksh brkcc brktest init \
+		etc tests vendor user.ld.S -type f 2>/dev/null)
 
 QEMU_OPTS += -machine virt -nographic
 QEMU_OPTS += -m $(M)
@@ -86,7 +87,7 @@ CFLAGS += -march=rv64gc
 CFLAGS += -ffreestanding -nostdinc
 CFLAGS += -fno-stack-protector
 CFLAGS += -fno-pie
-CFLAGS += -I./src/include -I$(BUILD_ROOT)/include
+CFLAGS += -I./include -I$(BUILD_ROOT)/include
 CFLAGS += -MMD -MP
 
 LDFLAGS := -nostdlib -no-pie -z max-page-size=4096 -static
@@ -100,19 +101,19 @@ LDLIBS := $(LIBGCC)
 HOST_CFLAGS ?= -std=gnu11 -O2 -Wall -Wextra -Werror
 HOST_CFLAGS += -I$(BUILD_ROOT)/include
 
-USER_LD_SOURCE := src/user.ld.S
+USER_LD_SOURCE := user.ld.S
 USER_LD := $(BUILD_ROOT)/user.ld
 
 # libbrkc and libbrkcmd sources form libuser.a.  Command sources do not.
-LIB_SRCS := $(sort $(foreach d,src/libbrkc src/libbrkcmd,\
+LIB_SRCS := $(sort $(foreach d,libbrkc libbrkcmd,\
 	$(shell find $(d) -name '*.c' -print)))
-LIB_OBJS := $(patsubst src/%.c,$(OBJDIR)/%.o,$(LIB_SRCS))
+LIB_OBJS := $(patsubst %.c,$(OBJDIR)/%.o,$(LIB_SRCS))
 LIBUSER_A := $(BUILD_ROOT)/libuser.a
 
-# User commands live under src/cmd.  A command is either a single source file
-# (src/cmd/foo.c) or a directory of sources (src/cmd/foo/**/*.c), which keeps
+# User commands live under cmd.  A command is either a single source file
+# (cmd/foo.c) or a directory of sources (cmd/foo/**/*.c), which keeps
 # multi-file commands easy to navigate.
-CMD_DIR := src/cmd
+CMD_DIR := cmd
 USER_SINGLE_SRCS := $(sort $(wildcard $(CMD_DIR)/*.c))
 USER_SINGLE_PROGS := $(basename $(notdir $(USER_SINGLE_SRCS)))
 SRC_DIRS := $(patsubst %/,%,$(wildcard $(CMD_DIR)/*/))
@@ -122,22 +123,22 @@ USER_DIR_SRCS := $(sort $(foreach d,$(USER_DIRS),\
 	$(shell find $(d) -name '*.c' -print)))
 
 # init, the shell, the on-target C compiler and the test harness live
-# outside src/cmd because they are self-contained system programs rather
+# outside cmd because they are self-contained system programs rather
 # than single-purpose commands.  The on-target binary names stay init,
 # sh, cc and brktest: the rootfs boots /sbin/init, which execs /bin/sh,
 # and the cc test suite runs cc.
-INIT_DIR := src/init
-BRKSH_DIR := src/brksh
-BRKCC_DIR := src/brkcc
-BRKTEST_DIR := src/brktest
+INIT_DIR := init
+BRKSH_DIR := brksh
+BRKCC_DIR := brkcc
+BRKTEST_DIR := brktest
 INIT_SRCS := $(sort $(shell find $(INIT_DIR) -name '*.c' -print))
 BRKSH_SRCS := $(sort $(shell find $(BRKSH_DIR) -name '*.c' -print))
 BRKCC_SRCS := $(sort $(shell find $(BRKCC_DIR) -name '*.c' -print))
 BRKTEST_SRCS := $(sort $(shell find $(BRKTEST_DIR) -name '*.c' -print))
-INIT_OBJS := $(patsubst src/%.c,$(OBJDIR)/%.o,$(INIT_SRCS))
-BRKSH_OBJS := $(patsubst src/%.c,$(OBJDIR)/%.o,$(BRKSH_SRCS))
-BRKCC_OBJS := $(patsubst src/%.c,$(OBJDIR)/%.o,$(BRKCC_SRCS))
-BRKTEST_OBJS := $(patsubst src/%.c,$(OBJDIR)/%.o,$(BRKTEST_SRCS))
+INIT_OBJS := $(patsubst %.c,$(OBJDIR)/%.o,$(INIT_SRCS))
+BRKSH_OBJS := $(patsubst %.c,$(OBJDIR)/%.o,$(BRKSH_SRCS))
+BRKCC_OBJS := $(patsubst %.c,$(OBJDIR)/%.o,$(BRKCC_SRCS))
+BRKTEST_OBJS := $(patsubst %.c,$(OBJDIR)/%.o,$(BRKTEST_SRCS))
 
 # Vendored third-party sources live under vendor/ and are compiled with
 # warnings visible but without -Werror, mirroring the kernel's vendor/
@@ -152,7 +153,7 @@ LUA_OBJS := $(patsubst $(LUA_DIR)/%.c,$(OBJDIR)/vendor/lua/%.o,$(LUA_SRCS))
 USER_PROGS := $(sort $(USER_SINGLE_PROGS) $(USER_DIR_PROGS)) \
 	init sh cc brktest lua
 USER_BINS := $(addprefix $(BINDIR)/,$(USER_PROGS))
-USER_OBJS := $(patsubst src/%.c,$(OBJDIR)/%.o,\
+USER_OBJS := $(patsubst %.c,$(OBJDIR)/%.o,\
 	$(USER_SINGLE_SRCS) $(USER_DIR_SRCS)) $(INIT_OBJS) $(BRKSH_OBJS) \
 	$(BRKCC_OBJS) $(BRKTEST_OBJS)
 DEPS := $(LIB_OBJS:.o=.d) $(USER_OBJS:.o=.d) $(LUA_OBJS:.o=.d)
@@ -169,7 +170,7 @@ DEPS += $(TEST_OBJS:.o=.d)
 CC_HOST := $(BUILD_ROOT)/cc-host
 CC_HOST_OBJDIR := $(BUILD_ROOT)/cc-host-obj
 CC_HOST_SRCS := $(sort $(wildcard $(BRKCC_DIR)/*.c))
-CC_HOST_OBJS := $(patsubst src/%.c,$(CC_HOST_OBJDIR)/%.o,$(CC_HOST_SRCS))
+CC_HOST_OBJS := $(patsubst %.c,$(CC_HOST_OBJDIR)/%.o,$(CC_HOST_SRCS))
 DEPS += $(CC_HOST_OBJS:.o=.d)
 
 .PHONY: all lib cc-host tests check check-in-system host-tests clean \
@@ -271,14 +272,14 @@ help:
 	@echo "  help         Show this help"
 	@echo ""
 	@echo "Layout:"
-	@echo "  src/cmd/*.c         single-file commands"
-	@echo "  src/init/           PID 1 (installed as /sbin/init)"
-	@echo "  src/brksh/          the shell (installed as sh)"
-	@echo "  src/brkcc/          the on-target C compiler (installed as cc)"
-	@echo "  src/brktest/        the libc/system test harness"
-	@echo "  src/libbrkc/        BRK C library"
-	@echo "  src/libbrkcmd/      BRK command helpers"
-	@echo "  src/include/        public headers"
+	@echo "  cmd/*.c             single-file commands"
+	@echo "  init/               PID 1 (installed as /sbin/init)"
+	@echo "  brksh/              the shell (installed as sh)"
+	@echo "  brkcc/              the on-target C compiler (installed as cc)"
+	@echo "  brktest/            the libc/system test harness"
+	@echo "  libbrkc/            BRK C library"
+	@echo "  libbrkcmd/          BRK command helpers"
+	@echo "  include/            public headers"
 	@echo "  vendor/lua/         vendored Lua 5.5.1 (installed as lua)"
 	@echo ""
 	@echo "Configurable variables:"
@@ -314,7 +315,7 @@ $(UAPI_STAMP): $(UAPI_SRC) $(UAPI_HEADERS) | $(BUILD_ROOT)
 $(USER_LD): $(USER_LD_SOURCE) | $(BUILD_ROOT)
 	$(CPP) $(CFLAGS) -P -o $@ $<
 
-$(OBJDIR)/%.o: src/%.c | $(UAPI_STAMP)
+$(OBJDIR)/%.o: %.c | $(UAPI_STAMP)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
@@ -322,7 +323,7 @@ $(OBJDIR)/tests/%.o: tests/%.c | $(UAPI_STAMP)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-$(CC_HOST_OBJDIR)/%.o: src/%.c $(UAPI_STAMP) | $(UAPI_STAMP)
+$(CC_HOST_OBJDIR)/%.o: %.c $(UAPI_STAMP) | $(UAPI_STAMP)
 	@mkdir -p $(dir $@)
 	$(HOSTCC) $(HOST_CFLAGS) -MMD -MP -c -o $@ $<
 
@@ -337,14 +338,14 @@ $(BINDIR)/$(1): $(OBJDIR)/cmd/$(1).o $(LIBUSER_A) $(USER_LD) | $(BINDIR)
 endef
 
 define ADD_DIR_PROGRAM
-$(BINDIR)/$(1): $(patsubst src/%.c,$(OBJDIR)/%.o,$(filter $(CMD_DIR)/$(1)/%,$(USER_DIR_SRCS))) $(LIBUSER_A) $(USER_LD) | $(BINDIR)
+$(BINDIR)/$(1): $(patsubst %.c,$(OBJDIR)/%.o,$(filter $(CMD_DIR)/$(1)/%,$(USER_DIR_SRCS))) $(LIBUSER_A) $(USER_LD) | $(BINDIR)
 	$(CC) $(CFLAGS) $(LDFLAGS) -T $(USER_LD) -o $$@ $$(filter $(OBJDIR)/%.o,$$^) $(LIBUSER_A) $(LDLIBS)
 endef
 
 $(foreach p,$(USER_SINGLE_PROGS),$(eval $(call ADD_SINGLE_PROGRAM,$(p))))
 $(foreach p,$(USER_DIR_PROGS),$(eval $(call ADD_DIR_PROGRAM,$(p))))
 
-# Link rules for the programs outside src/cmd.
+# Link rules for the programs outside cmd.
 $(BINDIR)/init: $(INIT_OBJS) $(LIBUSER_A) $(USER_LD) | $(BINDIR)
 	$(CC) $(CFLAGS) $(LDFLAGS) -T $(USER_LD) -o $@ \
 		$(filter $(OBJDIR)/%.o,$^) $(LIBUSER_A) $(LDLIBS)
