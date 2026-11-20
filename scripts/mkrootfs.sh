@@ -89,6 +89,9 @@ for d in bin sbin etc home root tmp boot dev proc sys run mnt media opt srv \
 	"$BRKFS" cp -r --parents "$ROOTFS_TREE/$d" "/$d" "$IMG"
 done
 
+# Programs installed outside /bin.  init is PID 1 and belongs under
+# /sbin; the diagnostic and admin tools live under /usr/bin.  Their
+# sources live outside src/cmd as well (src/init, src/brktest, ...).
 SYSTEM_BINS=(init)
 USR_BINS=(brktest clear df edit fallocate httpd httpget nc netstat stat
 	  tput)

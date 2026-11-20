@@ -9,6 +9,7 @@ configurable with `KERNEL_ROOT`.
 
 ```text
 src/
+├── init/               # the init program (PID 1, installed as /sbin/init)
 ├── brksh/              # the shell (installed as sh)
 ├── brkcc/              # on-target C compiler (installed as cc)
 ├── brktest/            # libc/system test harness

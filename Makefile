@@ -121,16 +121,20 @@ USER_DIR_PROGS := $(notdir $(USER_DIRS))
 USER_DIR_SRCS := $(sort $(foreach d,$(USER_DIRS),\
 	$(shell find $(d) -name '*.c' -print)))
 
-# The shell, the on-target C compiler and the test harness live outside
-# src/cmd because they are self-contained tools rather than single-purpose
-# commands.  The on-target binary names stay sh, cc and brktest: init
-# execs /bin/sh and the cc test suite runs cc.
+# init, the shell, the on-target C compiler and the test harness live
+# outside src/cmd because they are self-contained system programs rather
+# than single-purpose commands.  The on-target binary names stay init,
+# sh, cc and brktest: the rootfs boots /sbin/init, which execs /bin/sh,
+# and the cc test suite runs cc.
+INIT_DIR := src/init
 BRKSH_DIR := src/brksh
 BRKCC_DIR := src/brkcc
 BRKTEST_DIR := src/brktest
+INIT_SRCS := $(sort $(shell find $(INIT_DIR) -name '*.c' -print))
 BRKSH_SRCS := $(sort $(shell find $(BRKSH_DIR) -name '*.c' -print))
 BRKCC_SRCS := $(sort $(shell find $(BRKCC_DIR) -name '*.c' -print))
 BRKTEST_SRCS := $(sort $(shell find $(BRKTEST_DIR) -name '*.c' -print))
+INIT_OBJS := $(patsubst src/%.c,$(OBJDIR)/%.o,$(INIT_SRCS))
 BRKSH_OBJS := $(patsubst src/%.c,$(OBJDIR)/%.o,$(BRKSH_SRCS))
 BRKCC_OBJS := $(patsubst src/%.c,$(OBJDIR)/%.o,$(BRKCC_SRCS))
 BRKTEST_OBJS := $(patsubst src/%.c,$(OBJDIR)/%.o,$(BRKTEST_SRCS))
@@ -145,11 +149,12 @@ LUA_SRCS := $(sort $(filter-out $(LUA_DIR)/luac.c,\
 	$(wildcard $(LUA_DIR)/*.c)))
 LUA_OBJS := $(patsubst $(LUA_DIR)/%.c,$(OBJDIR)/vendor/lua/%.o,$(LUA_SRCS))
 
-USER_PROGS := $(sort $(USER_SINGLE_PROGS) $(USER_DIR_PROGS)) sh cc brktest lua
+USER_PROGS := $(sort $(USER_SINGLE_PROGS) $(USER_DIR_PROGS)) \
+	init sh cc brktest lua
 USER_BINS := $(addprefix $(BINDIR)/,$(USER_PROGS))
 USER_OBJS := $(patsubst src/%.c,$(OBJDIR)/%.o,\
-	$(USER_SINGLE_SRCS) $(USER_DIR_SRCS)) $(BRKSH_OBJS) $(BRKCC_OBJS) \
-	$(BRKTEST_OBJS)
+	$(USER_SINGLE_SRCS) $(USER_DIR_SRCS)) $(INIT_OBJS) $(BRKSH_OBJS) \
+	$(BRKCC_OBJS) $(BRKTEST_OBJS)
 DEPS := $(LIB_OBJS:.o=.d) $(USER_OBJS:.o=.d) $(LUA_OBJS:.o=.d)
 
 # libc tests are normal libuser-linked programs under tests/libc.
@@ -252,6 +257,7 @@ help:
 	@echo ""
 	@echo "Layout:"
 	@echo "  src/cmd/*.c         single-file commands"
+	@echo "  src/init/           PID 1 (installed as /sbin/init)"
 	@echo "  src/brksh/          the shell (installed as sh)"
 	@echo "  src/brkcc/          the on-target C compiler (installed as cc)"
 	@echo "  src/brktest/        the libc/system test harness"
@@ -322,7 +328,11 @@ endef
 $(foreach p,$(USER_SINGLE_PROGS),$(eval $(call ADD_SINGLE_PROGRAM,$(p))))
 $(foreach p,$(USER_DIR_PROGS),$(eval $(call ADD_DIR_PROGRAM,$(p))))
 
-# Link rules for the tools outside src/cmd.
+# Link rules for the programs outside src/cmd.
+$(BINDIR)/init: $(INIT_OBJS) $(LIBUSER_A) $(USER_LD) | $(BINDIR)
+	$(CC) $(CFLAGS) $(LDFLAGS) -T $(USER_LD) -o $@ \
+		$(filter $(OBJDIR)/%.o,$^) $(LIBUSER_A) $(LDLIBS)
+
 $(BINDIR)/sh: $(BRKSH_OBJS) $(LIBUSER_A) $(USER_LD) | $(BINDIR)
 	$(CC) $(CFLAGS) $(LDFLAGS) -T $(USER_LD) -o $@ \
 		$(filter $(OBJDIR)/%.o,$^) $(LIBUSER_A) $(LDLIBS)
