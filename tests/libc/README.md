@@ -1,6 +1,6 @@
 # libc tests
 
-These tests are linked against `libuser.a`, so they exercise the libc directly
+These tests are linked against `libc.a`, so they exercise the libc directly
 instead of being compiled by the on-target `cc`.
 
 Build the test binaries:

@@ -8,33 +8,35 @@ configurable with `KERNEL_ROOT`.
 ## Layout
 
 ```text
-include/                # public headers (include/brk/cmd.h: command helper API)
-libbrkc/                # BRK C library (libc API)
-libbrkc/math/           # double-precision libm (vendored from musl)
-libbrkcmd/              # command helper library (brk_cmd_* API)
-cmd/                    # single-file user commands
-brksh/                  # the shell (installed as sh)
-brkcc/                  # on-target C compiler (installed as cc)
-brktest/                # libc/system test harness
-init/                   # the init program (PID 1, installed as /sbin/init)
-user.ld.S               # user program linker script
+bin/                    # commands installed under /bin (sh/, cc/, *.c)
+sbin/                   # commands installed under /sbin (init/)
+usr/
+├── bin/                # commands installed under /usr/bin (brktest/, *.c)
+├── include/            # public headers (brk/cmd.h, cc.h, POSIX headers)
+└── lib/
+    ├── libc/           # BRK C library (libc API; math/ vendored from musl)
+    └── libcmd/         # command helper library (brk_cmd_* API)
 vendor/
 └── lua/                # vendored Lua 5.5.1 (installed as lua)
-tests/
-├── host/               # host-compiled float validation (math, strtod, printf)
-├── cc/                 # sources compiled by the on-target cc
-├── libc/               # tests linked against libuser.a
-└── lua/                # smoke test run by the vendored interpreter
+tests/                  # host float validation + cc/libc/lua suites
 etc/                    # copied into the rootfs as /etc
 scripts/                # rootfs packaging and host-side utilities
+user.ld.S               # user program linker script
 ```
 
-The `libbrkc` and `libbrkcmd` sources are archived together into a single
-`libuser.a`; every user program links `libuser.a` and nothing else.
-`make lib` builds it.
+The command tree mirrors the root filesystem: a command under `bin/` is
+installed to `/bin`, one under `usr/bin/` to `/usr/bin`, `sbin/` to
+`/sbin`.  There is no packaging whitelist—the location *is* the rule.
+`vendor/`, `tests/` and `scripts/` are host-side assets organized by
+role instead of install location.
 
-A command is either a single source file (`cmd/foo.c`) or a directory of
-sources (`cmd/foo/**/*.c`).  The build system links all sources in a
+The `libc` and `libcmd` sources are archived into separate `libc.a` and
+`libcmd.a` archives; every user program links both.  `make lib` builds
+them.  A future on-target toolchain would install `usr/include` and
+the archives under `/usr` the same way.
+
+A command is either a single source file (`bin/foo.c`) or a directory
+of sources (`bin/foo/**/*.c`).  The build system links all sources in a
 command directory into a single executable named after that directory.
 
 ## Requirements
@@ -53,7 +55,7 @@ command directory into a single executable named after that directory.
 # Build all user commands
 make
 
-# Build libuser.a (libbrkc + libbrkcmd) only
+# Build libc.a and libcmd.a only
 make lib
 
 # Build the host-side version of cc
@@ -119,13 +121,13 @@ image is written to `build/rootfs.img` by default.
 
 The rootfs script builds the user commands and libc tests, then installs:
 
-- `init` under `/sbin`
-- test and system tools such as `brktest`, `stat` and `httpd` under `/usr/bin`
-- other commands under `/bin`, plus `test` a second time as `/bin/[`
+- commands at their mirrored paths: `bin/` under `/bin`, `sbin/` under
+  `/sbin`, `usr/bin/` under `/usr/bin`
+- `test` a second time as `/bin/[`, and vendored `lua` under `/bin/lua`
 - `/etc` configuration files
 - `tests/` under `/home/tests`
 - libc test binaries under `/home/tests/libc`
-- `brkcc/include/cc.h` under `/usr/include/cc.h`
+- `usr/include/cc.h` under `/usr/include/cc.h`
 
 `KERNEL_ROOT` and `TOOLS_ROOT` can be overridden when the kernel or
 `brk-tools` repositories are checked out elsewhere.
@@ -150,7 +152,7 @@ The suites live in different places because they run differently:
 
 | Suite                           | Sources       | Runs        | Entry point |
 | ------------------------------- | ------------- | ----------- | ----------- |
-| libc/system functional + stress | `brktest/`    | inside BRK  | `/usr/bin/brktest all` |
+| libc/system functional + stress | `usr/bin/brktest/` | inside BRK | `/usr/bin/brktest all` |
 | libc unit tests                 | `tests/libc`  | inside BRK  | `/home/tests/libc/alloc` |
 | cc tests                        | `tests/cc`    | inside BRK  | compile with the on-target cc |
 | Lua smoke test                  | `tests/lua`   | inside BRK  | `lua /home/tests/lua/smoke.lua` |
@@ -171,7 +173,7 @@ TAP-style suites inside BRK:
 /usr/bin/brktest all
 ```
 
-See [`brktest/README.md`](brktest/README.md) for suite names,
+See [`usr/bin/brktest/README.md`](usr/bin/brktest/README.md) for suite names,
 options and stress-test usage.  `scripts/run-brktest.sh` boots BRK in QEMU,
 runs a target inside the guest and reports whether it passed:
 
@@ -194,11 +196,12 @@ cc /home/tests/cc/multi_a.c /home/tests/cc/multi_b.c -o /tmp/multi
 
 See [`tests/cc/README.md`](tests/cc/README.md) for the full list and expected
 outputs.  The compiler implementation is documented in
-[`brkcc/README.md`](brkcc/README.md).
+[`bin/cc/README.md`](bin/cc/README.md).
 
 ### libc tests
 
-Libc tests are linked into `libuser` programs and installed as executables:
+Libc tests are ordinary programs linked against `libc.a` and installed as
+executables:
 
 ```sh
 /home/tests/libc/alloc
@@ -211,7 +214,8 @@ coalescing, invalid sizes and concurrent allocation.  See
 ### Lua
 
 `vendor/lua` hosts Lua 5.5.1 unmodified; the build links it statically
-against `libuser.a` and installs it as `/bin/lua`.  It exercises the whole
+against `libc.a` and `libcmd.a` and installs it as `/bin/lua`.  It exercises
+the whole
 floating-point stack: the vendored musl-derived libm, correctly rounded
 `strtod` and printf conversions, `setjmp`-based error handling and the
 kernel's FP context switching.  The in-system smoke test:
@@ -224,7 +228,7 @@ lua /home/tests/lua/smoke.lua
 
 The math, strtod and printf-float engines are pure arithmetic with no OS
 dependencies, so their host behavior transfers to the riscv64 build
-unchanged.  `tests/host/run.sh` compiles them straight from the libbrkc
+unchanged.  `tests/host/run.sh` compiles them straight from the libc
 sources and compares against glibc: math within 2 ULP, strtod for value,
 endptr and errno agreement, printf byte-for-byte with `%a` checked by
 round-trip.  No kernel boot is needed:

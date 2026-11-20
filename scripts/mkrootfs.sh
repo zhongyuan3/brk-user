@@ -89,34 +89,32 @@ for d in bin sbin etc home root tmp boot dev proc sys run mnt media opt srv \
 	"$BRKFS" cp -r --parents "$ROOTFS_TREE/$d" "/$d" "$IMG"
 done
 
-# Programs installed outside /bin.  init is PID 1 and belongs under
-# /sbin; the diagnostic and admin tools live under /usr/bin.  Their
-# sources live outside cmd/ as well (init/, brktest/, ...).
-SYSTEM_BINS=(init)
-USR_BINS=(brktest clear df edit fallocate httpd httpget nc netstat stat
-	  tput)
+# The command tree mirrors the root filesystem: every single source
+# file or directory under bin/, usr/bin/ and sbin/ is a command, and
+# its location is its install path.  There is no packaging whitelist.
+install_cmds()
+{
+	local entry name
 
-for name in "${SYSTEM_BINS[@]}"; do
-	"$BRKFS" cp --parents "$BIN_DIR/$name" "/sbin/$name" "$IMG"
-done
+	for entry in "$USER_ROOT/$1"/*; do
+		name=$(basename "$entry")
+		if [[ $name == *.c ]]; then
+			name=${name%.c}
+		elif [[ ! -d $entry ]]; then
+			continue
+		fi
+		"$BRKFS" cp --parents "$BIN_DIR/$name" "$2/$name" "$IMG"
+	done
+}
 
-for name in "${USR_BINS[@]}"; do
-	"$BRKFS" cp --parents "$BIN_DIR/$name" "/usr/bin/$name" "$IMG"
-done
+install_cmds bin /bin
+install_cmds sbin /sbin
+install_cmds usr/bin /usr/bin
 
-mapfile -t bins < <(
-	make -C "$USER_ROOT" -s list-progs KERNEL_ROOT="$KERNEL_ROOT" \
-		BUILD_ROOT="$BUILD_ROOT" \
-		${CROSS_COMPILE:+CROSS_COMPILE="$CROSS_COMPILE"}
-)
-for name in "${bins[@]}"; do
-	case " ${SYSTEM_BINS[*]} ${USR_BINS[*]} " in
-	*" $name "*)
-		continue
-		;;
-	esac
-	"$BRKFS" cp --parents "$BIN_DIR/$name" "/bin/$name" "$IMG"
-done
+# The Lua interpreter is vendored under vendor/lua, organized by origin
+# rather than by install location; it installs under /bin like the
+# other user commands.
+"$BRKFS" cp --parents "$BIN_DIR/lua" "/bin/lua" "$IMG"
 
 # `[` is a second name for the test command, as on classic Unix; ship it
 # as a copy of the test binary instead of a dedicated wrapper source.
@@ -136,8 +134,8 @@ if [[ -d $USER_ROOT/tests ]]; then
 	"$BRKFS" cp -r "$USER_ROOT/tests" "/home/tests" "$IMG"
 fi
 
-# libc tests are built as normal libuser-linked executables; install those
-# alongside their sources so they can be run directly inside BRK.
+# libc tests are built as normal library-linked executables; install
+# those alongside their sources so they can be run directly inside BRK.
 if [[ -d $BUILD_ROOT/tests/libc ]]; then
 	for test_bin in "$BUILD_ROOT"/tests/libc/*; do
 		[[ -f $test_bin ]] || continue
@@ -146,11 +144,12 @@ if [[ -d $BUILD_ROOT/tests/libc ]]; then
 	done
 fi
 
-# brkcc/include/cc.h is the runtime header for programs compiled by
-# the on-target cc: a raw-syscall subset with no libuser dependency.  It
-# is the only header installed into the image under /usr/include.
-if [[ -f $USER_ROOT/brkcc/include/cc.h ]]; then
-	"$BRKFS" cp "$USER_ROOT/brkcc/include/cc.h" "/usr/include/cc.h" "$IMG"
+# usr/include/cc.h is the runtime header for programs compiled by the
+# on-target cc: a raw-syscall subset with no libc dependency.  It is
+# the only header installed into the image so far; a future on-target
+# toolchain would install all of usr/include the same way.
+if [[ -f $USER_ROOT/usr/include/cc.h ]]; then
+	"$BRKFS" cp "$USER_ROOT/usr/include/cc.h" "/usr/include/cc.h" "$IMG"
 fi
 
 for doc in README.md README.cn.md LICENSE; do

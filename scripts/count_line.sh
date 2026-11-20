@@ -1,7 +1,6 @@
 #!/bin/bash
 
-DEFAULT_DIRS=("./include" "./libbrkc" "./libbrkcmd" "./cmd" "./brksh" \
-    "./brkcc" "./brktest" "./init")
+DEFAULT_DIRS=("./bin" "./sbin" "./usr/bin" "./usr/lib" "./usr/include")
 
 if [ $# -gt 0 ]; then
     target_dirs=("$@")
