@@ -158,6 +158,11 @@ The suites live in different places because they run differently:
 | Lua smoke test                  | `tests/lua`   | inside BRK  | `lua /home/tests/lua/smoke.lua` |
 | float engine validation         | `tests/host`  | on the host | `make host-tests` |
 
+Two targets wrap these entry points: `make check` builds the libc tests
+and runs the host float validation without booting anything, and
+`make check-in-system` boots BRK in QEMU and runs the brktest suites end
+to end (it rebuilds the kernel and rootfs as needed).
+
 ### brktest
 
 The libc and system test harness is installed under `/usr/bin` and runs

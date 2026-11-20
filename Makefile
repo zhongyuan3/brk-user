@@ -172,8 +172,9 @@ CC_HOST_SRCS := $(sort $(wildcard $(BRKCC_DIR)/*.c))
 CC_HOST_OBJS := $(patsubst src/%.c,$(CC_HOST_OBJDIR)/%.o,$(CC_HOST_SRCS))
 DEPS += $(CC_HOST_OBJS:.o=.d)
 
-.PHONY: all lib cc-host tests host-tests clean help hooks list-progs kernel \
-	rootfs run debug gdb-server gdb-client dtb dts
+.PHONY: all lib cc-host tests check check-in-system host-tests clean \
+	help hooks list-progs kernel rootfs run debug gdb-server gdb-client \
+	dtb dts
 
 all: $(USER_BINS)
 
@@ -182,6 +183,18 @@ lib: $(LIBUSER_A)
 cc-host: $(CC_HOST)
 
 tests: $(TEST_BINS)
+
+# One entry point for validation.  check covers everything that runs
+# without a kernel boot: the libc tests are built (they execute inside
+# BRK) and the float engines are compared against glibc on the host.
+check: tests host-tests
+
+# Boots BRK in QEMU through scripts/run-brktest.sh, runs the brktest
+# suites inside the guest and reports pass/fail.  Rebuilds the kernel
+# and rootfs as needed.
+check-in-system:
+	$(Q)KERNEL_ROOT="$(abspath $(KERNEL_ROOT))" \
+		CROSS_COMPILE="$(CROSS_COMPILE)" scripts/run-brktest.sh all
 
 # Host-side validation of the libbrkc floating-point stack: the engines
 # are pure arithmetic, so host results transfer to the riscv64 build.
@@ -242,6 +255,8 @@ help:
 	@echo "  lib          Build libuser.a (libbrkc + libbrkcmd)"
 	@echo "  cc-host      Build the host-side cc helper"
 	@echo "  tests        Build libc tests under tests/libc"
+	@echo "  check        Build libc tests and run the host float validation"
+	@echo "  check-in-system   Boot BRK in QEMU and run the brktest suites"
 	@echo "  host-tests   Run the host float validation under tests/host"
 	@echo "  list-progs   Print the names of all user programs"
 	@echo "  kernel       Build the kernel (KERNEL_BUILD=debug|release)"
