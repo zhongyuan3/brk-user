@@ -27,6 +27,10 @@ tests/
 └── lua/                # smoke test run by the vendored interpreter
 ```
 
+The `libbrkc` and `libbrkcmd` sources are archived together into a single
+`libuser.a`; every user program links `libuser.a` and nothing else.
+`make lib` builds it.
+
 A command is either a single source file (`src/cmd/foo.c`) or a directory of
 sources (`src/cmd/foo/**/*.c`).  The build system links all sources in a
 command directory into a single executable named after that directory.
@@ -47,7 +51,7 @@ command directory into a single executable named after that directory.
 # Build all user commands
 make
 
-# Build libuser.a only
+# Build libuser.a (libbrkc + libbrkcmd) only
 make lib
 
 # Build the host-side version of cc

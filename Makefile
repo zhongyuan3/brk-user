@@ -228,7 +228,7 @@ hooks:
 help:
 	@echo "Targets:"
 	@echo "  all          Build all user programs (default)"
-	@echo "  lib          Build libuser.a only"
+	@echo "  lib          Build libuser.a (libbrkc + libbrkcmd)"
 	@echo "  cc-host      Build the host-side cc helper"
 	@echo "  tests        Build libc tests under tests/libc"
 	@echo "  list-progs   Print the names of all user programs"
