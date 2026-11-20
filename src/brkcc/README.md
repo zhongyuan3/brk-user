@@ -225,6 +225,7 @@ In addition, the kernel currently does not save floating-point context, so gener
 - `codegen.c`: stack-based evaluation; expression results are placed in `a0`, and lvalue addresses are placed in `a0`
 - `link.c`: merges text/data/bss from multiple units, resolves symbols, and patches relocations
 - `main.c`: command-line driver and ELF output entry point
+- `include/cc.h`: the runtime header for compiled programs—a raw-syscall subset with no `libuser` dependency; installed into the rootfs as `/usr/include/cc.h`, the only userland header the image ships
 
 To avoid the RISC-V `B-type` branch's ±4KB range limitation, conditional jumps are uniformly generated as:
 

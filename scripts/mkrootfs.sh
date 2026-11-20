@@ -143,6 +143,9 @@ if [[ -d $BUILD_ROOT/tests/libc ]]; then
 	done
 fi
 
+# src/brkcc/include/cc.h is the runtime header for programs compiled by
+# the on-target cc: a raw-syscall subset with no libuser dependency.  It
+# is the only header installed into the image under /usr/include.
 if [[ -f $USER_ROOT/src/brkcc/include/cc.h ]]; then
 	"$BRKFS" cp "$USER_ROOT/src/brkcc/include/cc.h" "/usr/include/cc.h" "$IMG"
 fi
