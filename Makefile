@@ -28,7 +28,7 @@ endif
 endif
 
 KERNEL_ROOT ?= ../brk
-UAPI_SRC := $(KERNEL_ROOT)/src/include/uapi
+UAPI_SRC := $(KERNEL_ROOT)/include/uapi
 UAPI_DIR := $(BUILD_ROOT)/include/uapi
 UAPI_STAMP := $(UAPI_DIR)/.stamp
 UAPI_HEADERS := $(wildcard $(UAPI_SRC)/*.h)
