@@ -17,7 +17,7 @@ fi
 LOG=$(mktemp "${TMPDIR:-/tmp}/brktest.XXXXXX")
 trap 'rm -f "$LOG"' EXIT INT TERM
 
-cd "$KERNEL_ROOT"
+cd "$USER_ROOT"
 set +e
 {
 	sleep "$BOOT_DELAY"
@@ -30,7 +30,7 @@ set +e
 	printf 'exit\n'
 	sleep 5
 } | timeout $((BOOT_DELAY + RUN_TIME + 20)) \
-	make run CROSS_COMPILE="$CROSS_COMPILE" 2>&1 | tee "$LOG"
+	make run CROSS_COMPILE="$CROSS_COMPILE" KERNEL_ROOT="$KERNEL_ROOT" 2>&1 | tee "$LOG"
 set -e
 
 if grep -q '^not ok ' "$LOG"; then

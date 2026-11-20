@@ -38,6 +38,8 @@ command directory into a single executable named after that directory.
 - The BRK kernel source tree, by default at `../brk`
 - `brk-tools` for rootfs image creation, by default at `../brk-tools`
 - A host C compiler for `cc-host`
+- GDB for the GDB targets
+- `dtc` for the device-tree source target
 
 ## Build
 
@@ -57,6 +59,9 @@ make tests
 # List all discovered commands
 make list-progs
 
+# Build the kernel (debug by default)
+make kernel CROSS_COMPILE=riscv64-unknown-elf-
+
 # Show targets and configurable variables
 make help
 ```
@@ -66,24 +71,45 @@ Useful variables:
 | Variable              | Description                                      |
 | --------------------- | ------------------------------------------------ |
 | `CROSS_COMPILE`       | Cross-toolchain prefix                           |
-| `BUILD_ROOT`          | Build directory, default `build`                 |
-| `KERNEL_ROOT`         | Kernel tree providing UAPI headers, default `../brk` |
+| `BUILD_ROOT`          | Userland/rootfs build directory, default `build` |
+| `KERNEL_ROOT`         | Kernel tree, default `../brk`                    |
+| `KERNEL_ARCH`         | Kernel architecture, default `riscv`             |
+| `KERNEL_BUILD`        | Kernel build type, default `debug`               |
+| `KERNEL_BUILD_ROOT`   | Kernel build directory, derived from the above   |
+| `KERNEL_MAKE_ARGS`    | Extra arguments passed to the kernel make        |
+| `ROOTFS_IMG`          | Rootfs image path, default `build/rootfs.img`    |
+| `M` / `SMP`           | QEMU RAM size / CPU count, defaults `128M` / `3` |
+| `QEMU` / `GDB`        | Tool paths used by the boot/debug targets        |
+| `EXTRA_QEMU_OPTS`     | Extra QEMU arguments                             |
 | `HOSTCC`              | Host C compiler for `cc-host`                    |
 | `LIBGCC`              | Optional libgcc fallback                         |
 
 The build copies the kernel UAPI headers from
-`$(KERNEL_ROOT)/src/include/uapi` into the private build include directory.
+`$(KERNEL_ROOT)/include/uapi` into the private build include directory.
 Kernel implementation headers are not exposed to userland.
 
 ## Rootfs and QEMU
 
-The rootfs is normally built through the kernel tree, which invokes
-`scripts/mkrootfs.sh`:
+The rootfs, QEMU boot and GDB workflows live in this repository:
 
 ```sh
-make -C ../brk rootfs CROSS_COMPILE=riscv64-unknown-elf-
-make -C ../brk run CROSS_COMPILE=riscv64-unknown-elf-
+# Build or force-regenerate the rootfs image
+make rootfs CROSS_COMPILE=riscv64-unknown-elf-
+
+# Build kernel + rootfs and boot in QEMU
+make run CROSS_COMPILE=riscv64-unknown-elf-
+
+# Additional boot/debug helpers
+make debug CROSS_COMPILE=riscv64-unknown-elf-
+make gdb-server CROSS_COMPILE=riscv64-unknown-elf-
+make gdb-client CROSS_COMPILE=riscv64-unknown-elf-
+make dtb
+make dts
 ```
+
+`run`, `debug` and `gdb-server` build the kernel through `KERNEL_ROOT` before
+starting QEMU. Use `KERNEL_BUILD=release` to boot a release kernel. The rootfs
+image is written to `build/rootfs.img` by default.
 
 The rootfs script builds the user commands and libc tests, then installs:
 

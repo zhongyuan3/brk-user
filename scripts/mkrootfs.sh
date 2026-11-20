@@ -17,7 +17,11 @@ esac
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 USER_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
-BUILD_ROOT="$USER_ROOT/build"
+BUILD_ROOT=${BUILD_ROOT:-"$USER_ROOT/build"}
+case $BUILD_ROOT in
+/*) ;;
+*) BUILD_ROOT="$USER_ROOT/$BUILD_ROOT" ;;
+esac
 BIN_DIR="$BUILD_ROOT/bin"
 ROOTFS_TREE="$BUILD_ROOT/rootfs-tree"
 

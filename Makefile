@@ -2,6 +2,12 @@ BUILD_ROOT ?= build
 OBJDIR := $(BUILD_ROOT)/obj
 BINDIR := $(BUILD_ROOT)/bin
 
+ifeq ($(V),1)
+Q :=
+else
+Q := @
+endif
+
 # The hooks target only touches Git configuration and must not require a
 # cross compiler.
 ifneq ($(MAKECMDGOALS),hooks)
@@ -28,10 +34,44 @@ endif
 endif
 
 KERNEL_ROOT ?= ../brk
+KERNEL_ARCH ?= riscv
+KERNEL_BUILD ?= debug
+KERNEL_BUILD_ROOT ?= $(KERNEL_ROOT)/build/$(KERNEL_ARCH)/$(KERNEL_BUILD)
+KERNEL_ELF := $(KERNEL_BUILD_ROOT)/brk
+KERNEL_MAKE_ARGS ?=
+
 UAPI_SRC := $(KERNEL_ROOT)/include/uapi
 UAPI_DIR := $(BUILD_ROOT)/include/uapi
 UAPI_STAMP := $(UAPI_DIR)/.stamp
 UAPI_HEADERS := $(wildcard $(UAPI_SRC)/*.h)
+
+ROOTFS_IMG ?= $(BUILD_ROOT)/rootfs.img
+MKROOTFS := scripts/mkrootfs.sh
+M ?= 128M
+SMP ?= 3
+QEMU ?= qemu-system-riscv64
+GDB ?= $(shell command -v gdb-multiarch >/dev/null 2>&1 && echo gdb-multiarch || echo $(CROSS_COMPILE)gdb)
+EXTRA_QEMU_OPTS ?=
+
+# Inputs that determine the rootfs contents.  Rebuild the image when the
+# packaging script, userland sources, headers or binaries change.
+ROOTFS_DEPS := $(MKROOTFS) Makefile $(UAPI_HEADERS) \
+	$(wildcard $(BINDIR)/*) \
+	$(shell find src etc tests vendor -type f 2>/dev/null)
+
+QEMU_OPTS += -machine virt -nographic
+QEMU_OPTS += -m $(M)
+QEMU_OPTS += -smp $(SMP)
+QEMU_OPTS += -bios default
+QEMU_OPTS += -drive file=$(ROOTFS_IMG),if=none,format=raw,id=x0
+QEMU_OPTS += -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
+QEMU_OPTS += -global virtio-mmio.force-legacy=false
+QEMU_OPTS += -netdev user,id=net0
+QEMU_OPTS += -device virtio-net-device,netdev=net0,bus=virtio-mmio-bus.1
+QEMU_OPTS += $(EXTRA_QEMU_OPTS)
+
+DTB := $(BUILD_ROOT)/qemu_virt.dtb
+DTS := $(BUILD_ROOT)/qemu_virt.dts
 
 CC := $(CROSS_COMPILE)gcc
 CPP := $(CC) -E
@@ -127,7 +167,8 @@ CC_HOST_SRCS := $(sort $(wildcard $(BRKCC_DIR)/*.c))
 CC_HOST_OBJS := $(patsubst src/%.c,$(CC_HOST_OBJDIR)/%.o,$(CC_HOST_SRCS))
 DEPS += $(CC_HOST_OBJS:.o=.d)
 
-.PHONY: all lib cc-host tests clean help hooks list-progs
+.PHONY: all lib cc-host tests clean help hooks list-progs kernel \
+	rootfs run debug gdb-server gdb-client dtb dts
 
 all: $(USER_BINS)
 
@@ -140,6 +181,46 @@ tests: $(TEST_BINS)
 list-progs:
 	@printf '%s\n' $(USER_PROGS)
 
+kernel:
+	$(Q)$(MAKE) -C $(KERNEL_ROOT) ARCH=$(KERNEL_ARCH) BUILD=$(KERNEL_BUILD) \
+		CROSS_COMPILE=$(CROSS_COMPILE) $(KERNEL_MAKE_ARGS)
+
+rootfs:
+	$(Q)rm -f $(ROOTFS_IMG)
+	$(Q)KERNEL_ROOT="$(abspath $(KERNEL_ROOT))" \
+		BUILD_ROOT="$(abspath $(BUILD_ROOT))" \
+		$(MKROOTFS) "$(ROOTFS_IMG)"
+
+$(ROOTFS_IMG): $(ROOTFS_DEPS)
+	$(Q)KERNEL_ROOT="$(abspath $(KERNEL_ROOT))" \
+		BUILD_ROOT="$(abspath $(BUILD_ROOT))" \
+		$(MKROOTFS) "$@"
+
+run: $(ROOTFS_IMG) kernel
+	$(Q)$(QEMU) $(QEMU_OPTS) -kernel $(KERNEL_ELF)
+
+debug: $(ROOTFS_IMG) kernel
+	$(Q)$(QEMU) $(QEMU_OPTS) -kernel $(KERNEL_ELF) -d int
+
+gdb-server: $(ROOTFS_IMG) kernel
+	$(Q)$(QEMU) $(QEMU_OPTS) -S -s -kernel $(KERNEL_ELF)
+
+gdb-client: kernel
+	$(Q)$(GDB) --tui -quiet -ex "target remote :1234" $(KERNEL_ELF)
+
+dtb: $(DTB)
+
+$(DTB):
+	$(Q)mkdir -p $(dir $@)
+	$(Q)$(QEMU) -M virt,dumpdtb=$@
+
+dts: $(DTS)
+
+$(DTS): $(DTB)
+	$(Q)command -v dtc >/dev/null 2>&1 || \
+		{ echo "error: dtc not found in PATH" >&2; exit 1; }
+	$(Q)dtc -I dtb -O dts $< -o $@
+
 hooks:
 	@git config core.hooksPath .githooks
 	@echo "  HOOK    core.hooksPath=.githooks"
@@ -151,6 +232,13 @@ help:
 	@echo "  cc-host      Build the host-side cc helper"
 	@echo "  tests        Build libc tests under tests/libc"
 	@echo "  list-progs   Print the names of all user programs"
+	@echo "  kernel       Build the kernel (KERNEL_BUILD=debug|release)"
+	@echo "  rootfs       Build the root filesystem image"
+	@echo "  run          Build kernel + rootfs and boot in QEMU"
+	@echo "  debug        Boot with QEMU interrupt tracing"
+	@echo "  gdb-server   Start QEMU with a GDB stub"
+	@echo "  gdb-client   Connect GDB to localhost:1234"
+	@echo "  dtb / dts    Dump the QEMU virt device tree"
 	@echo "  hooks        Enable the Conventional Commit hook"
 	@echo "  clean        Remove $(BUILD_ROOT)"
 	@echo "  help         Show this help"
@@ -169,6 +257,15 @@ help:
 	@echo "  CROSS_COMPILE=<prefix>"
 	@echo "  BUILD_ROOT=<path>       default: build"
 	@echo "  KERNEL_ROOT=<path>      default: ../brk"
+	@echo "  KERNEL_ARCH=<arch>      default: riscv"
+	@echo "  KERNEL_BUILD=<type>     default: debug (debug|release)"
+	@echo "  KERNEL_BUILD_ROOT=<path>  default: KERNEL_ROOT/build/ARCH/BUILD"
+	@echo "  KERNEL_MAKE_ARGS=...    extra arguments passed to the kernel make"
+	@echo "  ROOTFS_IMG=<path>       default: BUILD_ROOT/rootfs.img"
+	@echo "  M=<size>                default: 128M"
+	@echo "  SMP=<n>                 default: 3"
+	@echo "  QEMU=<path>             default: qemu-system-riscv64"
+	@echo "  GDB=<path>"
 	@echo "  HOSTCC=<cc>             default: cc"
 
 $(BUILD_ROOT):

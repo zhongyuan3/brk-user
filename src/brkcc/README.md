@@ -13,8 +13,8 @@ make -C brk-user
 Regenerate the rootfs (this installs `cc` to `/bin/cc`, `src/brkcc/include/cc.h` to `/usr/include/cc.h`, and copies `tests/` to `/home/tests`):
 
 ```sh
-make -C brk rootfs CROSS_COMPILE=riscv64-unknown-elf-
-make -C brk run CROSS_COMPILE=riscv64-unknown-elf-
+make -C brk-user rootfs CROSS_COMPILE=riscv64-unknown-elf-
+make -C brk-user run CROSS_COMPILE=riscv64-unknown-elf-
 ```
 
 In the BRK shell:

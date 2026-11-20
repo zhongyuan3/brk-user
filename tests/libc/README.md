@@ -13,8 +13,8 @@ The binaries are written to `brk-user/build/tests/libc/`. Regenerating the
 rootfs also builds and installs them:
 
 ```sh
-make -C brk rootfs
-make -C brk run
+make -C brk-user rootfs
+make -C brk-user run
 ```
 
 Inside BRK, run the allocator test:
