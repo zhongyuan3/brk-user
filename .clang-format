@@ -1,15 +1,13 @@
-# SPDX-License-Identifier: GPL-2.0
+# clang-format configuration for the BRK userland.
 #
-# clang-format configuration file. Intended for clang-format >= 11.
+# The code follows Linux kernel formatting conventions: 8-column tabs,
+# 80-column limit, function braces on their own line.  The settings
+# below were taken from the kernel's clang-format configuration and
+# reduced to the keys that apply to C.
 #
-# For more information, see:
-#
-#   Documentation/dev-tools/clang-format.rst
-#   https://clang.llvm.org/docs/ClangFormat.html
-#   https://clang.llvm.org/docs/ClangFormatStyleOptions.html
-#
+# SPDX-License-Identifier: MIT
+
 ---
-AccessModifierOffset: -4
 AlignAfterOpenBracket: Align
 AlignConsecutiveAssignments: false
 AlignConsecutiveDeclarations: false
@@ -25,7 +23,6 @@ AllowShortLoopsOnASingleLine: false
 AlwaysBreakAfterDefinitionReturnType: None
 AlwaysBreakAfterReturnType: None
 AlwaysBreakBeforeMultilineStrings: false
-AlwaysBreakTemplateDeclarations: false
 BinPackArguments: true
 BinPackParameters: true
 BraceWrapping:
@@ -46,40 +43,13 @@ BraceWrapping:
     SplitEmptyNamespace: true
 BreakBeforeBinaryOperators: None
 BreakBeforeBraces: Custom
-BreakBeforeInheritanceComma: false
 BreakBeforeTernaryOperators: false
-BreakConstructorInitializersBeforeComma: false
-BreakConstructorInitializers: BeforeComma
-BreakAfterJavaFieldAnnotations: false
 BreakStringLiterals: false
 ColumnLimit: 80
 CommentPragmas: "^ IWYU pragma:"
-CompactNamespaces: false
-ConstructorInitializerAllOnOneLineOrOnePerLine: false
-ConstructorInitializerIndentWidth: 8
-ContinuationIndentWidth: 8
 Cpp11BracedListStyle: false
 DerivePointerAlignment: false
-DisableFormat: false
 ExperimentalAutoDetectBinPacking: false
-FixNamespaceComments: false
-
-ForEachMacros:
-    - "list_for_each"
-    - "list_for_each_safe"
-    - "list_for_each_reverse"
-    - "list_for_each_reverse_safe"
-    - "list_for_each_entry"
-    - "list_for_each_entry_safe"
-    - "list_for_each_entry_reverse"
-    - "list_for_each_entry_reverse_safe"
-    - "hlist_for_each"
-    - "hlist_for_each_entry"
-    - "for_each_mem_range"
-    - "for_each_mem_pfn_range"
-    - "for_each_memblock_type"
-    - "fdt_for_each_subnode"
-
 IncludeBlocks: Preserve
 IncludeCategories:
     - Regex: ".*"
@@ -89,20 +59,12 @@ IndentCaseLabels: false
 IndentGotoLabels: false
 IndentPPDirectives: None
 IndentWidth: 8
+ContinuationIndentWidth: 8
 IndentWrappedFunctionNames: false
-JavaScriptQuotes: Leave
-JavaScriptWrapImports: true
 KeepEmptyLinesAtTheStartOfBlocks: false
-MacroBlockBegin: ""
-MacroBlockEnd: ""
 MaxEmptyLinesToKeep: 1
-NamespaceIndentation: None
-ObjCBinPackProtocolList: Auto
-ObjCBlockIndentWidth: 8
-ObjCSpaceAfterProperty: true
-ObjCSpaceBeforeProtocolList: true
 
-# Taken from git's rules
+# Line-break penalties (kernel values).
 PenaltyBreakAssignment: 10
 PenaltyBreakBeforeFirstCallParameter: 30
 PenaltyBreakComment: 10
@@ -114,18 +76,12 @@ PenaltyReturnTypeOnItsOwnLine: 60
 PointerAlignment: Right
 ReflowComments: false
 SortIncludes: true
-SortUsingDeclarations: false
 SpaceAfterCStyleCast: false
-SpaceAfterTemplateKeyword: true
 SpaceBeforeAssignmentOperators: true
-SpaceBeforeCtorInitializerColon: true
-SpaceBeforeInheritanceColon: true
 SpaceBeforeParens: ControlStatementsExceptForEachMacros
-SpaceBeforeRangeBasedForLoopColon: true
 SpaceInEmptyParentheses: false
 SpacesBeforeTrailingComments: 1
 SpacesInAngles: false
-SpacesInContainerLiterals: false
 SpacesInCStyleCastParentheses: false
 SpacesInParentheses: false
 SpacesInSquareBrackets: false
