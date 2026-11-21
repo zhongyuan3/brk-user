@@ -47,4 +47,12 @@
 #define LONG_LONG_MIN LLONG_MIN
 #define ULONG_LONG_MAX ULLONG_MAX
 
+/*
+ * POSIX path bound, kept in step with the kernel UAPI value (512
+ * is also a conservative bound for the libc's own buffers).
+ */
+#ifndef PATH_MAX
+#define PATH_MAX 512
+#endif
+
 #endif

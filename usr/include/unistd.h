@@ -91,6 +91,8 @@ int isatty(int fd);
 int truncate(const char *path, off_t length);
 int ftruncate(int fd, off_t length);
 int gethostname(char *name, size_t len);
+char *ttyname(int fd);
+int ttyname_r(int fd, char *buf, size_t buflen);
 
 /*
  * POSIX option scanning.  The GNU long-option forms live in

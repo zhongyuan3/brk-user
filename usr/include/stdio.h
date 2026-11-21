@@ -46,6 +46,8 @@ int feof(FILE *stream);
 FILE *freopen(const char *path, const char *mode, FILE *stream);
 int ungetc(int c, FILE *stream);
 int setvbuf(FILE *stream, char *buf, int mode, size_t size);
+void setbuf(FILE *stream, char *buf);
+void setbuffer(FILE *stream, char *buf, size_t size);
 FILE *tmpfile(void);
 char *tmpnam(char *s);
 

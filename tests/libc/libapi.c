@@ -400,6 +400,102 @@ static void test_scanf(void)
 	}
 }
 
+static void test_pathnames(void)
+{
+	char template[] = "/tmp/libapil.XXXXXX";
+	char out[256];
+	char *rc;
+	int fd;
+
+	/* plain and lexical folding */
+	rc = realpath("/tmp", out);
+	check(rc == out && !strcmp(out, "/tmp"), "realpath /tmp");
+	rc = realpath("/tmp/../home/.", out);
+	check(rc && !strcmp(out, "/home"), "realpath folding");
+	rc = realpath("/nonexistent-path", out);
+	check(rc == NULL && errno == ENOENT, "realpath missing");
+
+	/* a symlink chain */
+	fd = mkstemp(template);
+	check(fd >= 0, "realpath setup");
+	if (fd >= 0) {
+		close(fd);
+		unlink(template);
+		check(symlink("/home", template) == 0, "symlink create");
+		rc = realpath(template, out);
+		check(rc && !strcmp(out, "/home"), "realpath symlink");
+		rc = realpath("/tmp/../tmp", out);
+		check(rc && !strcmp(out, "/tmp"), "realpath via ..");
+		unlink(template);
+	}
+
+	/* relative from a working directory */
+	{
+		int had = chdir("/tmp");
+
+		check(had == 0, "chdir /tmp");
+		rc = realpath("../etc", out);
+		check(rc && !strcmp(out, "/etc"), "realpath relative");
+		chdir("/");
+	}
+}
+
+static void test_ttyname(void)
+{
+	char buf[64];
+	int rc;
+
+	rc = ttyname_r(0, buf, sizeof(buf));
+	check(rc == 0 && buf[0] == '/', "ttyname_r on console");
+	check(ttyname(0) != NULL && ttyname(0)[0] == '/',
+	      "ttyname on console");
+
+	{
+		char template[] = "/tmp/libapit.XXXXXX";
+		int fd = mkstemp(template);
+
+		check(fd >= 0, "ttyname setup");
+		if (fd >= 0) {
+			check(ttyname(fd) == NULL, "ttyname on a file");
+			close(fd);
+			unlink(template);
+		}
+	}
+}
+
+static void test_strptime(void)
+{
+	struct tm tm;
+	char *rc;
+
+	memset(&tm, 0, sizeof(tm));
+	rc = strptime("2026-11-21 12:34:56", "%Y-%m-%d %H:%M:%S", &tm);
+	check(rc && *rc == '\0', "strptime iso");
+	check(tm.tm_year == 126 && tm.tm_mon == 10 && tm.tm_mday == 21 &&
+	      tm.tm_hour == 12 && tm.tm_min == 34 && tm.tm_sec == 56,
+	      "strptime iso fields");
+	check(timegm(&tm) == (time_t)1795264496, "strptime->timegm");
+
+	memset(&tm, 0, sizeof(tm));
+	rc = strptime("Sat Nov 21", "%a %b %e", &tm);
+	check(rc && *rc == '\0', "strptime names");
+	check(tm.tm_wday == 6 && tm.tm_mon == 10 && tm.tm_mday == 21,
+	      "strptime name fields");
+
+	memset(&tm, 0, sizeof(tm));
+	rc = strptime("07:30 PM", "%I:%M %p", &tm);
+	check(rc && *rc == '\0', "strptime 12h clock");
+	check(tm.tm_hour == 19 && tm.tm_min == 30, "strptime 12h fields");
+
+	memset(&tm, 0, sizeof(tm));
+	rc = strptime("12/25/99", "%D", &tm);
+	check(rc && *rc == '\0' && tm.tm_year == 99 && tm.tm_mon == 11 &&
+	      tm.tm_mday == 25, "strptime %D");
+
+	rc = strptime("junk", "%Y", &tm);
+	check(rc == NULL, "strptime mismatch");
+}
+
 int main(void)
 {
 	test_string();
@@ -410,6 +506,9 @@ int main(void)
 	test_truncate();
 	test_unistd();
 	test_scanf();
+	test_pathnames();
+	test_ttyname();
+	test_strptime();
 
 	if (fails) {
 		printf("libapi: %d failure(s)\n", fails);

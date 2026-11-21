@@ -43,5 +43,6 @@ char *asctime(const struct tm *tm);
 char *asctime_r(const struct tm *tm, char *buf);
 char *ctime(const time_t *timep);
 char *ctime_r(const time_t *timep, char *buf);
+char *strptime(const char *s, const char *format, struct tm *tm);
 
 #endif

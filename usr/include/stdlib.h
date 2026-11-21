@@ -48,6 +48,7 @@ lldiv_t lldiv(long long numer, long long denom);
 
 int mkstemp(char *template);
 char *mkdtemp(char *template);
+char *realpath(const char *path, char *resolved);
 
 int system(const char *command);
 
