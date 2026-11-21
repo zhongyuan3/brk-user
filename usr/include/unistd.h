@@ -35,6 +35,11 @@ int execlp(const char *file, const char *arg, ...);
 
 pid_t getpid(void);
 pid_t getppid(void);
+pid_t getpgid(pid_t pid);
+pid_t getsid(pid_t pid);
+pid_t setsid(void);
+pid_t getpgrp(void);
+int setpgid(pid_t pid, pid_t pgid);
 
 uid_t getuid(void);
 uid_t geteuid(void);
@@ -86,6 +91,7 @@ unsigned int sleep(unsigned int seconds);
 
 void sync(void);
 int fsync(int fd);
+int fdatasync(int fd);
 
 int isatty(int fd);
 int truncate(const char *path, off_t length);

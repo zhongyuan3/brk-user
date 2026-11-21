@@ -75,5 +75,25 @@ int getresgid(gid_t *rgid, gid_t *egid, gid_t *sgid)
 
 int getgroups(int size, gid_t list[])
 {
-	return (int)syscall(SYS_GET_GROUPS, size, list);
+	struct brk_proc proc;
+	int i;
+
+	if (size < 0) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	if (get_proc(&proc) < 0)
+		return -1;
+
+	if (size == 0)
+		return proc.ngroups;
+	if (size < proc.ngroups || !list) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	for (i = 0; i < proc.ngroups; i++)
+		list[i] = proc.groups[i];
+	return proc.ngroups;
 }
