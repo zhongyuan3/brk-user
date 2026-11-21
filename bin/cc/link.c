@@ -7,6 +7,7 @@
 #define USER_BASE 0x10000UL
 #define TEXT_FILE_OFF 0x1000
 #define EM_RISCV 243
+#define EF_RISCV_FLOAT_ABI_DOUBLE 4
 
 static void put16(unsigned char *p, unsigned int v)
 {
@@ -354,7 +355,7 @@ void link_and_write(const char *path)
 	put64(file + 24, entry);
 	put64(file + 32, 64); /* e_phoff */
 	put64(file + 40, 0); /* e_shoff */
-	put32(file + 48, 0); /* e_flags */
+	put32(file + 48, EF_RISCV_FLOAT_ABI_DOUBLE); /* e_flags: hard-FP */
 	put16(file + 52, 64); /* e_ehsize */
 	put16(file + 54, 56); /* e_phentsize */
 	put16(file + 56, 1); /* e_phnum */

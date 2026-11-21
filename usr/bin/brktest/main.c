@@ -17,6 +17,7 @@ extern const struct test_suite brktest_memory_suite;
 extern const struct test_suite brktest_time_suite;
 extern const struct test_suite brktest_sys_suite;
 extern const struct test_suite brktest_dev_suite;
+extern const struct test_suite brktest_exec_suite;
 extern const struct test_suite brktest_env_suite;
 extern const struct test_suite brktest_stress_process_suite;
 extern const struct test_suite brktest_stress_fd_suite;
@@ -32,7 +33,7 @@ static const struct test_suite *const suites[] = {
 	&brktest_creds_suite,	&brktest_posix_suite,  &brktest_net_suite,
 	&brktest_file_suite,	&brktest_io_suite,     &brktest_memory_suite,
 	&brktest_time_suite,	&brktest_sys_suite,    &brktest_dev_suite,
-	&brktest_env_suite,
+	&brktest_exec_suite,	&brktest_env_suite,
 	&brktest_stress_process_suite, &brktest_stress_fd_suite,
 	&brktest_stress_fs_suite, &brktest_stress_io_suite,
 	&brktest_stress_memory_suite, &brktest_stress_net_suite,

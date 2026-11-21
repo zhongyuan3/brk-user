@@ -8,6 +8,7 @@
  */
 
 #include <dirent.h>
+#include <uapi/auxv.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <getopt.h>
@@ -496,6 +497,56 @@ static void test_strptime(void)
 	check(rc == NULL, "strptime mismatch");
 }
 
+static void test_auxv(void)
+{
+	/*
+	 * The kernel appends the auxiliary vector after the envp NULL
+	 * terminator.  Walk it from the environ pointer count.
+	 */
+	unsigned long *aux;
+	int nenv = 0;
+	int pagesz = 0, phnum = 0, seen_uid = 0, seen_euid = 0;
+	unsigned long random_ptr = 0, entry = 0, base = (unsigned long)-1;
+
+	while (environ && environ[nenv])
+		nenv++;
+	aux = (unsigned long *)(environ + nenv + 1);
+
+	for (; aux[0] != AT_NULL; aux += 2) {
+		switch ((int)aux[0]) {
+		case AT_PAGESZ:
+			pagesz = (int)aux[1];
+			break;
+		case AT_PHNUM:
+			phnum = (int)aux[1];
+			break;
+		case AT_RANDOM:
+			random_ptr = aux[1];
+			break;
+		case AT_ENTRY:
+			entry = aux[1];
+			break;
+		case AT_BASE:
+			base = aux[1];
+			break;
+		case AT_UID:
+			seen_uid = (int)aux[1] == (int)getuid();
+			break;
+		case AT_EUID:
+			seen_euid = (int)aux[1] == (int)geteuid();
+			break;
+		}
+	}
+
+	check(pagesz == 4096, "auxv AT_PAGESZ");
+	check(phnum > 0, "auxv AT_PHNUM");
+	check(random_ptr != 0, "auxv AT_RANDOM");
+	check(entry != 0, "auxv AT_ENTRY");
+	check(base == 0, "auxv AT_BASE for ET_EXEC");
+	check(seen_uid, "auxv AT_UID value");
+	check(seen_euid, "auxv AT_EUID value");
+}
+
 int main(void)
 {
 	test_string();
@@ -509,6 +560,7 @@ int main(void)
 	test_pathnames();
 	test_ttyname();
 	test_strptime();
+	test_auxv();
 
 	if (fails) {
 		printf("libapi: %d failure(s)\n", fails);
