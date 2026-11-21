@@ -9,5 +9,5 @@ int access(const char *path, int mode)
 
 int faccessat(int dirfd, const char *path, int mode, int flags)
 {
-	return syscall(SYS_FACCESSAT, dirfd, path, mode, flags);
+	return syscall(SYS_ACCESS, dirfd, path, mode, flags);
 }

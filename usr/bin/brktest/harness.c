@@ -174,7 +174,7 @@ int test_run_case(const struct test_suite *suite, const struct test_case *tc,
 		 * tests must stay in the terminal foreground group.
 		 */
 		if (tc->flags & TEST_OWN_PGRP)
-			(void)syscall(SYS_SETPGID, 0, 0);
+			(void)syscall(SYS_SET_PGID, 0, 0);
 		if (tap_mode()) {
 			int null = open("/dev/null", O_WRONLY);
 

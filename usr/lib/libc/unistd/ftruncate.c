@@ -3,5 +3,5 @@
 
 int ftruncate(int fd, off_t length)
 {
-	return syscall(SYS_FTRUNCATE, fd, length);
+	return syscall(SYS_TRUNCATE_FD, fd, length);
 }

@@ -92,7 +92,7 @@ static int case_mmap_file(struct test_ctx *ctx)
 	fd = open(path, O_RDWR | O_CREAT | O_TRUNC, 0644);
 	if (fd < 0)
 		return test_fail_msg("memory: open failed: %d", errno);
-	if (syscall(SYS_FTRUNCATE, fd, 8192) != 0)
+	if (syscall(SYS_TRUNCATE_FD, fd, 8192) != 0)
 		return test_fail_msg("memory: ftruncate failed: %d", errno);
 
 	p = mmap(NULL, 8192, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);

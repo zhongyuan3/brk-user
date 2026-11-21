@@ -3,5 +3,5 @@
 
 int mknodat(int dirfd, const char *path, mode_t mode, dev_t dev)
 {
-	return syscall(SYS_MKNODAT, dirfd, path, mode, dev);
+	return syscall(SYS_MKNOD, dirfd, path, mode, dev);
 }

@@ -9,5 +9,5 @@ int symlink(const char *target, const char *linkpath)
 
 int symlinkat(const char *target, int newdirfd, const char *linkpath)
 {
-	return syscall(SYS_SYMLINKAT, target, newdirfd, linkpath);
+	return syscall(SYS_SYMLINK, target, newdirfd, linkpath);
 }

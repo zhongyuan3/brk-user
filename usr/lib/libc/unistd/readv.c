@@ -3,5 +3,5 @@
 
 ssize_t readv(int fd, const struct iovec *iov, int iovcnt)
 {
-	return syscall(SYS_READV, fd, iov, iovcnt);
+	return syscall(SYS_READ_IOV, fd, iov, iovcnt);
 }

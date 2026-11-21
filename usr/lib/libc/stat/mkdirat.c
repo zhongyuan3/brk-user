@@ -3,5 +3,5 @@
 
 int mkdirat(int dirfd, const char *path, mode_t mode)
 {
-	return syscall(SYS_MKDIRAT, dirfd, path, mode);
+	return syscall(SYS_MKDIR, dirfd, path, mode);
 }

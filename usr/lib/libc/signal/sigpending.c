@@ -3,5 +3,5 @@
 
 int sigpending(sigset_t *set)
 {
-	return syscall(SYS_SIGPENDING, set);
+	return syscall(SYS_GET_PENDING, set);
 }

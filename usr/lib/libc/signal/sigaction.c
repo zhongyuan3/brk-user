@@ -57,7 +57,7 @@ int sigaction(int signum, const struct sigaction *act, struct sigaction *oldact)
 		}
 	}
 
-	if (syscall(SYS_SIGACTION, signum, pass, oldact ? &kold : NULL) != 0)
+	if (syscall(SYS_SET_SIGNAL, signum, pass, oldact ? &kold : NULL) != 0)
 		return -1;
 
 	if (oldact)
@@ -67,10 +67,10 @@ int sigaction(int signum, const struct sigaction *act, struct sigaction *oldact)
 
 int sigprocmask(int how, const sigset_t *set, sigset_t *oldset)
 {
-	return syscall(SYS_SIGPROCMASK, how, set, oldset);
+	return syscall(SYS_SET_SIGMASK, how, set, oldset);
 }
 
 int sigreturn(void)
 {
-	return syscall(SYS_SIGRETURN);
+	return syscall(SYS_RESTORE_CONTEXT);
 }

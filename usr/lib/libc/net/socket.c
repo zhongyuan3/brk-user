@@ -3,7 +3,7 @@
 
 int socket(int domain, int type, int protocol)
 {
-	return syscall(SYS_SOCKET, domain, type, protocol);
+	return syscall(SYS_CREATE_SOCKET, domain, type, protocol);
 }
 
 int bind(int fd, const struct sockaddr *addr, socklen_t addrlen)
@@ -28,19 +28,19 @@ int accept(int fd, struct sockaddr *addr, socklen_t *addrlen)
 
 int accept4(int fd, struct sockaddr *addr, socklen_t *addrlen, int flags)
 {
-	return syscall(SYS_ACCEPT4, fd, addr, addrlen, flags);
+	return syscall(SYS_ACCEPT, fd, addr, addrlen, flags);
 }
 
 ssize_t sendto(int fd, const void *buf, size_t len, int flags,
 	       const struct sockaddr *addr, socklen_t addrlen)
 {
-	return syscall(SYS_SENDTO, fd, buf, len, flags, addr, addrlen);
+	return syscall(SYS_SEND_TO, fd, buf, len, flags, addr, addrlen);
 }
 
 ssize_t recvfrom(int fd, void *buf, size_t len, int flags,
 		 struct sockaddr *addr, socklen_t *addrlen)
 {
-	return syscall(SYS_RECVFROM, fd, buf, len, flags, addr, addrlen);
+	return syscall(SYS_RECV_FROM, fd, buf, len, flags, addr, addrlen);
 }
 
 ssize_t send(int fd, const void *buf, size_t len, int flags)
@@ -60,21 +60,21 @@ int shutdown(int fd, int how)
 
 int getsockname(int fd, struct sockaddr *addr, socklen_t *addrlen)
 {
-	return syscall(SYS_GETSOCKNAME, fd, addr, addrlen);
+	return syscall(SYS_GET_SOCK_ADDR, fd, addr, addrlen);
 }
 
 int getpeername(int fd, struct sockaddr *addr, socklen_t *addrlen)
 {
-	return syscall(SYS_GETPEERNAME, fd, addr, addrlen);
+	return syscall(SYS_GET_PEER_ADDR, fd, addr, addrlen);
 }
 
 int setsockopt(int fd, int level, int optname, const void *optval,
 	       socklen_t optlen)
 {
-	return syscall(SYS_SETSOCKOPT, fd, level, optname, optval, optlen);
+	return syscall(SYS_SET_SOCK_OPT, fd, level, optname, optval, optlen);
 }
 
 int getsockopt(int fd, int level, int optname, void *optval, socklen_t *optlen)
 {
-	return syscall(SYS_GETSOCKOPT, fd, level, optname, optval, optlen);
+	return syscall(SYS_GET_SOCK_OPT, fd, level, optname, optval, optlen);
 }

@@ -9,5 +9,5 @@ ssize_t readlink(const char *path, char *buf, size_t bufsiz)
 
 ssize_t readlinkat(int dirfd, const char *path, char *buf, size_t bufsiz)
 {
-	return syscall(SYS_READLINKAT, dirfd, path, buf, bufsiz);
+	return syscall(SYS_READLINK, dirfd, path, buf, bufsiz);
 }

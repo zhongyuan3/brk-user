@@ -14,7 +14,7 @@ int fchown(int fd, uid_t owner, gid_t group)
 
 int fchownat(int dirfd, const char *path, uid_t owner, gid_t group, int flags)
 {
-	return syscall(SYS_FCHOWNAT, dirfd, path, owner, group, flags);
+	return syscall(SYS_CHOWN, dirfd, path, owner, group, flags);
 }
 
 int lchown(const char *path, uid_t owner, gid_t group)

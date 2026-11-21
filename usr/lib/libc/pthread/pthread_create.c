@@ -12,7 +12,7 @@ static void *pthread_start(void *arg)
 	struct pthread *self = arg;
 
 	/*
-	 * pthread_create() stores the kernel tid after SYS_THREAD_CREATE
+	 * pthread_create() stores the kernel tid after SYS_CREATE_THREAD
 	 * returns.  Wait for that handshake so the tid slot cannot be cleared
 	 * by a fast-exiting thread before the creator has published it.
 	 */
@@ -79,7 +79,7 @@ int pthread_create(pthread_t *thread, const pthread_attr_t *attr,
 	args.clear_tid = (__brk_ulong_t)&self->tid;
 	args.flags = 0;
 
-	tid = syscall(SYS_THREAD_CREATE, &args);
+	tid = syscall(SYS_CREATE_THREAD, &args);
 	if (tid == -1) {
 		int err = errno;
 

@@ -3,5 +3,5 @@
 
 int openat(int dirfd, const char *path, int flags, mode_t mode)
 {
-	return syscall(SYS_OPENAT, dirfd, path, flags, mode);
+	return syscall(SYS_OPEN, dirfd, path, flags, mode);
 }

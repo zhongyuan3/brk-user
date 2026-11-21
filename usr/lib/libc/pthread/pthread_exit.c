@@ -13,7 +13,7 @@ void pthread_exit(void *retval)
 
 	/*
 	 * SYS_EXIT is thread-only in BRK.  Process-wide exit is _exit(),
-	 * which uses SYS_EXIT_GROUP.
+	 * which uses SYS_EXIT_ALL.
 	 */
 	(void)syscall(SYS_EXIT, 0);
 	for (;;)

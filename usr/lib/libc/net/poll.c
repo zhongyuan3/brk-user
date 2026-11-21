@@ -7,7 +7,7 @@
 int ppoll(struct pollfd *fds, nfds_t nfds, const struct timespec *timeout,
 	  const sigset_t *sigmask)
 {
-	return (int)syscall(SYS_PPOLL, fds, nfds, timeout, sigmask);
+	return (int)syscall(SYS_POLL, fds, nfds, timeout, sigmask);
 }
 
 int poll(struct pollfd *fds, nfds_t nfds, int timeout)

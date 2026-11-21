@@ -101,7 +101,7 @@ static int case_truncate(struct test_ctx *ctx)
 		return -1;
 	if (write(fd, "01234567", 8) != 8)
 		return test_fail_msg("truncate: write failed");
-	if (syscall(SYS_FTRUNCATE, fd, 4) != 0)
+	if (syscall(SYS_TRUNCATE_FD, fd, 4) != 0)
 		return test_fail_msg("truncate: ftruncate failed: %d", errno);
 	if (fstat(fd, &st) != 0 || st.st_size != 4)
 		return test_fail_msg("truncate: size after ftruncate is %ld",

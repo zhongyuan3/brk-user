@@ -28,7 +28,7 @@ int statvfs(const char *path, struct statvfs *buf)
 {
 	struct brk_statfs st;
 
-	if (syscall(SYS_STATFS, path, &st) < 0)
+	if (syscall(SYS_STAT_FS, path, &st) < 0)
 		return -1;
 
 	statfs_to_statvfs(&st, buf);
@@ -39,7 +39,7 @@ int fstatvfs(int fd, struct statvfs *buf)
 {
 	struct brk_statfs st;
 
-	if (syscall(SYS_FSTATFS, fd, &st) < 0)
+	if (syscall(SYS_STAT_FS_FD, fd, &st) < 0)
 		return -1;
 
 	statfs_to_statvfs(&st, buf);

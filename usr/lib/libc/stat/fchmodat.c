@@ -4,5 +4,5 @@
 
 int fchmodat(int dirfd, const char *path, mode_t mode, int flags)
 {
-	return syscall(SYS_FCHMODAT, dirfd, path, mode, flags);
+	return syscall(SYS_CHMOD, dirfd, path, mode, flags);
 }

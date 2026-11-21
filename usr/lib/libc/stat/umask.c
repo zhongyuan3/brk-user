@@ -3,5 +3,5 @@
 
 mode_t umask(mode_t mask)
 {
-	return (mode_t)syscall(SYS_UMASK, mask);
+	return (mode_t)syscall(SYS_SET_UMASK, mask);
 }
