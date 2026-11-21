@@ -59,7 +59,6 @@ $CC -o "$OUT/math_host_test" "$OUT/math_host_test.o" "${OBJS[@]}" -lm
 "$OUT/math_host_test"
 
 echo "== strtod: vendored scanner vs glibc =="
-
 # Rename strtod to brk_strtod so both implementations can coexist.
 $CC -O2 -Wall -nostdinc -I"$SRC_INCLUDE" -I"$UAPI_INCLUDE" \
 	-Dstrtod=brk_strtod -c "$USER_ROOT/usr/lib/libc/stdlib/strtod.c" \
@@ -68,6 +67,31 @@ $CC -O2 -Wall -c "$SCRIPT_DIR/strtod_host_test.c" -o "$OUT/strtod_host_test.o"
 $CC -o "$OUT/strtod_host_test" "$OUT/strtod_host_test.o" \
 	"$OUT/strtod-engine.o" -lm
 "$OUT/strtod_host_test"
+
+echo "== scanf: BRK engine vs glibc =="
+
+# The engine is pure string walking over the vendored strtod; rename
+# the entry points and the float backend so glibc's remain callable.
+# Like the strtod test above, the backend's scalbn/fmod/copysign calls
+# resolve to glibc on the host.
+$CC -O2 -Wall -nostdinc -I"$SRC_INCLUDE" -I"$UAPI_INCLUDE" \
+	-Dstrtod=brk_strtod -c "$USER_ROOT/usr/lib/libc/stdlib/strtod.c" \
+	-o "$OUT/scanf-strtod.o"
+$CC -O2 -Wall -nostdinc -I"$SRC_INCLUDE" -I"$UAPI_INCLUDE" \
+	-Dstrtod=brk_strtod -c "$USER_ROOT/usr/lib/libc/stdio/scanf_core.c" \
+	-o "$OUT/scanf-core.o"
+$CC -O2 -Wall -nostdinc -I"$SRC_INCLUDE" -I"$UAPI_INCLUDE" \
+	-I"$STDIO_DIR" -Dvsscanf=brk_vsscanf \
+	-c "$USER_ROOT/usr/lib/libc/stdio/vsscanf.c" \
+	-o "$OUT/scanf-vsscanf.o"
+$CC -O2 -Wall -nostdinc -I"$SRC_INCLUDE" -I"$UAPI_INCLUDE" \
+	-I"$STDIO_DIR" -Dsscanf=brk_sscanf -Dvsscanf=brk_vsscanf \
+	-c "$USER_ROOT/usr/lib/libc/stdio/sscanf.c" -o "$OUT/scanf-sscanf.o"
+$CC -O2 -Wall -c "$SCRIPT_DIR/scanf_host_test.c" -o "$OUT/scanf_host_test.o"
+$CC -o "$OUT/scanf_host_test" "$OUT/scanf_host_test.o" \
+	"$OUT/scanf-strtod.o" "$OUT/scanf-core.o" "$OUT/scanf-vsscanf.o" \
+	"$OUT/scanf-sscanf.o" -lm
+"$OUT/scanf_host_test"
 
 echo "== fmt_fp: printf %e/%f/%g/%a vs glibc =="
 

@@ -53,4 +53,6 @@ telldir/seekdir), getopt()/getopt_long() including attached values, the
 strsep, strcasestr, strchrnul, ffs, basename/dirname, strsignal),
 rand/srand/rand_r determinism, div/ldiv/lldiv, atof, asctime/ctime/
 gmtime_r/localtime_r and the timegm() round trip, mkstemp/mkdtemp
-exclusivity, truncate/ftruncate and isatty/gethostname on the console.
+exclusivity, truncate/ftruncate, isatty/gethostname on the console, and
+the scanf engine (sscanf fields, suppression, %n, matching failure vs
+EOF, and fscanf over a tmpfile).

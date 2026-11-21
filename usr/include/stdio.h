@@ -18,6 +18,20 @@ int snprintf(char *buf, size_t size, char const *format, ...)
 	__attribute__((format(printf, 3, 4)));
 int vsnprintf(char *buf, size_t size, char const *format, va_list ap);
 
+/*
+ * Formatted input.  The engine consumes a FILE stream or a string
+ * and never retracts more than two speculative characters, so FILE
+ * sources need only the standard one-character pushback.  Only
+ * double and NUL-terminated byte strings are supported; the wide
+ * forms (ls, lc, l[) stop the scan when encountered.
+ */
+int fscanf(FILE *stream, const char *format, ...);
+int scanf(const char *format, ...);
+int sscanf(const char *str, const char *format, ...);
+int vfscanf(FILE *stream, const char *format, va_list ap);
+int vscanf(const char *format, va_list ap);
+int vsscanf(const char *str, const char *format, va_list ap);
+
 FILE *fopen(const char *path, const char *mode);
 int fclose(FILE *stream);
 size_t fread(void *ptr, size_t size, size_t nmemb, FILE *stream);

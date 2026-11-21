@@ -355,6 +355,51 @@ static void test_unistd(void)
 	      "gethostname rejects len 0");
 }
 
+static void test_scanf(void)
+{
+	int d, d2;
+	double v;
+	char word[32];
+	int rc;
+	FILE *f;
+
+	rc = sscanf("42 -2.5 hello", "%d %lf %s", &d, &v, word);
+	check(rc == 3 && d == 42 && v == -2.5 && !strcmp(word, "hello"),
+	      "sscanf three fields");
+
+	rc = sscanf("0x1f %i", "%x %i", &d, &d2);
+	/* second directive: only one field in the input */
+	check(rc == 1 && d == 31, "sscanf hex");
+
+	rc = sscanf("  skip  first", "%*s %s", word);
+	check(rc == 1 && !strcmp(word, "first"), "sscanf suppression");
+
+	rc = sscanf("n=7", "n=%d", &d);
+	check(rc == 1 && d == 7, "sscanf literal");
+
+	rc = sscanf("12abc", "%d%n", &d, &d2);
+	check(rc == 1 && d == 12 && d2 == 2, "sscanf %n");
+
+	rc = sscanf("no digits", "%d", &d);
+	check(rc == 0, "sscanf matching failure");
+
+	rc = sscanf("", "%d", &d);
+	check(rc == EOF, "sscanf EOF");
+
+	f = tmpfile();
+	check(f != NULL, "tmpfile for fscanf");
+	if (f) {
+		fprintf(f, "17 3.5 tag\n");
+		rewind(f);
+		rc = fscanf(f, "%d %lf %s", &d, &v, word);
+		check(rc == 3 && d == 17 && v == 3.5 && !strcmp(word, "tag"),
+		      "fscanf from file");
+		rc = fscanf(f, "%d", &d);
+		check(rc == EOF, "fscanf EOF at end");
+		fclose(f);
+	}
+}
+
 int main(void)
 {
 	test_string();
@@ -364,6 +409,7 @@ int main(void)
 	test_dirent_and_temp();
 	test_truncate();
 	test_unistd();
+	test_scanf();
 
 	if (fails) {
 		printf("libapi: %d failure(s)\n", fails);
