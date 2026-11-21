@@ -1,87 +1,101 @@
-/* origin: FreeBSD /usr/src/lib/msun/src/e_atan2.c */
 /*
- * ====================================================
- * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.
+ * atan2(y, x).
  *
- * Developed at SunSoft, a Sun Microsystems, Inc. business.
- * Permission to use, copy, modify, and distribute this
- * software is freely granted, provided that this notice
- * is preserved.
- * ====================================================
+ * The C99 quadrant table for the zeros and infinities, then the core
+ * from atan.c applied to the smaller of |y/x| and |x/y|:
+ *
+ *   |y| <= |x|:  atan2 = atan(|y/x|)        (pi - it when x < 0)
+ *   |y| >  |x|:  atan2 = pi/2 - atan(|x/y|) (pi/2 + it when x < 0)
+ *
+ * with the result carrying the sign of y.
  */
-/* atan2(y,x)
- * Method :
- *      1. Reduce y to positive by atan2(y,x)=-atan2(-y,x).
- *      2. Reduce x to positive by (if x and y are unexceptional):
- *              ARG (x+iy) = arctan(y/x)           ... if x > 0,
- *              ARG (x+iy) = pi - arctan[y/(-x)]   ... if x < 0,
- */
+
+#include <stdint.h>
 
 #include "libm.h"
 
-static const double
-pi     = 3.1415926535897931160E+00, /* 0x400921FB, 0x54442D18 */
-pi_lo  = 1.2246467991473531772E-16; /* 0x3CA1A626, 0x33145C07 */
+#define PIO2_HI 0x1.921fb54400000p+0
+#define PIO2_LO 0x1.0b4611a626331p-34
+#define PI_HI 0x1.921fb54400000p+1
+#define PI_LO 0x1.0b4611a626331p-33
+
+/* pi/2 as one correctly rounded value */
+#define PIO2 1.5707963267948966
+#define PI 3.141592653589793
+
+static double pio4(void)
+{
+	/* pi/4 = (pi/2) * 1/2 exactly in the pair */
+	return PIO2_HI * 0.5 + PIO2_LO * 0.5;
+}
+
+static double three_pio4(void)
+{
+	/* 3*pi/4 = pi - pi/4 with the rounding captured */
+	double p4 = PIO2_HI * 0.5;
+	double s = PI_HI - p4;
+
+	return s + (PI_HI - s - p4 + PI_LO - PIO2_LO * 0.5);
+}
 
 double atan2(double y, double x)
 {
-	double z;
-	uint32_t m,lx,ly,ix,iy;
+	uint64_t uy = asu64(y), ux = asu64(x);
+	uint64_t ysign = uy & (1ULL << 63), xsign = ux & (1ULL << 63);
+	double ay, ax, q, v, s;
 
-	if (isnan(x) || isnan(y))
-		return x+y;
-	EXTRACT_WORDS(ix, lx, x);
-	EXTRACT_WORDS(iy, ly, y);
-	if (((ix-0x3ff00000) | lx) == 0)  /* x = 1.0 */
-		return atan(y);
-	m = ((iy>>31)&1) | ((ix>>30)&2);  /* 2*sign(x)+sign(y) */
-	ix = ix & 0x7fffffff;
-	iy = iy & 0x7fffffff;
+	/* nan in either argument */
+	if ((uy << 1) > 0xffe0000000000000ull ||
+	    (ux << 1) > 0xffe0000000000000ull)
+		return x + y;
 
-	/* when y = 0 */
-	if ((iy|ly) == 0) {
-		switch(m) {
-		case 0:
-		case 1: return y;   /* atan(+-0,+anything)=+-0 */
-		case 2: return  pi; /* atan(+0,-anything) = pi */
-		case 3: return -pi; /* atan(-0,-anything) =-pi */
+	ay = fro64(uy & ~(1ULL << 63));
+	ax = fro64(ux & ~(1ULL << 63));
+
+	/* infinities */
+	if ((uy << 1) == 0xffe0000000000000ull) {
+		if ((ux << 1) == 0xffe0000000000000ull) {
+			double lim = xsign ? three_pio4() : pio4();
+
+			return ysign ? -lim : lim;
+		}
+		return ysign ? -PIO2 : PIO2;
+	}
+	if ((ux << 1) == 0xffe0000000000000ull) {
+		if (!xsign)
+			return ysign ? -0.0 : 0.0;
+		return ysign ? -PI : PI;
+	}
+
+	/* zeros */
+	if (ay == 0.0) {
+		if (!xsign && ax != 0.0)
+			return ysign ? -0.0 : 0.0;
+		if (xsign)
+			return ysign ? -PI : PI;
+		/* x is +0: atan2(+-0, +0) = +-0 */
+		return ysign ? -0.0 : 0.0;
+	}
+	if (ax == 0.0)
+		return ysign ? -PIO2 : PIO2;
+
+	/* main quadrants */
+	if (ay > ax) {
+		q = ax / ay;
+		v = __brk_atan_core(q);
+		s = PIO2_HI - v;
+		v = s + (PIO2_HI - s - v + PIO2_LO);
+		if (xsign) {
+			s = PI_HI - v;		/* v <= pi/2: Sterbenz */
+			v = s + (PI_HI - s - v + PI_LO);
+		}
+	} else {
+		q = ay / ax;
+		v = __brk_atan_core(q);
+		if (xsign) {
+			s = PI_HI - v;
+			v = s + (PI_HI - s - v + PI_LO);
 		}
 	}
-	/* when x = 0 */
-	if ((ix|lx) == 0)
-		return m&1 ? -pi/2 : pi/2;
-	/* when x is INF */
-	if (ix == 0x7ff00000) {
-		if (iy == 0x7ff00000) {
-			switch(m) {
-			case 0: return  pi/4;   /* atan(+INF,+INF) */
-			case 1: return -pi/4;   /* atan(-INF,+INF) */
-			case 2: return  3*pi/4; /* atan(+INF,-INF) */
-			case 3: return -3*pi/4; /* atan(-INF,-INF) */
-			}
-		} else {
-			switch(m) {
-			case 0: return  0.0; /* atan(+...,+INF) */
-			case 1: return -0.0; /* atan(-...,+INF) */
-			case 2: return  pi;  /* atan(+...,-INF) */
-			case 3: return -pi;  /* atan(-...,-INF) */
-			}
-		}
-	}
-	/* |y/x| > 0x1p64 */
-	if (ix+(64<<20) < iy || iy == 0x7ff00000)
-		return m&1 ? -pi/2 : pi/2;
-
-	/* z = atan(|y/x|) without spurious underflow */
-	if ((m&2) && iy+(64<<20) < ix)  /* |y/x| < 0x1p-64, x<0 */
-		z = 0;
-	else
-		z = atan(fabs(y/x));
-	switch (m) {
-	case 0: return z;              /* atan(+,+) */
-	case 1: return -z;             /* atan(-,+) */
-	case 2: return pi - (z-pi_lo); /* atan(+,-) */
-	default: /* case 3 */
-		return (z-pi_lo) - pi; /* atan(-,-) */
-	}
+	return ysign ? -v : v;
 }

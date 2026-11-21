@@ -14,7 +14,7 @@ usr/
 ├── bin/                # commands installed under /usr/bin (brktest/, *.c)
 ├── include/            # public headers (libcmdfw.h, cc.h, POSIX headers)
 └── lib/
-    ├── libc/           # BRK C library (libc API; math/ vendored from musl)
+    ├── libc/           # BRK C library (libc API; math/ written from scratch)
     └── libcmdfw/         # command helper library (cmdfw_* API)
 vendor/
 └── lua-5.5.1/          # upstream Lua 5.5.1 tree, copied verbatim (installed as lua)
@@ -237,7 +237,7 @@ under `src/`.  The build compiles every `src/*.c` except `luac.c`, the
 standalone bytecode-compiler frontend with its own `main()`, links the
 interpreter statically against `libc.a` and `libcmdfw.a` and installs it
 as `/bin/lua`.  It exercises the whole floating-point stack: the
-vendored musl-derived libm, correctly rounded `strtod` and printf
+BRK libm, correctly rounded `strtod` and printf
 conversions, `setjmp`-based error handling and the kernel's FP context
 switching.  The in-system smoke test:
 

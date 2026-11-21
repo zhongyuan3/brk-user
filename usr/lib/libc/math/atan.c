@@ -1,103 +1,90 @@
-/* origin: FreeBSD /usr/src/lib/msun/src/s_atan.c */
 /*
- * ====================================================
- * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.
+ * atan(x) and the zoned core shared with atan2.
  *
- * Developed at SunSoft, a Sun Microsystems, Inc. business.
- * Permission to use, copy, modify, and distribute this
- * software is freely granted, provided that this notice
- * is preserved.
- * ====================================================
+ * Core (0 <= u <= 1):
+ *   - u <= 1/2:  atan(u) = u + u^3*B(u^2), a degree-12 interpolation on
+ *     [0, 1/4] (scripts/gen-libm-consts.py), factored like the other
+ *     cores.
+ *   - u > 1/2:   atan(u) = pi/6 + atan((u - 1/sqrt3)/(1 + u/sqrt3));
+ *     the reduced argument lands back in [-1/13, 1/4]*... inside the
+ *     polynomial range, and 1/sqrt3 is a hi/lo pair whose hi part is
+ *     exact to subtract (Sterbenz) for u > 1/2.
+ *
+ * atan itself maps |x| > 1 through atan(1/x) and the pi/2 complement.
  */
-/* atan(x)
- * Method
- *   1. Reduce x to positive by atan(x) = -atan(-x).
- *   2. According to the integer k=4t+0.25 chopped, t=x, the argument
- *      is further reduced to one of the following intervals and the
- *      arctangent of t is evaluated by the corresponding formula.
- */
+
+#include <stdint.h>
 
 #include "libm.h"
 
-static const double atanhi[] = {
-  4.63647609000806093515e-01, /* atan(0.5)hi 0x3FDDAC67, 0x0561BB4F */
-  7.85398163397448278999e-01, /* atan(1.0)hi 0x3FE921FB, 0x54442D18 */
-  9.82793723247329054082e-01, /* atan(1.5)hi 0x3FEF730B, 0xD281F69B */
-  1.57079632679489655800e+00, /* atan(inf)hi 0x3FF921FB, 0x54442D18 */
+#define PIO2_HI 0x1.921fb54400000p+0
+#define PIO2_LO 0x1.0b4611a626331p-34
+#define PIO6_HI 0x1.0c15238300000p-1	/* pi/6, 33 significant bits */
+#define PIO6_LO -0x1.464d3dcd22669p-36
+#define T6_HI 0x1.279a745900000p-1	/* 1/sqrt(3), 33 significant bits */
+#define T6_LO 0x1.98e2690c7c0f2p-40
+
+static const double atan_c[13] = {
+	-0x1.5555555555555p-2,
+	0x1.99999999998e1p-3,
+	-0x1.2492492488296p-3,
+	0x1.c71c71c01b24cp-4,
+	-0x1.745d16026efd7p-4,
+	0x1.3b138e6372dcap-4,
+	-0x1.110ea50256abfp-4,
+	0x1.e1a7b2562efc5p-5,
+	-0x1.ad44da04adea3p-5,
+	0x1.7b20b751c966ap-5,
+	-0x1.37d750492dd9bp-5,
+	0x1.99b4e0c058248p-6,
+	-0x1.2dfbaab9786efp-7,
 };
 
-static const double atanlo[] = {
-  2.26987774529616870924e-17, /* atan(0.5)lo 0x3C7A2B7F, 0x222F65E2 */
-  3.06161699786838301793e-17, /* atan(1.0)lo 0x3C81A626, 0x33145C07 */
-  1.39033110312309984516e-17, /* atan(1.5)lo 0x3C700788, 0x7AF0CBBD */
-  6.12323399573676603587e-17, /* atan(inf)lo 0x3C91A626, 0x33145C07 */
-};
+static double atan_poly(double u)
+{
+	double w = u * u;
+	double c = atan_c[12];
+	int i;
 
-static const double aT[] = {
-  3.33333333333329318027e-01, /* 0x3FD55555, 0x5555550D */
- -1.99999999998764832476e-01, /* 0xBFC99999, 0x9998EBC4 */
-  1.42857142725034663711e-01, /* 0x3FC24924, 0x920083FF */
- -1.11111104054623557880e-01, /* 0xBFBC71C6, 0xFE231671 */
-  9.09088713343650656196e-02, /* 0x3FB745CD, 0xC54C206E */
- -7.69187620504482999495e-02, /* 0xBFB3B0F2, 0xAF749A6D */
-  6.66107313738753120669e-02, /* 0x3FB10D66, 0xA0D03D51 */
- -5.83357013379057348645e-02, /* 0xBFADDE2D, 0x52DEFD9A */
-  4.97687799461593236017e-02, /* 0x3FA97B4B, 0x24760DEB */
- -3.65315727442169155270e-02, /* 0xBFA2B444, 0x2C6A6C2F */
-  1.62858201153657823623e-02, /* 0x3F90AD3A, 0xE322DA11 */
-};
+	for (i = 11; i >= 0; i--)
+		c = c * w + atan_c[i];
+	return u + u * w * c;
+}
+
+hidden double __brk_atan_core(double u)
+{
+	double num, den, v, s;
+
+	if (u <= 0.5)
+		return atan_poly(u);
+
+	/* atan(u) = pi/6 + atan((u - t6)/(1 + t6*u)) */
+	num = (u - T6_HI) - T6_LO;		/* first part is Sterbenz */
+	den = 1.0 + u * T6_HI + u * T6_LO;
+	v = atan_poly(num / den);
+	s = PIO6_HI + v;
+	return s + (PIO6_HI - s + v + PIO6_LO);
+}
 
 double atan(double x)
 {
-	double_t w,s1,s2,z;
-	uint32_t ix,sign;
-	int id;
+	uint64_t xs = asu64(x) & (1ULL << 63);
+	double ax = fro64(asu64(x) & ~(1ULL << 63));
+	double v, s;
 
-	GET_HIGH_WORD(ix, x);
-	sign = ix >> 31;
-	ix &= 0x7fffffff;
-	if (ix >= 0x44100000) {   /* if |x| >= 2^66 */
-		if (isnan(x))
-			return x;
-		z = atanhi[3] + 0x1p-120f;
-		return sign ? -z : z;
+	if ((asu64(ax) << 1) > 0xffe0000000000000ull)
+		return (x - x) / (x - x);	/* nan */
+	if ((asu64(ax) << 1) == 0xffe0000000000000ull) {
+		/* atan(+-inf) = +-pi/2 */
+		return xs ? -1.5707963267948966 : 1.5707963267948966;
 	}
-	if (ix < 0x3fdc0000) {    /* |x| < 0.4375 */
-		if (ix < 0x3e400000) {  /* |x| < 2^-27 */
-			if (ix < 0x00100000)
-				/* raise underflow for subnormal x */
-				FORCE_EVAL((float)x);
-			return x;
-		}
-		id = -1;
+
+	if (ax > 1.0) {
+		v = __brk_atan_core(1.0 / ax);
+		s = PIO2_HI - v;		/* v <= pi/4: Sterbenz */
+		v = s + (PIO2_HI - s - v + PIO2_LO);
 	} else {
-		x = fabs(x);
-		if (ix < 0x3ff30000) {  /* |x| < 1.1875 */
-			if (ix < 0x3fe60000) {  /*  7/16 <= |x| < 11/16 */
-				id = 0;
-				x = (2.0*x-1.0)/(2.0+x);
-			} else {                /* 11/16 <= |x| < 19/16 */
-				id = 1;
-				x = (x-1.0)/(x+1.0);
-			}
-		} else {
-			if (ix < 0x40038000) {  /* |x| < 2.4375 */
-				id = 2;
-				x = (x-1.5)/(1.0+1.5*x);
-			} else {                /* 2.4375 <= |x| < 2^66 */
-				id = 3;
-				x = -1.0/x;
-			}
-		}
+		v = __brk_atan_core(ax);
 	}
-	/* end of argument reduction */
-	z = x*x;
-	w = z*z;
-	/* break sum from i=0 to 10 aT[i]z**(i+1) into odd and even poly */
-	s1 = z*(aT[0]+w*(aT[2]+w*(aT[4]+w*(aT[6]+w*(aT[8]+w*aT[10])))));
-	s2 = w*(aT[1]+w*(aT[3]+w*(aT[5]+w*(aT[7]+w*aT[9]))));
-	if (id < 0)
-		return x - x*(s1+s2);
-	z = atanhi[id] - (x*(s1+s2) - atanlo[id] - x);
-	return sign ? -z : z;
+	return xs ? -v : v;
 }

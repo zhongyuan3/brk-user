@@ -4,11 +4,14 @@
 /*
  * BRK libc math header.
  *
- * The double-precision implementations under src/libbrkc/math are vendored
- * from musl (MIT license, see the file headers); this header covers the
- * public surface needed by C99 programs and the vendored code itself.
- * Only double precision is provided; float variants fall back to double
- * via promotion so that any float-prototype user links successfully.
+ * The double-precision implementations under usr/lib/libc/math are a
+ * from-scratch BRK implementation; the irrational constants and fitted
+ * polynomial coefficients it uses are produced by
+ * scripts/gen-libm-consts.py from the defining series at extended
+ * precision.  This header covers the public surface needed by C99
+ * programs and the math code itself.  Only double precision is
+ * provided; float variants fall back to double via promotion so that
+ * any float-prototype user links successfully.
  */
 
 #define M_E 2.7182818284590452354 /* e */

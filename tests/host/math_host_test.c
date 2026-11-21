@@ -1,10 +1,10 @@
 /*
- * Host-side smoke test for the vendored musl math routines.
+ * Host-side smoke test for the BRK math routines.
  *
  * The BRK math code is pure bit manipulation and IEEE-754 arithmetic with
  * no syscall or ABI dependencies, so it can be built and validated on the
  * host: the results here transfer to the riscv64 build unchanged.
- * The vendored .c files are compiled as separate translation units with
+ * The .c files are compiled as separate translation units with
  * -Dname=brk_name renaming (so their prototypes and cross-calls stay
  * consistent) and linked with this driver, which compares every function
  * against glibc libm and requires agreement within 2 ULP.

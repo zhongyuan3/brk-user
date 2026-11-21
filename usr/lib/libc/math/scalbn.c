@@ -1,40 +1,45 @@
 /*
- * Double-precision scalbn.
+ * scalbn and ldexp: multiply by 2^n.
  *
- * Adapted from musl: Copyright (c) 2005-2020 Rich Felker and the musl
- * libc authors.  SPDX-License-Identifier: MIT.
+ * The scaling is done in steps of at most one exponent field so every
+ * intermediate is exact; the final multiply rounds only once, even when
+ * the result lands in the subnormal range.
  */
 
-#include <math.h>
 #include <stdint.h>
+
+#include "libm.h"
 
 double scalbn(double x, int n)
 {
-	union {double f; uint64_t i;} u;
-	double_t y = x;
+	union brk_dbits u;
 
 	if (n > 1023) {
-		y *= 0x1p1023;
+		x *= 0x1p1023;
 		n -= 1023;
 		if (n > 1023) {
-			y *= 0x1p1023;
+			x *= 0x1p1023;
 			n -= 1023;
 			if (n > 1023)
-				n = 1023;
+				n = 1023;    /* overflow is already inevitable */
 		}
 	} else if (n < -1022) {
-		/* make sure final n < -53 to avoid double
-		   rounding in the subnormal range */
-		y *= 0x1p-1022 * 0x1p53;
-		n += 1022 - 53;
+		/* 2^-969 = 2^-1022 * 2^53: the pre-scale keeps the last
+		   multiply out of the double-rounding subnormal window. */
+		x *= 0x1p-969;
+		n += 969;
 		if (n < -1022) {
-			y *= 0x1p-1022 * 0x1p53;
-			n += 1022 - 53;
+			x *= 0x1p-969;
+			n += 969;
 			if (n < -1022)
 				n = -1022;
 		}
 	}
-	u.i = (uint64_t)(0x3ff+n)<<52;
-	x = y * u.f;
-	return x;
+	u.i = (uint64_t)(0x3ff + n) << 52;
+	return x * u.f;
+}
+
+double ldexp(double x, int n)
+{
+	return scalbn(x, n);
 }

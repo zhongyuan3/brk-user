@@ -1,6 +1,6 @@
 #!/bin/bash
-# Host-side validation of the libc floating-point stack: the vendored
-# musl math code, the strtod scanner and the printf float engine.
+# Host-side validation of the libc floating-point stack: the BRK math
+# implementation, the strtod scanner and the printf float engine.
 #
 # The three engines are pure IEEE-754 arithmetic with no OS dependencies,
 # so their behavior on the host matches the riscv64 build.  Each engine is
@@ -34,16 +34,15 @@ fi
 OUT=$(mktemp -d)
 trap 'rm -rf "$OUT"' EXIT
 
-echo "== math: vendored musl libm vs glibc, 2 ULP =="
+echo "== math: BRK libm vs glibc, 2 ULP =="
 
 # Each function is renamed brk_<name> so it can be linked against glibc
 # libm and compared directly.
 RENAME=""
 for f in exp log log2 log10 pow sin cos tan asin acos atan atan2 fmod \
 	floor ceil fabs frexp ldexp scalbn modf sqrt copysign \
-	__fpclassify __signbit __sin __cos __tan __rem_pio2 \
-	__rem_pio2_large __math_xflow __math_uflow __math_oflow \
-	__math_divzero __math_invalid; do
+	__fpclassify __signbit __brk_rem_pio2 __brk_exp_pair \
+	__brk_log_pair __brk_asin_poly __brk_atan_core; do
 	RENAME="$RENAME -D$f=brk_$f"
 done
 

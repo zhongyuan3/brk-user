@@ -1,75 +1,80 @@
 /*
- * Double-precision remainder function.
+ * fmod: exact floating remainder.
  *
- * Adapted from musl: Copyright (c) 2005-2020 Rich Felker and the musl
- * libc authors.  SPDX-License-Identifier: MIT.
+ * The significands are reduced with an integer shift-subtract loop,
+ * which is the only way to keep the result exact.  fmod(x, y) is always
+ * exactly representable (the remainder lies on the representable grid
+ * shared by x and y), so no rounding ever occurs.
  */
 
-#include <math.h>
 #include <stdint.h>
+
+#include "libm.h"
+
+/* Normalize a nonzero finite double to (m, e) with m having its leading
+ * bit at position 52 and value == m * 2^(e - 1075).  For normals e is
+ * the raw exponent field; for subnormals it can reach below 1. */
+static void norm_sig(uint64_t bits, uint64_t *m, int *e)
+{
+	uint64_t frac = bits & 0xfffffffffffffull;
+	int raw = (int)(bits >> 52) & 0x7ff;
+
+	if (raw == 0) {
+		int lz = __builtin_clzll(frac) - 11;
+
+		*m = frac << lz;
+		*e = 1 - lz;
+	} else {
+		*m = frac | (1ULL << 52);
+		*e = raw;
+	}
+}
 
 double fmod(double x, double y)
 {
-	union {double f; uint64_t i;} ux = {x}, uy = {y};
-	int ex = ux.i>>52 & 0x7ff;
-	int ey = uy.i>>52 & 0x7ff;
-	int sx = ux.i>>63;
-	uint64_t i;
+	union brk_dbits ux = { x }, uy = { y };
+	uint64_t mx, my, m;
+	int ex, ey, d;
 
-	/* in the followings uxi should be ux.i, but then gcc wrongly adds */
-	/* float load/store to inner loops ruining performance and code size */
-	uint64_t uxi = ux.i;
+	if (uy.i << 1 == 0 ||
+	    (ux.i << 1) >= 0xffe0000000000000ull ||
+	    (uy.i << 1) > 0xffe0000000000000ull)
+		return (x * y) / (x * y);   /* y=0, x inf/nan, y nan */
+	if ((ux.i << 1) == (uy.i << 1))
+		return x * 0.0;          /* |x| == |y|: signed zero */
+	if ((ux.i << 1) < (uy.i << 1))
+		return x;                /* |x| < |y| */
 
-	if (uy.i<<1 == 0 || isnan(y) || ex == 0x7ff)
-		return (x*y)/(x*y);
-	if (uxi<<1 <= uy.i<<1) {
-		if (uxi<<1 == uy.i<<1)
-			return 0*x;
-		return x;
+	norm_sig(ux.i, &mx, &ex);
+	norm_sig(uy.i, &my, &ey);
+
+	/* Long division of mx * 2^(ex-ey) by my: at every step m < my, so
+	   the shift stays inside 64 bits. */
+	m = mx;
+	for (d = ex - ey; d > 0; d--) {
+		if (m >= my)
+			m -= my;
+		m <<= 1;
 	}
+	if (m >= my)
+		m -= my;
 
-	/* normalize x and y */
-	if (!ex) {
-		for (i = uxi<<12; i>>63 == 0; ex--, i <<= 1);
-		uxi <<= -ex + 1;
-	} else {
-		uxi &= -1ULL >> 12;
-		uxi |= 1ULL << 52;
-	}
-	if (!ey) {
-		for (i = uy.i<<12; i>>63 == 0; ey--, i <<= 1);
-		uy.i <<= -ey + 1;
-	} else {
-		uy.i &= -1ULL >> 12;
-		uy.i |= 1ULL << 52;
-	}
+	if (m == 0)
+		return x * 0.0;
+	{
+		int lz = __builtin_clzll(m) - 11;
+		int eout = ey - lz;
 
-	/* x mod y */
-	for (; ex > ey; ex--) {
-		i = uxi - uy.i;
-		if (i >> 63 == 0) {
-			if (i == 0)
-				return 0*x;
-			uxi = i;
+		m <<= lz;
+		if (eout < 1) {
+			/* subnormal result: exact by the grid argument */
+			m >>= 1 - eout;
+			ux.i = (ux.i & (1ULL << 63)) | m;
+		} else {
+			ux.i = (ux.i & (1ULL << 63)) |
+			       ((uint64_t)eout << 52) |
+			       (m & 0xfffffffffffffull);
 		}
-		uxi <<= 1;
 	}
-	i = uxi - uy.i;
-	if (i >> 63 == 0) {
-		if (i == 0)
-			return 0*x;
-		uxi = i;
-	}
-	for (; uxi>>52 == 0; uxi <<= 1, ex--);
-
-	/* scale result */
-	if (ex > 0) {
-		uxi -= 1ULL << 52;
-		uxi |= (uint64_t)ex << 52;
-	} else {
-		uxi >>= -ex + 1;
-	}
-	uxi |= (uint64_t)sx << 63;
-	ux.i = uxi;
 	return ux.f;
 }
