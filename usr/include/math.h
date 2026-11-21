@@ -66,6 +66,35 @@ double ldexp(double x, int exp);
 double scalbn(double x, int exp);
 double copysign(double x, double y);
 
+/* C99 rounding and comparison helpers (core_ops.c). */
+double trunc(double x);
+double round(double x);
+double rint(double x);
+double nearbyint(double x);
+long lround(double x);
+long long llround(double x);
+long lrint(double x);
+long long llrint(double x);
+double fmin(double x, double y);
+double fmax(double x, double y);
+double fdim(double x, double y);
+double nextafter(double x, double y);
+double nan(const char *tagp);
+double fma(double x, double y, double z);
+double remainder(double x, double y);
+double remquo(double x, double y, int *quo);
+double log1p(double x);
+double expm1(double x);
+double exp2(double x);
+double sinh(double x);
+double cosh(double x);
+double tanh(double x);
+double asinh(double x);
+double acosh(double x);
+double atanh(double x);
+double hypot(double x, double y);
+double cbrt(double x);
+
 int __signbit(double x);
 int __fpclassify(double x);
 

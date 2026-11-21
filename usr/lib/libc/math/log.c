@@ -34,6 +34,82 @@
  * exponent adjustment -- the fraction bits are untouched). */
 #define SQRT2_FRAC 0x0006a09e667f3bcdull
 
+hidden void __brk_ln1p_pair(double f, double *hi, double *lo)
+{
+	if (f > -0.03125 && f < 0.03125) {
+		/* ln(1+f) = f + f^2*(-1/2 + f/3 - ... + f^11/13):
+		   the correction is suppressed by f^2, so the Horner
+		   rounding stays below 2^-60 absolute. */
+		static const double v_c[12] = {
+			-0.5, 1.0 / 3.0, -0.25, 0.2,
+			-1.0 / 6.0, 1.0 / 7.0, -0.125, 1.0 / 9.0,
+			-0.1, 1.0 / 11.0, -1.0 / 12.0, 1.0 / 13.0,
+		};
+		double v;
+		int i;
+
+		v = v_c[11];
+		for (i = 10; i >= 0; i--)
+			v = v * f + v_c[i];
+
+		*hi = f;
+		*lo = f * f * v;
+		return;
+	}
+
+	/* ln(1+f) = 2z + 2z*C(w), w = z*z, z = f/(2+f),
+	   C = w/3 + w^2/5 + ... + w^16/33.
+	   The series runs one term per w-power further than log()
+	   needs (its |f| stays below 0.414): log1p() calls this with
+	   |f| up to 0.5, where z reaches -1/3 and w 1/9, and the
+	   17-term truncation stays below 2^-59 absolute there.  The
+	   division z and the product den*z both round, and neither
+	   error is suppressed by w, so z is formed as a compensated
+	   pair: pow amplifies the pair error by |y| and would lose
+	   several ulps at moderate exponents without it. */
+	{
+		static const double c_c[17] = {
+			1.0 / 3.0, 1.0 / 5.0, 1.0 / 7.0, 1.0 / 9.0,
+			1.0 / 11.0, 1.0 / 13.0, 1.0 / 15.0, 1.0 / 17.0,
+			1.0 / 19.0, 1.0 / 21.0, 1.0 / 23.0, 1.0 / 25.0,
+			1.0 / 27.0, 1.0 / 29.0, 1.0 / 31.0, 1.0 / 33.0,
+			1.0 / 35.0,
+		};
+		double den = 2.0 + f;	/* rounds: 2+f needs up to 56 bits */
+		double den_lo = two_sum_err(2.0, f, den);
+		double zh = f / den;
+		double prod = den * zh;
+		double perr = two_prod_err(den, zh, prod);
+		double zl = (f - prod - perr) / den;	/* f/den - zh exactly */
+		/* den_lo shifts the true quotient z = f/(2+f) away from
+		   f/den by -f*den_lo/den^2; pow amplifies the pair error
+		   by |y|, so without this the pair is only good to
+		   ~2^-53 of z. */
+		zl -= f * den_lo / (den * den);	/* z = zh + zl */
+		{
+			double w = zh * zh;
+			double rest, t, e, c;
+			int i;
+
+			/* Horner through 1/5, then split the last
+			   multiply and the 1/3 add: both roundings are
+			   captured, because they are the only ones not
+			   suppressed by w. */
+			rest = c_c[16];
+			for (i = 15; i >= 1; i--)
+				rest = rest * w + c_c[i];
+			t = rest * w;
+			e = two_prod_err(rest, w, t);
+			c = t + c_c[0];
+			e += two_sum_err(t, c_c[0], c);/* C = w*(c+e) exactly */
+
+			*hi = 2.0 * zh;		/* exact scaling of head */
+			*lo = 2.0 * zh * w * c + 2.0 * zh * w * e +
+			      2.0 * zl * (1.0 + w * c);
+		}
+	}
+}
+
 hidden void __brk_log_pair(double x, double *hi, double *lo)
 {
 	union brk_dbits u = { x };
@@ -56,70 +132,7 @@ hidden void __brk_log_pair(double x, double *hi, double *lo)
 	m = u.f;
 	f = m - 1.0;			/* exact */
 
-	if (f > -0.03125 && f < 0.03125) {
-		/* ln(1+f) = f + f^2*(-1/2 + f/3 - ... + f^11/13):
-		   the correction is suppressed by f^2, so the Horner
-		   rounding stays below 2^-60 absolute. */
-		static const double v_c[12] = {
-			-0.5, 1.0 / 3.0, -0.25, 0.2,
-			-1.0 / 6.0, 1.0 / 7.0, -0.125, 1.0 / 9.0,
-			-0.1, 1.0 / 11.0, -1.0 / 12.0, 1.0 / 13.0,
-		};
-		double v;
-		int i;
-
-		v = v_c[11];
-		for (i = 10; i >= 0; i--)
-			v = v * f + v_c[i];
-
-		lnh = f;
-		lnl = f * f * v;
-	} else {
-		/* ln(1+f) = 2z + 2z*C(w), w = z*z,
-		   C = w/3 + w^2/5 + ... + w^11/23.
-		   The division z and the product den*z both round, and
-		   neither error is suppressed by w, so z is formed as a
-		   compensated pair: without this, pow would amplify the
-		   pair error by |y| and lose several ulps at moderate
-		   exponents.  The Horner's own roundings are suppressed
-		   by the factored powers and need no capture. */
-		static const double c_c[11] = {
-			1.0 / 3.0, 1.0 / 5.0, 1.0 / 7.0, 1.0 / 9.0,
-			1.0 / 11.0, 1.0 / 13.0, 1.0 / 15.0, 1.0 / 17.0,
-			1.0 / 19.0, 1.0 / 21.0, 1.0 / 23.0,
-		};
-		double den = 2.0 + f;	/* rounds: 2+f needs up to 56 bits */
-		double den_lo = two_sum_err(2.0, f, den);
-		double zh = f / den;
-		double prod = den * zh;
-		double perr = two_prod_err(den, zh, prod);
-		double zl = (f - prod - perr) / den;	/* f/den - zh exactly */
-		/* den_lo shifts the true quotient z = f/(2+f) away from
-		   f/den by -f*den_lo/den^2; pow amplifies the pair error
-		   by |y|, so without this the pair is only good to
-		   ~2^-53 of z. */
-		zl -= f * den_lo / (den * den);	/* z = zh + zl */
-		double w = zh * zh;
-		double rest, t, e, c;
-		int i;
-
-		/* Horner through 1/5, then split the last multiply and
-		   the 1/3 add: both roundings are captured, because they
-		   are the only ones not suppressed by w.  pow amplifies
-		   the pair error by |y|, so they matter there. */
-		rest = c_c[10];
-		for (i = 9; i >= 1; i--)
-			rest = rest * w + c_c[i];
-		t = rest * w;
-		e = two_prod_err(rest, w, t);
-		c = t + c_c[0];
-		e += two_sum_err(t, c_c[0], c);	/* C = w*(c + e) exactly */
-
-		lnh = 2.0 * zh;			/* exact scaling of the head */
-		lnl = 2.0 * zh * w * c + 2.0 * zh * w * e +
-		      2.0 * zl * (1.0 + w * c);
-	}
-
+	__brk_ln1p_pair(f, &lnh, &lnl);
 	/* Combine: e*ln2 + ln(m), with two-sum capturing each rounding. */
 	{
 		double eh = e * LN2_HI;	/* exact */

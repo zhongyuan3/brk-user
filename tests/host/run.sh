@@ -41,6 +41,9 @@ echo "== math: BRK libm vs glibc, 2 ULP =="
 RENAME=""
 for f in exp log log2 log10 pow sin cos tan asin acos atan atan2 fmod \
 	floor ceil fabs frexp ldexp scalbn modf sqrt copysign \
+	trunc round rint nearbyint lround llround lrint llrint \
+	fmin fmax fdim nextafter fma remainder remquo nan \
+	log1p expm1 exp2 sinh cosh tanh asinh acosh atanh hypot cbrt \
 	__fpclassify __signbit __brk_rem_pio2 __brk_exp_pair \
 	__brk_log_pair __brk_asin_poly __brk_atan_core; do
 	RENAME="$RENAME -D$f=brk_$f"

@@ -42,6 +42,33 @@ double brk_sqrt(double);
 double brk_copysign(double, double);
 int brk___fpclassify(double);
 int brk___signbit(double);
+double brk_trunc(double);
+double brk_round(double);
+double brk_rint(double);
+double brk_nearbyint(double);
+long brk_lround(double);
+long long brk_llround(double);
+long brk_lrint(double);
+long long brk_llrint(double);
+double brk_fmin(double, double);
+double brk_fmax(double, double);
+double brk_fdim(double, double);
+double brk_nextafter(double, double);
+double brk_fma(double, double, double);
+double brk_remainder(double, double);
+double brk_remquo(double, double, int *);
+double brk_nan(const char *);
+double brk_log1p(double);
+double brk_expm1(double);
+double brk_exp2(double);
+double brk_sinh(double);
+double brk_cosh(double);
+double brk_tanh(double);
+double brk_asinh(double);
+double brk_acosh(double);
+double brk_atanh(double);
+double brk_hypot(double, double);
+double brk_cbrt(double);
 
 static int failures;
 
@@ -137,6 +164,30 @@ int main(void)
 	if (!isnan(brk_sqrt(-1.0))) { printf("FAIL sqrt(-1) not NaN\n"); failures++; }
 	if (brk_fabs(-3.5) != 3.5) { printf("FAIL fabs\n"); failures++; }
 
+	/* Rounding helpers: values around every kind of tie. */
+	double roundties[64];
+	size_t nr = 0;
+
+	roundties[nr++] = 0.5;
+	roundties[nr++] = -0.5;
+	roundties[nr++] = 1.5;
+	roundties[nr++] = 2.5;
+	roundties[nr++] = -1.5;
+	roundties[nr++] = -2.5;
+	roundties[nr++] = 3.5;
+	roundties[nr++] = 4.5;
+	roundties[nr++] = 0.49999999999999994;
+	roundties[nr++] = -0.49999999999999994;
+	roundties[nr++] = 0.50000000000000011;
+	roundties[nr++] = 4503599627370495.5; /* tie at 2^52-0.5 */
+	roundties[nr++] = 9007199254740991.0;
+	roundties[nr++] = 1e-300;
+	roundties[nr++] = 5e-324;
+	roundties[nr++] = 123.456;
+	roundties[nr++] = -123.456;
+	roundties[nr++] = 0.0;
+	roundties[nr++] = -0.0;
+
 	double pos1[64];
 	size_t np = 0;
 	pos1[np++] = 0.001;
@@ -168,6 +219,10 @@ int main(void)
 	CHECK_1ARG(tan, spread1);
 	CHECK_1ARG(floor, spread1);
 	CHECK_1ARG(ceil, spread1);
+	CHECK_1ARG(trunc, spread1);
+	CHECK_1ARG(round, roundties);
+	CHECK_1ARG(rint, roundties);
+	CHECK_1ARG(nearbyint, roundties);
 	CHECK_1ARG(atan, spread1);
 
 	double unit[] = { -1.0, -0.99999, -0.9, -0.5, -0.1, -1e-8, 0.0, 1e-8, 0.1, 0.5, 0.9, 0.99999, 1.0, 0.7071067811865476 };
@@ -180,6 +235,136 @@ int main(void)
 			     ((double[]){ 1.0, 1.0, -2.0, -0.5, 1.0, -1e8, -1.0, -1.0, 0.0, 1e-8 }));
 	CHECK_2ARG(fmod, ((double[]){ 5.3, -5.3, 5.3, 1e300, -7.0, 7.0, 0x1p52, 3.0 }),
 			     ((double[]){ 2.0, 2.0, -2.0, 1e-300, 2.5, -7.0, 3.0, 1.0 }));
+	CHECK_2ARG(fmin, ((double[]){ 1.0, -1.0, 0.0, -0.0, 0.0, 5.0, 1.0 / 0.0 }),
+			     ((double[]){ 2.0, 1.0, -0.0, 0.0, 0.0, -0.0 / 0.0, 2.0 }));
+	CHECK_2ARG(fmax, ((double[]){ 1.0, -1.0, 0.0, -0.0, 0.0, 5.0, 1.0 / 0.0 }),
+			     ((double[]){ 2.0, 1.0, -0.0, 0.0, 0.0, -0.0 / 0.0, 2.0 }));
+	CHECK_2ARG(fdim, ((double[]){ 1.0, 3.0, -3.0, 1e300 }),
+			     ((double[]){ 2.0, 1.0, -1.0, -1e300 }));
+	CHECK_2ARG(remainder, ((double[]){ 8.5, 8.3, -8.5, 100.3, 5.3, 1e300 }),
+				((double[]){ 1.0, 1.0, 1.0, 1.0, 2.0, 3.0 }));
+
+	/* remquo: value matches remainder and the quotient obeys the
+	   C99 mod-8 congruence; glibc's own quotient is inconsistent
+	   for small quotients, so it is not used as the reference. */
+	{
+		double xs[] = { 8.5, 8.3, 100.3, 5.3, -17.3, 1e300, 2.6149759478795142e+81 };
+		double ys[] = { 1.0, 1.0, 1.0, 2.0, 2.0, 3.0, 5.8032016648957086e-304 };
+
+		for (size_t i = 0; i < sizeof(xs) / sizeof(xs[0]); i++) {
+			int q = 0;
+			double r = brk_remquo(xs[i], ys[i], &q);
+			double rw = remainder(xs[i], ys[i]);
+
+			if (ulp_diff(r, rw) > 2) {
+				printf("FAIL remquo(%.17g, %.17g) value\n",
+				       xs[i], ys[i]);
+				failures++;
+			}
+			{
+				double y8 = 8.0 * fabs(ys[i]);
+				double d = (xs[i] - (double)q * ys[i] - r) / y8;
+				double k = nearbyint(d);
+
+				if (fabs(d - k) > 2e-12 * (fabs(d) + 1)) {
+					printf("FAIL remquo congruence "
+					       "(%.17g, %.17g) q=%d\n",
+					       xs[i], ys[i], q);
+					failures++;
+				}
+			}
+		}
+	}
+
+	/* lround/lrint: exact in range (out of range is unspecified;
+	   BRK saturates like the RISC-V conversion, glibc's SSE answer
+	   differs and is not compared). */
+	{
+		double xs[] = { 0.5, -0.5, 1.5, 2.5, -2.5, 4.5, 123.456,
+				-123.456, 0.49999999999999994, 1e15,
+				4503599627370495.5 };
+		long bad = 0;
+
+		for (size_t i = 0; i < sizeof(xs) / sizeof(xs[0]); i++) {
+			if (brk_lround(xs[i]) != lround(xs[i]))
+				bad++;
+			if (brk_llround(xs[i]) != llround(xs[i]))
+				bad++;
+			if (brk_lrint(xs[i]) != lrint(xs[i]))
+				bad++;
+			if (brk_llrint(xs[i]) != llrint(xs[i]))
+				bad++;
+		}
+		if (bad) {
+			printf("FAIL lround/lrint (%ld cases)\n", bad);
+			failures++;
+		}
+	}
+
+	/* nextafter: bit-exact walks in both directions. */
+	{
+		double xs[] = { 0.0, -0.0, 1.0, -1.0, 0x1p-1074, 5e-324,
+				0x1p1023, 123.456 };
+
+		for (size_t i = 0; i < sizeof(xs) / sizeof(xs[0]); i++) {
+			double x = xs[i];
+
+			if (brk_nextafter(x, INFINITY) != nextafter(x, INFINITY) ||
+			    brk_nextafter(x, -INFINITY) != nextafter(x, -INFINITY)) {
+				printf("FAIL nextafter(%.17g) walk\n", x);
+				failures++;
+			}
+		}
+		if (brk_nextafter(1.0, 1.0) != 1.0 ||
+		    brk_nextafter(-0.0, 1.0) != nextafter(-0.0, 1.0)) {
+			printf("FAIL nextafter specials\n");
+			failures++;
+		}
+	}
+
+	/* fma agrees with the host's fused instruction. */
+	{
+		double xs[] = { 1.0, 2.0, -0.5, 1e-300, 1e300 };
+
+		for (size_t i = 0; i < sizeof(xs) / sizeof(xs[0]); i++) {
+			for (size_t j = 0; j < sizeof(xs) / sizeof(xs[0]); j++) {
+				double g = brk_fma(xs[i], xs[j], xs[(i + j) % 5]);
+				double w = fma(xs[i], xs[j], xs[(i + j) % 5]);
+
+				if (g != w && !isnan(g)) {
+					printf("FAIL fma(%.17g,%.17g)\n",
+					       xs[i], xs[j]);
+					failures++;
+				}
+			}
+		}
+	}
+
+	/* The C99 tail: exponential, hyperbolic and friends. */
+	CHECK_1ARG(log1p, spread1);
+	CHECK_1ARG(expm1, spread1);
+	CHECK_1ARG(exp2, spread1);
+	CHECK_1ARG(sinh, spread1);
+	CHECK_1ARG(cosh, spread1);
+	CHECK_1ARG(tanh, spread1);
+	CHECK_1ARG(asinh, spread1);
+	CHECK_1ARG(acosh, ((double[]){ 1.0, 1.5, 2.0, 10.0, 1e10, 1e300, 1.0000001, 2.718281828459045 }));
+	CHECK_1ARG(atanh, unit);
+	CHECK_1ARG(cbrt, spread1);
+	CHECK_2ARG(hypot, ((double[]){ 3.0, -3.0, 1e300, 1e-300, 0.0, 5.0, 1e10 }),
+			   ((double[]){ 4.0, 4.0, 1e-300, 1e300, 0.0, 12.0, 1e-10 }));
+	if (brk_cbrt(8.0) != 2.0 || brk_cbrt(27.0) != 3.0 ||
+	    brk_cbrt(-8.0) != -2.0 || brk_cbrt(0.0) != 0.0) {
+		printf("FAIL cbrt perfect cubes\n");
+		failures++;
+	}
+
+	/* nan() drives the vendored strtod spelling. */
+	if (!isnan(brk_nan("")) || !isnan(brk_nan("123")) ||
+	    !isnan(brk_nan(NULL))) {
+		printf("FAIL nan\n");
+		failures++;
+	}
 
 	for (size_t i = 0; i < n1; ++i) {
 		double x = spread1[i];

@@ -84,7 +84,10 @@ static inline double two_prod_err(double a, double b, double p)
 
 hidden int __brk_rem_pio2(double ax, double *rhi, double *rlo);
 hidden double __brk_exp_pair(double hi, double lo);
+hidden void __brk_exp_full(double x, double lo, double *hi, double *elo);
+hidden double __brk_scale_pow2(double v, int m);
 hidden void __brk_log_pair(double x, double *hi, double *lo);
+hidden void __brk_ln1p_pair(double f, double *hi, double *lo);
 hidden double __brk_asin_poly(double t);
 hidden double __brk_atan_core(double u);
 

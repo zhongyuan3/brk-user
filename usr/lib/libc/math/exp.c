@@ -66,7 +66,7 @@ static const double exp2_t32[32][2] = {
 
 /* Scale v by 2^m, keeping every intermediate exact and the final
  * rounding single. */
-static double scale_pow2(double v, int m)
+hidden double __brk_scale_pow2(double v, int m)
 {
 	if (m > 1023) {
 		v *= 0x1p1023;
@@ -81,7 +81,7 @@ static double scale_pow2(double v, int m)
 	return v * fro64((uint64_t)(0x3ff + m) << 52);
 }
 
-hidden double __brk_exp_pair(double x, double lo)
+hidden void __brk_exp_full(double x, double lo, double *hi, double *elo)
 {
 	double z, kd, r, r2, q, corr, core;
 	const double *t;
@@ -91,11 +91,14 @@ hidden double __brk_exp_pair(double x, double lo)
 	if (((uint32_t)(asu64(x) >> 52) & 0x7ff) >= 0x409) {
 		/* |x| >= 1024: the lo term cannot bring it back below
 		   the cut, and the image is +-0 / +-inf / nan. */
-		if ((asu64(x) << 1) > 0xffe0000000000000ull)
-			return x + lo;		/* nan */
-		if (asu64(x) >> 63)
-			return 0.0;
-		return 1.0 / 0.0;
+		if ((asu64(x) << 1) > 0xffe0000000000000ull) {
+			*hi = x + lo;		/* nan */
+			*elo = 0.0;
+			return;
+		}
+		*hi = asu64(x) >> 63 ? 0.0 : 1.0 / 0.0;
+		*elo = 0.0;
+		return;
 	}
 
 	/* k = round(x*32/ln2), |x| < 1024 keeps |k| < 2^16 so that
@@ -126,11 +129,39 @@ hidden double __brk_exp_pair(double x, double lo)
 	m = k >> 5;
 	t = exp2_t32[j];
 
-	/* Single rounding at the scale of the tabulated factor: the
-	   correction group stays below 2^-6 relative. */
-	core = t[0] + (t[0] * corr + t[1]);
+	/*
+	 * Compensated assembly at the scale of the tabulated factor.
+	 * Each rounding is captured so the pair (hi, elo) represents
+	 * e^(x+lo) far below one ulp: expm1() and the hyperbolics
+	 * subtract or combine the pair without losing the small end,
+	 * and the collapsed forms (exp, pow) end with one rounding.
+	 */
+	{
+		double p1 = t[0] * corr;
+		double e1 = two_prod_err(t[0], corr, p1);
+		double inner = p1 + t[1];
+		double e2 = two_sum_err(p1, t[1], inner);
 
-	return scale_pow2(core, m);
+		core = t[0] + inner;
+		e1 += e2 + two_sum_err(t[0], inner, core);
+		*hi = __brk_scale_pow2(core, m);
+		*elo = __brk_scale_pow2(e1, m);
+		/*
+		 * On the overflow edge hi is infinite while the scaled
+		 * residual can be an infinity of the other sign; the
+		 * pair must not fold into a nan there.
+		 */
+		if ((asu64(*hi) << 1) == 0xffe0000000000000ull)
+			*elo = 0.0;
+	}
+}
+
+hidden double __brk_exp_pair(double x, double lo)
+{
+	double hi, elo;
+
+	__brk_exp_full(x, lo, &hi, &elo);
+	return hi + elo;
 }
 
 double exp(double x)

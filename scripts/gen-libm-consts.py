@@ -418,6 +418,29 @@ def F_atan(w):
 atan_lits = fit_poly(F_atan, 13, D("0.25"), "atan core:"
                      " atan(x) = x + x^3 * B(w)")
 
+def d_exp(x):
+    """e^x by Taylor for |x| <= 1 at extended precision."""
+    term, total = ONE, ONE
+    for k in range(1, 60):
+        term = term * x / k
+        total += term
+        if abs(term) < D(10) ** -70:
+            break
+    return total
+
+
+def d_tanh(x):
+    return (d_exp(x) - d_exp(-x)) / (d_exp(x) + d_exp(-x))
+
+
+def F_tanh(w):
+    x = d_sqrt(w)
+    return (d_tanh(x) - x) / (w * x)
+
+
+tanh_lits = fit_poly(F_tanh, 15, D("0.25"), "tanh core:"
+                     " tanh(x) = x + x^3 * H(w)")
+
 
 def F_asin(w):
     x = d_sqrt(w)
