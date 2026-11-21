@@ -150,6 +150,16 @@ if [[ -d $VARIANT_ROOT/tests/libc ]]; then
 	done
 fi
 
+# Dynamic-linking artifacts: /lib/ld-brk.so is the PT_INTERP target
+# every PIE executable names, /lib/libhello.so backs the in-system
+# loader smoke test (dynhello rides along in /home/tests/libc).
+if [[ -f $VARIANT_ROOT/ld-brk.so ]]; then
+	"$BRKFS" cp --parents "$VARIANT_ROOT/ld-brk.so" "/lib/ld-brk.so" "$IMG"
+fi
+if [[ -f $VARIANT_ROOT/libhello.so ]]; then
+	"$BRKFS" cp --parents "$VARIANT_ROOT/libhello.so" "/lib/libhello.so" "$IMG"
+fi
+
 # usr/include/cc.h is the runtime header for programs compiled by the
 # on-target cc: a raw-syscall subset with no libc dependency.  It is
 # the only header installed into the image so far; a future on-target

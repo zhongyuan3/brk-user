@@ -11,6 +11,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <sys/stat.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/types.h>
@@ -235,6 +236,28 @@ static int case_pie_rela(struct test_ctx *ctx)
 	return exec_ok_status();
 }
 
+static int case_dynamic(struct test_ctx *ctx)
+{
+	struct stat st;
+
+	(void)ctx;
+	/*
+	 * The full dynamic chain: PT_INTERP=/lib/ld-brk.so maps the
+	 * linker, it loads DT_NEEDED libhello.so, resolves the weak
+	 * symbols, runs the constructor and hands control to the
+	 * entry.  dynhello exits 0 after printing "dyn ok".
+	 */
+	if (stat("/home/tests/libc/dynhello", &st) != 0)
+		return test_skip("exec: dynhello not installed");
+	int status = run_image("/home/tests/libc/dynhello");
+
+	if (status < 0)
+		return test_fail_msg("exec: fork/wait failed");
+	if (status != 0)
+		return test_fail_msg("exec: dynhello status %#x", status);
+	return 0;
+}
+
 static int case_bad_magic(struct test_ctx *ctx)
 {
 	struct img im;
@@ -354,6 +377,7 @@ static int case_entry_not_x(struct test_ctx *ctx)
 }
 
 static const struct test_case exec_cases[] = {
+	{ "dynamic", case_dynamic, 0, 10000 },
 	{ "static_exec", case_static_exec, 0, 10000 },
 	{ "pie_rela", case_pie_rela, 0, 10000 },
 	{ "gnu_stack_x", case_gnu_stack_x, 0, 10000 },

@@ -257,7 +257,39 @@ kernel:
 	$(Q)$(MAKE) -C $(KERNEL_ROOT) ARCH=$(KERNEL_ARCH) BUILD=$(KERNEL_BUILD) \
 		CROSS_COMPILE=$(CROSS_COMPILE) $(KERNEL_MAKE_ARGS)
 
-rootfs:
+# Dynamic-linking artifacts: built with the Linux-hosted cross
+# toolchain (the Newlib one cannot emit shared objects).  ld-brk.so
+# is a static PIE whose only runtime relocations are R_RISCV_RELATIVE
+# (hidden visibility + -Bsymbolic), so the kernel's base-relocation
+# pass fully self-relocates it - no bootstrap goblin needed.
+LINUX_CROSS ?= riscv64-linux-gnu-
+DYN_CC := $(LINUX_CROSS)gcc
+DYN_CFLAGS := -march=rv64gc -mcmodel=medany -ffreestanding -fno-builtin \
+	-fno-stack-protector -nostdlib -Wall -Wextra -Werror \
+	-I$(BUILD_ROOT)/include -I./usr/include
+DYN_OUT := $(BUILD_ROOT)/$(BUILD)
+DYN_ARTIFACTS := $(DYN_OUT)/ld-brk.so $(DYN_OUT)/libhello.so \
+	$(DYN_OUT)/tests/libc/dynhello
+
+$(DYN_OUT)/ld-brk.so: dyn/ldso/ld.c $(UAPI_STAMP)
+	$(Q)$(DYN_CC) $(DYN_CFLAGS) -fPIC -fvisibility=hidden \
+		-Wl,-Bsymbolic -Wl,--hash-style=sysv \
+		-static-pie dyn/ldso/ld.c -o $@
+
+$(DYN_OUT)/libhello.so: dyn/test/libhello.c
+	$(Q)$(DYN_CC) $(DYN_CFLAGS) -shared -fPIC -Wl,--hash-style=sysv \
+		-Wl,-soname,libhello.so dyn/test/libhello.c -o $@
+
+$(DYN_OUT)/tests/libc/dynhello: dyn/test/dynhello.c $(DYN_OUT)/libhello.so
+	$(Q)mkdir -p $(DYN_OUT)/tests/libc
+	$(Q)$(DYN_CC) $(DYN_CFLAGS) -fPIE dyn/test/dynhello.c \
+		-Wl,--no-as-needed $(DYN_OUT)/libhello.so \
+		-Wl,-e,_start -pie -Wl,--hash-style=sysv \
+		-Wl,-dynamic-linker,/lib/ld-brk.so -o $@
+
+dyn: $(DYN_ARTIFACTS)
+
+rootfs: dyn
 	$(Q)rm -f $(ROOTFS_IMG)
 	$(Q)KERNEL_ROOT="$(abspath $(KERNEL_ROOT))" \
 		BUILD_ROOT="$(abspath $(BUILD_ROOT))" \
