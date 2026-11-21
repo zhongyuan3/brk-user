@@ -29,4 +29,18 @@ struct dirent {
 
 ssize_t posix_getdents(int fd, void *dirp, size_t count, int flags);
 
+/*
+ * Directory streams.  telldir() cookies are stable entry indexes:
+ * they stay valid across rewinddir() and seekdir() rebuilds any
+ * position by restarting the kernel cursor and skipping forward.
+ */
+typedef struct __dir DIR;
+
+DIR *opendir(const char *path);
+struct dirent *readdir(DIR *dir);
+int closedir(DIR *dir);
+void rewinddir(DIR *dir);
+long telldir(DIR *dir);
+void seekdir(DIR *dir, long loc);
+
 #endif

@@ -32,4 +32,16 @@ double difftime(time_t t1, time_t t0);
 size_t strftime(char *s, size_t max, const char *format,
 		const struct tm *tm);
 
+/*
+ * Reentrant and UTC calendar helpers.  The plain forms use one
+ * shared static buffer each.
+ */
+struct tm *gmtime_r(const time_t *timep, struct tm *result);
+struct tm *localtime_r(const time_t *timep, struct tm *result);
+time_t timegm(struct tm *tm);
+char *asctime(const struct tm *tm);
+char *asctime_r(const struct tm *tm, char *buf);
+char *ctime(const time_t *timep);
+char *ctime_r(const time_t *timep, char *buf);
+
 #endif

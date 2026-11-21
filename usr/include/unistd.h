@@ -87,6 +87,23 @@ unsigned int sleep(unsigned int seconds);
 void sync(void);
 int fsync(int fd);
 
+int isatty(int fd);
+int truncate(const char *path, off_t length);
+int ftruncate(int fd, off_t length);
+int gethostname(char *name, size_t len);
+
+/*
+ * POSIX option scanning.  The GNU long-option forms live in
+ * <getopt.h>; the prefix and error-mode conventions are documented
+ * there and in the implementation.
+ */
+extern char *optarg;
+extern int optind;
+extern int opterr;
+extern int optopt;
+
+int getopt(int argc, char *const argv[], const char *optstring);
+
 extern char **environ;
 
 #endif

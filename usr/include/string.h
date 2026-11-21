@@ -38,4 +38,13 @@ const char *strerror(int errnum);
 char *strdup(char const *s);
 char *strndup(char const *s, size_t n);
 
+char *strtok_r(char *str, const char *delim, char **saveptr);
+char *strcasestr(const char *haystack, const char *needle);
+char *strsep(char **stringp, const char *delim);
+char *strchrnul(const char *s, int c);
+int ffs(int i);
+int ffsl(long i);
+int ffsll(long long i);
+const char *strsignal(int signum);
+
 #endif

@@ -30,6 +30,24 @@ long long llabs(long long n);
 int atoi(const char *nptr);
 long atol(const char *nptr);
 long long atoll(const char *nptr);
+double atof(const char *nptr);
+
+int rand(void);
+void srand(unsigned int seed);
+int rand_r(unsigned int *seedp);
+
+#define RAND_MAX 0x7fffffff
+
+typedef struct { int quot; int rem; } div_t;
+typedef struct { long quot; long rem; } ldiv_t;
+typedef struct { long long quot; long long rem; } lldiv_t;
+
+div_t div(int numer, int denom);
+ldiv_t ldiv(long numer, long denom);
+lldiv_t lldiv(long long numer, long long denom);
+
+int mkstemp(char *template);
+char *mkdtemp(char *template);
 
 int system(const char *command);
 

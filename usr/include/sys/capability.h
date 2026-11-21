@@ -4,7 +4,9 @@
 #include <sys/types.h>
 #include <uapi/capability.h>
 
-int capget(struct cap_header *hdr, struct cap_data data[2]);
-int capset(struct cap_header *hdr, const struct cap_data data[2]);
+/*
+ * Only the structure and constant layout is exported; the kernel has
+ * no capget/capset system calls, so no functions are declared here.
+ */
 
 #endif

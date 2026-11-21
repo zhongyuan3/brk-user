@@ -34,3 +34,23 @@ alloc: ok
 `realloc` grow/shrink/`NULL`/zero-size behaviour, coalescing across many
 blocks, impossible allocation sizes and concurrent allocation from multiple
 threads.
+
+The API test covers the pure-composition additions:
+
+```sh
+/home/tests/libc/libapi
+```
+
+Expected result:
+
+```text
+libapi: ok
+```
+
+`libapi.c` exercises the directory stream API (opendir/readdir/rewinddir/
+telldir/seekdir), getopt()/getopt_long() including attached values, the
+"--" terminator and invalid options, the string extensions (strtok_r,
+strsep, strcasestr, strchrnul, ffs, basename/dirname, strsignal),
+rand/srand/rand_r determinism, div/ldiv/lldiv, atof, asctime/ctime/
+gmtime_r/localtime_r and the timegm() round trip, mkstemp/mkdtemp
+exclusivity, truncate/ftruncate and isatty/gethostname on the console.
