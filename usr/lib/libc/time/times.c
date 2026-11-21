@@ -13,7 +13,7 @@ static clock_t ns_to_ticks(unsigned long long ns)
 
 clock_t times(struct tms *buf)
 {
-	struct brk_times times;
+	struct __brk_times times;
 	struct timespec now;
 
 	if (syscall(SYS_GET_TIMES, &times) < 0 ||

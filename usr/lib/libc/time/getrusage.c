@@ -13,7 +13,7 @@ static void ns_to_timeval(unsigned long long ns, struct timeval *tv)
 
 int getrusage(int who, struct rusage *usage)
 {
-	struct brk_times times;
+	struct __brk_times times;
 	long ret;
 
 	if (!usage) {

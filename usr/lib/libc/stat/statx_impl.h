@@ -8,7 +8,7 @@
 
 #define STATX_NS_PER_SEC 1000000000LL
 
-static inline void statx_to_stat(const struct statx *stx, struct stat *st)
+static inline void statx_to_stat(const struct __brk_statx *stx, struct stat *st)
 {
 	memset(st, 0, sizeof(*st));
 
@@ -34,7 +34,7 @@ static inline void statx_to_stat(const struct statx *stx, struct stat *st)
 static inline int statx_at(int dirfd, const char *path, struct stat *st,
 			   int flags)
 {
-	struct statx stx;
+	struct __brk_statx stx;
 	long ret = syscall(SYS_STAT, dirfd, path, flags, &stx);
 
 	if (ret < 0)

@@ -1,8 +1,9 @@
 #include <string.h>
 #include <sys/statvfs.h>
+#include <uapi/statvfs.h>
 #include <syscall.h>
 
-static void statfs_to_statvfs(const struct brk_statfs *st, struct statvfs *buf)
+static void statfs_to_statvfs(const struct __brk_statfs *st, struct statvfs *buf)
 {
 	memset(buf, 0, sizeof(*buf));
 
@@ -26,7 +27,7 @@ static void statfs_to_statvfs(const struct brk_statfs *st, struct statvfs *buf)
 
 int statvfs(const char *path, struct statvfs *buf)
 {
-	struct brk_statfs st;
+	struct __brk_statfs st;
 
 	if (syscall(SYS_STAT_FS, path, &st) < 0)
 		return -1;
@@ -37,7 +38,7 @@ int statvfs(const char *path, struct statvfs *buf)
 
 int fstatvfs(int fd, struct statvfs *buf)
 {
-	struct brk_statfs st;
+	struct __brk_statfs st;
 
 	if (syscall(SYS_STAT_FS_FD, fd, &st) < 0)
 		return -1;

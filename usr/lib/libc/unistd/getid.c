@@ -2,14 +2,14 @@
 #include <uapi/proc.h>
 #include <unistd.h>
 
-static int get_proc(struct brk_proc *proc)
+static int get_proc(struct __brk_proc *proc)
 {
 	return (int)syscall(SYS_GET_PROC, proc);
 }
 
 uid_t getuid(void)
 {
-	struct brk_proc proc;
+	struct __brk_proc proc;
 
 	if (get_proc(&proc) < 0)
 		return (uid_t)-1;
@@ -18,7 +18,7 @@ uid_t getuid(void)
 
 uid_t geteuid(void)
 {
-	struct brk_proc proc;
+	struct __brk_proc proc;
 
 	if (get_proc(&proc) < 0)
 		return (uid_t)-1;
@@ -27,7 +27,7 @@ uid_t geteuid(void)
 
 gid_t getgid(void)
 {
-	struct brk_proc proc;
+	struct __brk_proc proc;
 
 	if (get_proc(&proc) < 0)
 		return (gid_t)-1;
@@ -36,7 +36,7 @@ gid_t getgid(void)
 
 gid_t getegid(void)
 {
-	struct brk_proc proc;
+	struct __brk_proc proc;
 
 	if (get_proc(&proc) < 0)
 		return (gid_t)-1;
@@ -45,7 +45,7 @@ gid_t getegid(void)
 
 int getresuid(uid_t *ruid, uid_t *euid, uid_t *suid)
 {
-	struct brk_proc proc;
+	struct __brk_proc proc;
 
 	if (get_proc(&proc) < 0)
 		return -1;
@@ -60,7 +60,7 @@ int getresuid(uid_t *ruid, uid_t *euid, uid_t *suid)
 
 int getresgid(gid_t *rgid, gid_t *egid, gid_t *sgid)
 {
-	struct brk_proc proc;
+	struct __brk_proc proc;
 
 	if (get_proc(&proc) < 0)
 		return -1;
@@ -75,7 +75,7 @@ int getresgid(gid_t *rgid, gid_t *egid, gid_t *sgid)
 
 int getgroups(int size, gid_t list[])
 {
-	struct brk_proc proc;
+	struct __brk_proc proc;
 	int i;
 
 	if (size < 0) {

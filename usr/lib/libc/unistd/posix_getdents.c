@@ -45,18 +45,18 @@ ssize_t posix_getdents(int fd, void *dirp, size_t count, int flags)
 	}
 
 	while (in < (size_t)n) {
-		const struct brk_dirent *de =
-			(const struct brk_dirent *)(raw + in);
+		const struct __brk_dirent *de =
+			(const struct __brk_dirent *)(raw + in);
 		size_t max_name;
 		size_t namelen;
 		size_t len;
 		struct posix_dent *dent;
 
-		if (de->d_reclen < offsetof(struct brk_dirent, d_name) + 1 ||
+		if (de->d_reclen < offsetof(struct __brk_dirent, d_name) + 1 ||
 		    in + de->d_reclen > (size_t)n)
 			break;
 
-		max_name = de->d_reclen - offsetof(struct brk_dirent, d_name);
+		max_name = de->d_reclen - offsetof(struct __brk_dirent, d_name);
 		namelen = strnlen(de->d_name, max_name);
 
 		len = offsetof(struct posix_dent, d_name) + namelen + 1;

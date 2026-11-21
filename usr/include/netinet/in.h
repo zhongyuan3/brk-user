@@ -6,7 +6,7 @@
 
 typedef uint32_t in_addr_t;
 
-/* struct in_addr and struct sockaddr_in come from <uapi/socket.h>. */
+/* struct in_addr and struct sockaddr_in come from <sys/socket.h>. */
 
 #define INADDR_ANY ((in_addr_t)0x00000000)
 #define INADDR_LOOPBACK ((in_addr_t)0x0100007f)

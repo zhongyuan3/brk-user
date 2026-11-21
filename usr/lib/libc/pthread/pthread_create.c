@@ -27,7 +27,7 @@ int pthread_create(pthread_t *thread, const pthread_attr_t *attr,
 		   void *(*start_routine)(void *), void *arg)
 {
 	struct pthread *self;
-	struct brk_thread_create_args args;
+	struct __brk_thread_create_args args;
 	size_t stack_size;
 	size_t total;
 	void *region;

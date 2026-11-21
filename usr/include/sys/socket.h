@@ -2,8 +2,27 @@
 #define _SYS_SOCKET_H
 
 #include <stddef.h>
+#include <stdint.h>
 #include <sys/types.h>
 #include <uapi/socket.h>
+
+typedef unsigned short sa_family_t;
+
+struct sockaddr {
+	sa_family_t sa_family;
+	char sa_data[14];
+};
+
+struct in_addr {
+	uint32_t s_addr;
+};
+
+struct sockaddr_in {
+	sa_family_t sin_family;
+	uint16_t sin_port;
+	struct in_addr sin_addr;
+	unsigned char sin_zero[8];
+};
 
 typedef __brk_sa_family_t sa_family_t;
 typedef __brk_socklen_t socklen_t;

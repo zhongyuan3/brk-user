@@ -2,9 +2,15 @@
 #define _POLL_H
 
 #include <signal.h>
-#include <sys/time.h>
 #include <sys/types.h>
+#include <time.h>
 #include <uapi/poll.h>
+
+struct pollfd {
+	int fd;
+	short events;
+	short revents;
+};
 
 typedef __brk_nfds_t nfds_t;
 

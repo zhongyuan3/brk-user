@@ -6,7 +6,7 @@
 
 int uname(struct utsname *buf)
 {
-	struct brk_sysinfo info;
+	struct __brk_sysinfo info;
 
 	if (!buf) {
 		errno = EFAULT;

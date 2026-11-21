@@ -5,7 +5,7 @@
 
 int clock_getres(clockid_t clockid, struct timespec *res)
 {
-	struct brk_sysinfo info;
+	struct __brk_sysinfo info;
 	__brk_u64 ns;
 
 	if (syscall(SYS_GET_SYSINFO, &info) < 0)

@@ -29,7 +29,7 @@ pid_t getsid(pid_t pid)
 
 pid_t getpgrp(void)
 {
-	struct brk_proc proc;
+	struct __brk_proc proc;
 
 	if (syscall(SYS_GET_PROC, &proc) < 0)
 		return (pid_t)-1;
