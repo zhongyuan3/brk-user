@@ -268,9 +268,12 @@ DYN_CFLAGS := -march=rv64gc -mcmodel=medany -ffreestanding -fno-builtin \
 	-fno-stack-protector -nostdlib -Wall -Wextra -Werror \
 	-I$(BUILD_ROOT)/include -I./usr/include
 DYN_OUT := $(BUILD_ROOT)/$(BUILD)
+LIBC_SO := $(DYN_OUT)/libc.so
 DYN_ARTIFACTS := $(DYN_OUT)/ld-brk.so $(DYN_OUT)/libhello.so \
 	$(DYN_OUT)/tests/libc/dynhello $(DYN_OUT)/libplug.so \
-	$(DYN_OUT)/tests/libc/dynopen
+	$(DYN_OUT)/tests/libc/dynopen $(LIBC_SO) \
+	$(DYN_OUT)/libdyn.so $(DYN_OUT)/tests/libc/dynprog \
+	$(DYN_OUT)/tests/libc/dyninter
 
 $(DYN_OUT)/ld-brk.so: dyn/ldso/ld.c $(UAPI_STAMP)
 	$(Q)$(DYN_CC) $(DYN_CFLAGS) -fPIC -fvisibility=hidden \
@@ -288,6 +291,49 @@ $(DYN_OUT)/libplug.so: dyn/test/libplug.c
 $(DYN_OUT)/tests/libc/dynopen: dyn/test/dynopen.c
 	$(Q)mkdir -p $(DYN_OUT)/tests/libc
 	$(Q)$(DYN_CC) $(DYN_CFLAGS) -fPIE dyn/test/dynopen.c \
+		-Wl,-e,_start -pie -Wl,--hash-style=sysv -Wl,--export-dynamic \
+		-Wl,-dynamic-linker,/lib/ld-brk.so -o $@
+
+# Shared libc: the same sources as libc.a, rebuilt PIC with the
+# Linux-hosted toolchain (the Newlib linker cannot emit shared
+# objects) and linked with -lgcc so soft-float helpers such as
+# __trunctfdf2 - which the archive pulls lazily for static binaries -
+# are baked into the image.  _start stays out: every dynamically
+# linked executable carries its own crt0.
+LIBC_PIC_DIR := $(DYN_OUT)/obj/libc
+LIBC_SO_CFLAGS := -std=gnu11 -Wall -Wextra -Werror -march=rv64gc \
+	-mcmodel=medany -ffreestanding -nostdinc -fno-stack-protector \
+	-fPIC -I./usr/include -I$(BUILD_ROOT)/include
+LIBC_SO_SRCS := $(filter-out %/stdlib/_start.c,$(LIBC_SRCS))
+LIBC_SO_OBJS := $(patsubst $(LIBC_DIR)/%.c,$(LIBC_PIC_DIR)/%.o, \
+	$(LIBC_SO_SRCS))
+
+$(LIBC_PIC_DIR)/%.o: $(LIBC_DIR)/%.c $(UAPI_STAMP)
+	$(Q)mkdir -p $(dir $@)
+	$(Q)$(DYN_CC) $(LIBC_SO_CFLAGS) -c -o $@ $<
+
+$(LIBC_SO): $(LIBC_SO_OBJS)
+	$(Q)$(DYN_CC) -shared -march=rv64gc -mcmodel=medany -nostdlib \
+		-Wl,-soname,libc.so -Wl,--hash-style=sysv \
+		-o $@ $(LIBC_SO_OBJS) -lgcc
+
+$(DYN_OUT)/libdyn.so: dyn/test/libdyn.c
+	$(Q)$(DYN_CC) $(DYN_CFLAGS) -shared -fPIC -Wl,--hash-style=sysv \
+		-Wl,-soname,libdyn.so dyn/test/libdyn.c -o $@
+
+$(DYN_OUT)/tests/libc/dynprog: dyn/crt/crt0_dyn.c dyn/test/dynprog.c $(LIBC_SO)
+	$(Q)mkdir -p $(DYN_OUT)/tests/libc
+	$(Q)$(DYN_CC) $(DYN_CFLAGS) -fPIE dyn/crt/crt0_dyn.c \
+		dyn/test/dynprog.c -L$(DYN_OUT) -lc \
+		-Wl,-e,_start -pie -Wl,--hash-style=sysv \
+		-Wl,-dynamic-linker,/lib/ld-brk.so -o $@
+
+$(DYN_OUT)/tests/libc/dyninter: dyn/crt/crt0_dyn.c dyn/test/dyninter.c \
+		$(DYN_OUT)/libdyn.so $(LIBC_SO)
+	$(Q)mkdir -p $(DYN_OUT)/tests/libc
+	$(Q)$(DYN_CC) $(DYN_CFLAGS) -fPIE dyn/crt/crt0_dyn.c \
+		dyn/test/dyninter.c -Wl,--no-as-needed $(DYN_OUT)/libdyn.so \
+		-L$(DYN_OUT) -lc \
 		-Wl,-e,_start -pie -Wl,--hash-style=sysv -Wl,--export-dynamic \
 		-Wl,-dynamic-linker,/lib/ld-brk.so -o $@
 

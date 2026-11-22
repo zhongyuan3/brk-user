@@ -279,6 +279,35 @@ static int case_dlopen(struct test_ctx *ctx)
 	return 0;
 }
 
+static int run_expect_zero(const char *path, const char *skipmsg)
+{
+	struct stat st;
+	int status;
+
+	if (stat(path, &st) != 0)
+		return test_skip(skipmsg);
+	status = run_image(path);
+	if (status < 0)
+		return test_fail_msg("exec: fork/wait failed");
+	if (status != 0)
+		return test_fail_msg("exec: %s status %#x", path, status);
+	return 0;
+}
+
+static int case_libcdyn(struct test_ctx *ctx)
+{
+	(void)ctx;
+	return run_expect_zero("/home/tests/libc/dynprog",
+			       "exec: dynprog not installed");
+}
+
+static int case_interpose(struct test_ctx *ctx)
+{
+	(void)ctx;
+	return run_expect_zero("/home/tests/libc/dyninter",
+			       "exec: dyninter not installed");
+}
+
 static int case_bad_magic(struct test_ctx *ctx)
 {
 	struct img im;
@@ -400,6 +429,8 @@ static int case_entry_not_x(struct test_ctx *ctx)
 static const struct test_case exec_cases[] = {
 	{ "dynamic", case_dynamic, 0, 10000 },
 	{ "dlopen", case_dlopen, 0, 10000 },
+	{ "libcdyn", case_libcdyn, 0, 10000 },
+	{ "interpose", case_interpose, 0, 10000 },
 	{ "static_exec", case_static_exec, 0, 10000 },
 	{ "pie_rela", case_pie_rela, 0, 10000 },
 	{ "gnu_stack_x", case_gnu_stack_x, 0, 10000 },
