@@ -258,6 +258,27 @@ static int case_dynamic(struct test_ctx *ctx)
 	return 0;
 }
 
+static int case_dlopen(struct test_ctx *ctx)
+{
+	struct stat st;
+
+	(void)ctx;
+	/*
+	 * Runtime loading through the dl API: dlopen/dlsym/dlclose of
+	 * a plugin, resolution against the exe's exported symbols, a
+	 * close/reopen round trip and the not-found error path.
+	 */
+	if (stat("/home/tests/libc/dynopen", &st) != 0)
+		return test_skip("exec: dynopen not installed");
+	int status = run_image("/home/tests/libc/dynopen");
+
+	if (status < 0)
+		return test_fail_msg("exec: fork/wait failed");
+	if (status != 0)
+		return test_fail_msg("exec: dynopen status %#x", status);
+	return 0;
+}
+
 static int case_bad_magic(struct test_ctx *ctx)
 {
 	struct img im;
@@ -378,6 +399,7 @@ static int case_entry_not_x(struct test_ctx *ctx)
 
 static const struct test_case exec_cases[] = {
 	{ "dynamic", case_dynamic, 0, 10000 },
+	{ "dlopen", case_dlopen, 0, 10000 },
 	{ "static_exec", case_static_exec, 0, 10000 },
 	{ "pie_rela", case_pie_rela, 0, 10000 },
 	{ "gnu_stack_x", case_gnu_stack_x, 0, 10000 },

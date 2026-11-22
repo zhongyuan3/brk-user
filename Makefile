@@ -269,16 +269,27 @@ DYN_CFLAGS := -march=rv64gc -mcmodel=medany -ffreestanding -fno-builtin \
 	-I$(BUILD_ROOT)/include -I./usr/include
 DYN_OUT := $(BUILD_ROOT)/$(BUILD)
 DYN_ARTIFACTS := $(DYN_OUT)/ld-brk.so $(DYN_OUT)/libhello.so \
-	$(DYN_OUT)/tests/libc/dynhello
+	$(DYN_OUT)/tests/libc/dynhello $(DYN_OUT)/libplug.so \
+	$(DYN_OUT)/tests/libc/dynopen
 
 $(DYN_OUT)/ld-brk.so: dyn/ldso/ld.c $(UAPI_STAMP)
 	$(Q)$(DYN_CC) $(DYN_CFLAGS) -fPIC -fvisibility=hidden \
-		-Wl,-Bsymbolic -Wl,--hash-style=sysv \
+		-Wl,-Bsymbolic -Wl,--hash-style=sysv -Wl,-E \
 		-static-pie dyn/ldso/ld.c -o $@
 
 $(DYN_OUT)/libhello.so: dyn/test/libhello.c
 	$(Q)$(DYN_CC) $(DYN_CFLAGS) -shared -fPIC -Wl,--hash-style=sysv \
 		-Wl,-soname,libhello.so dyn/test/libhello.c -o $@
+
+$(DYN_OUT)/libplug.so: dyn/test/libplug.c
+	$(Q)$(DYN_CC) $(DYN_CFLAGS) -shared -fPIC -Wl,--hash-style=sysv \
+		-Wl,-soname,libplug.so dyn/test/libplug.c -o $@
+
+$(DYN_OUT)/tests/libc/dynopen: dyn/test/dynopen.c
+	$(Q)mkdir -p $(DYN_OUT)/tests/libc
+	$(Q)$(DYN_CC) $(DYN_CFLAGS) -fPIE dyn/test/dynopen.c \
+		-Wl,-e,_start -pie -Wl,--hash-style=sysv -Wl,--export-dynamic \
+		-Wl,-dynamic-linker,/lib/ld-brk.so -o $@
 
 $(DYN_OUT)/tests/libc/dynhello: dyn/test/dynhello.c $(DYN_OUT)/libhello.so
 	$(Q)mkdir -p $(DYN_OUT)/tests/libc

@@ -159,6 +159,9 @@ fi
 if [[ -f $VARIANT_ROOT/libhello.so ]]; then
 	"$BRKFS" cp --parents "$VARIANT_ROOT/libhello.so" "/lib/libhello.so" "$IMG"
 fi
+if [[ -f $VARIANT_ROOT/libplug.so ]]; then
+	"$BRKFS" cp --parents "$VARIANT_ROOT/libplug.so" "/lib/libplug.so" "$IMG"
+fi
 
 # usr/include/cc.h is the runtime header for programs compiled by the
 # on-target cc: a raw-syscall subset with no libc dependency.  It is
