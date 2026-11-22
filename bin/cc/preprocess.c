@@ -33,6 +33,8 @@ struct cond {
 };
 
 static struct macro *macros;
+static const char *pp_cur_path;
+static int pp_cur_line;
 static struct inc_path *inc_paths;
 static struct inc_path *inc_tail;
 static struct cond *conds;
@@ -102,37 +104,6 @@ static void define_func_macro(const char *name, char **params, int nparams,
 	m->nparams = nparams;
 	m->variadic = variadic;
 	m->body = xstrdup(body);
-}
-
-static bool body_has_hash(const char *body)
-{
-	int i = 0;
-
-	while (body[i]) {
-		int c = (unsigned char)body[i];
-
-		if (c == '"' || c == '\'') {
-			int q = c;
-
-			i++;
-			while (body[i]) {
-				if (body[i] == '\\' && body[i + 1]) {
-					i += 2;
-					continue;
-				}
-				if ((unsigned char)body[i] == q) {
-					i++;
-					break;
-				}
-				i++;
-			}
-			continue;
-		}
-		if (c == '#')
-			return true;
-		i++;
-	}
-	return false;
 }
 
 static void undef_macro(const char *name)
@@ -428,6 +399,40 @@ static void expand_into(struct buf *out, const char *text, struct hide *hide,
 			while (i < n && is_ident_char((unsigned char)text[i]))
 				i++;
 			name = xstrndup(text + start, (size_t)(i - start));
+			if (!strcmp(name, "__FILE__") && pp_cur_path) {
+				const char *q;
+
+				buf_byte(out, '"');
+				for (q = pp_cur_path; *q; q++) {
+					if (*q == '"' || *q == '\\')
+						buf_byte(out, '\\');
+					buf_byte(out, *q);
+				}
+				buf_byte(out, '"');
+				free(name);
+				continue;
+			}
+			if (!strcmp(name, "__LINE__") && pp_cur_path) {
+				char tmp[24];
+				int tl = 0;
+				long v = pp_cur_line;
+
+				do {
+					tmp[tl++] = (char)('0' + v % 10);
+					v /= 10;
+				} while (v);
+				buf_grow(out, tl);
+				while (tl > 0)
+					out->data[out->len++] =
+						tmp[--tl];
+				free(name);
+				continue;
+			}
+			if (!strcmp(name, "__STDC__")) {
+				buf_byte(out, '1');
+				free(name);
+				continue;
+			}
 			m = find_macro(name);
 			for (h = hide; h; h = h->next) {
 				if (h->m == m) {
@@ -505,6 +510,88 @@ static char *trim_slice(const char *s, int len)
 	return xstrndup(s + a, (size_t)(b - a));
 }
 
+/*
+ * True when a function-like macro call opens parentheses on this
+ * line that never close before the end of it.
+ */
+static bool pp_call_open(const char *line)
+{
+	const char *p = line;
+	bool word = false;
+
+	while (*p) {
+		int c = (unsigned char)*p;
+
+		if (c == '"' || c == '\'') {
+			int q = c;
+
+			p++;
+			while (*p && *p != (char)q) {
+				if (*p == '\\' && p[1])
+					p++;
+				p++;
+			}
+			if (*p)
+				p++;
+			word = false;
+			continue;
+		}
+		if (starts_ident(c)) {
+			char *name;
+			int nl = 0;
+
+			while (is_ident_char((unsigned char)p[nl]))
+				nl++;
+			name = xstrndup(p, (size_t)nl);
+			p += nl;
+			if (find_macro(name) && find_macro(name)->params)
+				word = true;
+			else
+				word = false;
+			free(name);
+			continue;
+		}
+		if (c == '(' && word) {
+			int depth = 1;
+			const char *q = p + 1;
+
+			while (*q) {
+				int d = (unsigned char)*q;
+
+				if (d == '"' || d == '\'') {
+					int qc = d;
+
+					q++;
+					while (*q && *q != (char)qc) {
+						if (*q == '\\' && q[1])
+							q++;
+						q++;
+					}
+					if (*q)
+						q++;
+					continue;
+				}
+				if (d == '(')
+					depth++;
+				else if (d == ')')
+					depth--;
+				if (!depth)
+					break;
+				q++;
+			}
+			if (depth > 0)
+				return true;
+			word = false;
+			p = q + 1;
+			continue;
+		}
+		if (c && !is_space_ch(c))
+			word = false;
+		p++;
+	}
+	return false;
+}
+
 static void expand_func_macro(struct buf *out, struct macro *m,
 			      const char *text, int *pos, struct hide *hide,
 			      int depth)
@@ -519,6 +606,7 @@ static void expand_func_macro(struct buf *out, struct macro *m,
 	int i;
 	char **exp;
 	char *va;
+	char *va_raw;
 	struct buf sub;
 	struct hide h2;
 
@@ -613,27 +701,39 @@ static void expand_func_macro(struct buf *out, struct macro *m,
 	}
 
 	va = xstrdup("");
+	va_raw = xstrdup("");
 	if (m->variadic && nargs > m->nparams) {
 		struct buf vb;
+		struct buf rb;
 
 		buf_init(&vb);
+		buf_init(&rb);
 		for (i = m->nparams; i < nargs; i++) {
 			size_t l = strlen(exp[i]);
+			size_t rl = strlen(args[i].raw);
 
-			if (i > m->nparams)
+			if (i > m->nparams) {
 				buf_byte(&vb, ',');
+				buf_byte(&rb, ',');
+			}
 			buf_grow(&vb, (int)l);
 			memcpy(vb.data + vb.len, exp[i], l);
 			vb.len += (int)l;
+			buf_grow(&rb, (int)rl);
+			memcpy(rb.data + rb.len, args[i].raw, rl);
+			rb.len += (int)rl;
 		}
 		buf_byte(&vb, 0);
+		buf_byte(&rb, 0);
 		va = (char *)vb.data;
+		va_raw = (char *)rb.data;
 	}
 
 	buf_init(&sub);
 	{
 		int bl = (int)strlen(m->body);
 		int k = 0;
+		bool after_paste = false;
 
 		while (k < bl) {
 			int c = (unsigned char)m->body[k];
@@ -658,46 +758,140 @@ static void expand_func_macro(struct buf *out, struct macro *m,
 					if (d == q)
 						break;
 				}
+				after_paste = false;
+				continue;
+			}
+			if (c == '#') {
+				if (k + 1 < bl &&
+				    m->body[k + 1] == '#') {
+					/* paste: retract the spaces before
+					   ## and glue the next token on */
+					while (sub.len > 0 &&
+					       (sub.data[sub.len - 1] == ' ' ||
+						sub.data[sub.len - 1] == '\t'))
+						sub.len--;
+					k += 2;
+					after_paste = true;
+					continue;
+				}
+				/* stringification of the next parameter */
+				{
+					int j = k + 1;
+					int st, pi;
+					char *name;
+					const char *raw;
+
+					while (j < bl &&
+					       (m->body[j] == ' ' ||
+						m->body[j] == '\t'))
+						j++;
+					st = j;
+					while (j < bl &&
+					       is_ident_char(
+						       (unsigned char)
+							       m->body[j]))
+						j++;
+					if (j == st)
+						fatal("macro '%s': '#' must be followed by a parameter",
+						      m->name);
+					name = xstrndup(m->body + st,
+							(size_t)(j - st));
+					pi = macro_param_index(m, name);
+					if (pi >= 0) {
+						raw = args[pi].raw;
+					} else if (m->variadic &&
+						   !strcmp(name,
+							   "__VA_ARGS__")) {
+						raw = va_raw;
+					} else {
+						fatal("macro '%s': '#' applies to parameter '%s'",
+						      m->name, name);
+					}
+					buf_byte(&sub, '"');
+					while (*raw == ' ' || *raw == '\t')
+						raw++;
+					{
+						const char *e = raw +
+							       strlen(raw);
+
+						while (e > raw &&
+						       (e[-1] == ' ' ||
+							e[-1] == '\t'))
+							e--;
+						for (; raw < e; raw++) {
+							if (*raw == '"' ||
+							    *raw == '\\')
+								buf_byte(&sub,
+									 '\\');
+							buf_byte(&sub, *raw);
+						}
+					}
+					buf_byte(&sub, '"');
+					free(name);
+					k = j;
+					after_paste = false;
+				}
 				continue;
 			}
 			if (starts_ident(c)) {
 				int st = k;
 				char *name;
 				int pi;
+				bool paste_next = false;
+				int j;
 
 				while (k < bl &&
 				       is_ident_char((unsigned char)m->body[k]))
 					k++;
 				name = xstrndup(m->body + st, (size_t)(k - st));
+				j = k;
+				while (j < bl && (m->body[j] == ' ' ||
+						  m->body[j] == '\t'))
+					j++;
+				if (j + 1 < bl && m->body[j] == '#' &&
+				    m->body[j + 1] == '#')
+					paste_next = true;
 				pi = macro_param_index(m, name);
 				if (pi >= 0) {
-					size_t l = strlen(exp[pi]);
+					const char *v =
+						(paste_next || after_paste) ?
+							args[pi].raw :
+							exp[pi];
+					size_t l = strlen(v);
 
 					buf_grow(&sub, (int)l);
-					memcpy(sub.data + sub.len, exp[pi], l);
+					memcpy(sub.data + sub.len, v, l);
 					sub.len += (int)l;
 				} else if (m->variadic &&
 					   !strcmp(name, "__VA_ARGS__")) {
-					size_t l = strlen(va);
+					const char *v = (paste_next ||
+							 after_paste) ?
+							va_raw : va;
+					size_t l = strlen(v);
 
 					buf_grow(&sub, (int)l);
-					memcpy(sub.data + sub.len, va, l);
+					memcpy(sub.data + sub.len, v, l);
 					sub.len += (int)l;
 				} else {
-					int j;
+					int q;
 
-					for (j = st; j < k; j++)
+					for (q = st; q < k; q++)
 						buf_byte(&sub,
 							 (unsigned char)
-								 m->body[j]);
+								 m->body[q]);
 				}
 				free(name);
+				after_paste = false;
 				continue;
 			}
-			if (c == '#')
-				fatal("stringification/token pasting is not supported");
+			if (after_paste &&
+			    (c == ' ' || c == '\t')) {
+				k++;
+				continue;
+			}
 			buf_byte(&sub, c);
 			k++;
+			after_paste = false;
 		}
 	}
 	buf_byte(&sub, 0);
@@ -712,6 +906,7 @@ static void expand_func_macro(struct buf *out, struct macro *m,
 	free(args);
 	free(exp);
 	free(va);
+	free(va_raw);
 	free(sub.data);
 	*pos = p;
 }
@@ -1224,6 +1419,17 @@ static void pp_include(const char *path, int line_no, char *arg,
 
 	while (*p == ' ' || *p == '\t')
 		p++;
+	if (*p != '"' && *p != '<') {
+		/* the include specification may itself be a macro */
+		struct buf eb;
+
+		buf_init(&eb);
+		expand_into(&eb, arg, NULL, 0);
+		buf_byte(&eb, 0);
+		p = (char *)eb.data;
+		while (*p == ' ' || *p == '\t')
+			p++;
+	}
 	if (*p != '"' && *p != '<')
 		fatal("%s:%d: malformed #include", path, line_no);
 	quoted = *p == '"';
@@ -1258,7 +1464,9 @@ static void pp_process(const char *path, const char *src, int len,
 	int pos = 0;
 	int line_no = 1;
 	char *cur_dir = path_dirname(path);
+	const char *saved_path = pp_cur_path;
 
+	pp_cur_path = path;
 	joined = splice_lines(src, len, &jlen);
 	clean = strip_comments(joined, jlen, &clen);
 	free(joined);
@@ -1398,9 +1606,6 @@ static void pp_process(const char *path, const char *src, int len,
 						while (*body == ' ' ||
 						       *body == '\t')
 							body++;
-						if (body_has_hash(body))
-							fatal("%s:%d: stringification/token pasting is not supported",
-							      path, line_no);
 						mname = xstrndup(
 							n, (size_t)(ne - n));
 						define_func_macro(mname, params,
@@ -1525,6 +1730,37 @@ static void pp_process(const char *path, const char *src, int len,
 				/* ignored */
 			}
 		} else if (pp_active()) {
+			/*
+			 * A function-like macro invocation may run past
+			 * the end of the line; keep joining the following
+			 * lines until its parentheses close.
+			 */
+			while (pp_call_open(line)) {
+				int cstart = pos;
+				int clen2;
+				char *cont;
+
+				while (pos < clen && clean[pos] != '\n')
+					pos++;
+				clen2 = pos - cstart;
+				if (pos < clen)
+					pos++;
+				if (clen2 == 0 && pos >= clen)
+					break;
+				cont = xstrndup(clean + cstart,
+						(size_t)clen2);
+				{
+					size_t l1 = strlen(line);
+
+					line = xrealloc(line, l1 + clen2 + 2);
+					line[l1] = ' ';
+					memcpy(line + l1 + 1, cont, clen2);
+					line[l1 + 1 + clen2] = 0;
+				}
+				free(cont);
+				line_no++;
+			}
+			pp_cur_line = line_no;
 			expand_into(out, line, NULL, 0);
 			buf_byte(out, '\n');
 		}
@@ -1534,6 +1770,7 @@ static void pp_process(const char *path, const char *src, int len,
 
 	if (conds != floor)
 		fatal("%s: unterminated conditional directive", path);
+	pp_cur_path = saved_path;
 	free(cur_dir);
 	free(clean);
 }
