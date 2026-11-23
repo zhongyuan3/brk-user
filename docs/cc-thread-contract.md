@@ -134,13 +134,16 @@ compatibility.
 
 ### 4.4 Hosted libc mode
 
-`-lc` (or `-fhosted` for separate compilation) switches the compiler from the
-raw-syscall builtins to ordinary libc calls.  The rootfs installs the full
-`usr/include` header tree, the kernel UAPI headers, and stripped `libc.a`,
-`libcmdfw.a` and `libgcc.a` archives under `/usr/include` and `/usr/lib`.
-`-lc` implies `-lgcc`.  When the linked inputs provide `_start` (libc does),
-the linker uses it as the entry point; otherwise it generates `__cc_start`.
-libc's `_start` calls `exit(main(argc, argv, envp))`, so stdio is flushed.
+Hosted mode is the default: links use ordinary libc calls, add `libc.a` and
+`libgcc.a` automatically, and use libc's `_start` as the entry point.  The
+rootfs installs the full `usr/include` header tree, the kernel UAPI headers,
+and stripped `libc.a`, `libcmdfw.a` and `libgcc.a` archives under
+`/usr/include` and `/usr/lib`.  libc's `_start` calls
+`exit(main(argc, argv, envp))`, so stdio is flushed.
+
+`-ffreestanding` keeps the self-contained mode: raw-syscall builtins,
+`__cc_puts`/`__cc_memcpy`/`__cc_memset` and the generated `__cc_start`, with
+no implicit libc or libgcc.
 
 ## 5. Work protocol
 

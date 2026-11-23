@@ -2,123 +2,127 @@
 
 These source files are copied to `/home/tests/cc/` in the image by `brk-user/scripts/mkrootfs.sh`.
 
-After booting BRK, you can run them like this:
+The compiler defaults to hosted mode: a normal link adds `libc.a` and
+`libgcc.a` and uses libc's `_start`.  The freestanding fixtures below pass
+`-ffreestanding` explicitly so they keep using the raw-syscall builtins and
+`__cc_start`; the hosted fixtures omit the flag.  After booting BRK:
+
 
 ```sh
-cc /home/tests/cc/hello.c -o /tmp/hello
+cc -ffreestanding /home/tests/cc/hello.c -o /tmp/hello
 /tmp/hello
 
-cc /home/tests/cc/smoke.c -o /tmp/smoke
+cc -ffreestanding /home/tests/cc/smoke.c -o /tmp/smoke
 /tmp/smoke
 
-cc /home/tests/cc/expr.c -o /tmp/expr
+cc -ffreestanding /home/tests/cc/expr.c -o /tmp/expr
 /tmp/expr
 
-cc /home/tests/cc/io.c -o /tmp/io
+cc -ffreestanding /home/tests/cc/io.c -o /tmp/io
 /tmp/io hello
 
-cc /home/tests/cc/long.c -o /tmp/long
+cc -ffreestanding /home/tests/cc/long.c -o /tmp/long
 /tmp/long
 
-cc /home/tests/cc/large.c -o /tmp/large
+cc -ffreestanding /home/tests/cc/large.c -o /tmp/large
 /tmp/large
 
-cc /home/tests/cc/pp.c -o /tmp/pp
+cc -ffreestanding /home/tests/cc/pp.c -o /tmp/pp
 /tmp/pp
 
-cc /home/tests/cc/struct.c -o /tmp/struct
+cc -ffreestanding /home/tests/cc/struct.c -o /tmp/struct
 /tmp/struct
 
-cc /home/tests/cc/funcptr.c -o /tmp/funcptr
+cc -ffreestanding /home/tests/cc/funcptr.c -o /tmp/funcptr
 /tmp/funcptr
 
-cc /home/tests/cc/init.c -o /tmp/init
+cc -ffreestanding /home/tests/cc/init.c -o /tmp/init
 /tmp/init
 
-cc /home/tests/cc/ginit.c -o /tmp/ginit
+cc -ffreestanding /home/tests/cc/ginit.c -o /tmp/ginit
 /tmp/ginit
 
-cc /home/tests/cc/designated.c -o /tmp/designated
+cc -ffreestanding /home/tests/cc/designated.c -o /tmp/designated
 /tmp/designated
 
-cc /home/tests/cc/macros.c -o /tmp/macros
+cc -ffreestanding /home/tests/cc/macros.c -o /tmp/macros
 /tmp/macros
 
-cc /home/tests/cc/control.c -o /tmp/control
+cc -ffreestanding /home/tests/cc/control.c -o /tmp/control
 /tmp/control
 
-cc /home/tests/cc/varargs.c -o /tmp/varargs
+cc -ffreestanding /home/tests/cc/varargs.c -o /tmp/varargs
 /tmp/varargs
 
-cc /home/tests/cc/multi_a.c /home/tests/cc/multi_b.c -o /tmp/multi
+cc -ffreestanding /home/tests/cc/multi_a.c /home/tests/cc/multi_b.c -o /tmp/multi
 /tmp/multi
 
 # Separate compilation / object files
-cc -c /home/tests/cc/multi_a.c -o /tmp/a.o
-cc -c /home/tests/cc/multi_b.c -o /tmp/b.o
-cc /tmp/a.o /tmp/b.o -o /tmp/multi_obj
+cc -ffreestanding -c /home/tests/cc/multi_a.c -o /tmp/a.o
+cc -ffreestanding -c /home/tests/cc/multi_b.c -o /tmp/b.o
+cc -ffreestanding /tmp/a.o /tmp/b.o -o /tmp/multi_obj
 /tmp/multi_obj
 
 # ABI and standard stdarg
-cc /home/tests/cc/abi.c -o /tmp/abi
+cc -ffreestanding /home/tests/cc/abi.c -o /tmp/abi
 /tmp/abi
-cc /home/tests/cc/stdarg.c -o /tmp/stdarg
+cc -ffreestanding /home/tests/cc/stdarg.c -o /tmp/stdarg
 /tmp/stdarg
 
 # Cross-compiler ABI (abi_cross.c is compiled by cc, abi_gcc.o by GCC)
-cc /home/tests/cc/abi_cross.c /home/tests/abi_gcc.o -o /tmp/abi_cross
+cc -ffreestanding /home/tests/cc/abi_cross.c /home/tests/abi_gcc.o -o /tmp/abi_cross
 /tmp/abi_cross
 
 # Hosted libc programs
-cc /home/tests/cc/hosted.c -lc -o /tmp/hosted
+cc /home/tests/cc/hosted.c -o /tmp/hosted
 /tmp/hosted
-cc /home/tests/cc/hosted_libc.c -lc -o /tmp/hosted_libc
+cc /home/tests/cc/hosted_libc.c -o /tmp/hosted_libc
 /tmp/hosted_libc
 
 # Preprocessor additions
-cc /home/tests/cc/pp_float.c -o /tmp/pp_float
+cc -ffreestanding /home/tests/cc/pp_float.c -o /tmp/pp_float
 /tmp/pp_float
-cc /home/tests/cc/pp_line.c -o /tmp/pp_line
+cc -ffreestanding /home/tests/cc/pp_line.c -o /tmp/pp_line
 /tmp/pp_line
 
 # Code-generation additions
-cc /home/tests/cc/float.c -o /tmp/float
+cc -ffreestanding /home/tests/cc/float.c -o /tmp/float
 /tmp/float
-cc /home/tests/cc/byvalue.c -o /tmp/byvalue
+cc -ffreestanding /home/tests/cc/byvalue.c -o /tmp/byvalue
 /tmp/byvalue
-cc /home/tests/cc/bitfield.c -o /tmp/bitfield
+cc -ffreestanding /home/tests/cc/bitfield.c -o /tmp/bitfield
 /tmp/bitfield
-cc /home/tests/cc/args.c -o /tmp/args
+cc -ffreestanding /home/tests/cc/args.c -o /tmp/args
 /tmp/args
-cc /home/tests/cc/agg_deep.c -o /tmp/agg_deep
+cc -ffreestanding /home/tests/cc/agg_deep.c -o /tmp/agg_deep
 /tmp/agg_deep
-cc /home/tests/cc/float_cast.c -o /tmp/float_cast
+cc -ffreestanding /home/tests/cc/float_cast.c -o /tmp/float_cast
 /tmp/float_cast
 
 # Global address constants and block-scope function declarations
-cc /home/tests/cc/gaddr.c -o /tmp/gaddr
+cc -ffreestanding /home/tests/cc/gaddr.c -o /tmp/gaddr
 /tmp/gaddr
-cc /home/tests/cc/blockfn.c -o /tmp/blockfn
+cc -ffreestanding /home/tests/cc/blockfn.c -o /tmp/blockfn
 /tmp/blockfn
 
 # Front-end feature fixtures
-cc /home/tests/cc/front_float.c -o /tmp/front_float
+cc -ffreestanding /home/tests/cc/front_float.c -o /tmp/front_float
 /tmp/front_float
-cc /home/tests/cc/front_aggregate.c -o /tmp/front_aggregate
+cc -ffreestanding /home/tests/cc/front_aggregate.c -o /tmp/front_aggregate
 /tmp/front_aggregate
-cc /home/tests/cc/front_bitfield.c -o /tmp/front_bitfield
+cc -ffreestanding /home/tests/cc/front_bitfield.c -o /tmp/front_bitfield
 /tmp/front_bitfield
-cc /home/tests/cc/front_static.c -o /tmp/front_static
+cc -ffreestanding /home/tests/cc/front_static.c -o /tmp/front_static
 /tmp/front_static
-cc /home/tests/cc/front_manyargs.c -o /tmp/front_manyargs
+cc -ffreestanding /home/tests/cc/front_manyargs.c -o /tmp/front_manyargs
 /tmp/front_manyargs
 
-# Cross-unit CCO2/relocation fixture
-cc /home/tests/cc/link_multi_a.c /home/tests/cc/link_multi_b.c -o /tmp/link_multi
+# Cross-unit ELF/relocation fixture
+cc -ffreestanding /home/tests/cc/link_multi_a.c /home/tests/cc/link_multi_b.c -o /tmp/link_multi
 /tmp/link_multi
 
 # Assembly listing mode
-cc -S /home/tests/cc/hello.c -o /tmp/hello.s
+cc -ffreestanding -S /home/tests/cc/hello.c -o /tmp/hello.s
 ```
 
 Expected results:

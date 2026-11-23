@@ -926,11 +926,11 @@ static void gen_cond_expr(struct node *n)
 static struct sym *puts_sym;
 static struct sym *memcpy_sym;
 static struct sym *memset_sym;
-static bool hosted_mode;
+bool cc_hosted;
 
 void set_hosted_mode(bool hosted)
 {
-	hosted_mode = hosted;
+	cc_hosted = hosted;
 }
 
 static int builtin_syscall(const char *name)
@@ -950,7 +950,7 @@ static void gen_call(struct node *n)
 {
 	const char *name = n->var ? n->var->name : NULL;
 	bool direct = n->var != NULL;
-	bool builtin_ok = direct && !n->var->defined && !hosted_mode;
+	bool builtin_ok = direct && !n->var->defined && !cc_hosted;
 	bool indirect = n->callee != NULL;
 	struct type *rt = n->ty;
 	struct type *fnty = NULL;
@@ -2389,6 +2389,13 @@ static struct sym *new_runtime_ref(const char *name)
 
 void make_runtime_refs(void)
 {
+	if (cc_hosted) {
+		/* Hosted code uses the libc routines for generated copies. */
+		puts_sym = NULL;
+		memcpy_sym = new_runtime_ref("memcpy");
+		memset_sym = new_runtime_ref("memset");
+		return;
+	}
 	puts_sym = new_runtime_ref("__cc_puts");
 	memcpy_sym = new_runtime_ref("__cc_memcpy");
 	memset_sym = new_runtime_ref("__cc_memset");

@@ -122,6 +122,13 @@ static int nlib_dirs;
 static char **lib_names;
 static int nlib_names;
 
+static void add_library_name(const char *name)
+{
+	lib_names = xrealloc(lib_names,
+			     (size_t)(nlib_names + 1) * sizeof(*lib_names));
+	lib_names[nlib_names++] = xstrdup(name);
+}
+
 static bool global_defined(const char *name)
 {
 	struct unit *u;
@@ -342,7 +349,7 @@ int main(int argc, char **argv)
 	buf_init(&code);
 
 	{
-		bool hosted = force_hosted;
+		bool hosted = !force_freestanding;
 		bool has_libc = false;
 		bool has_libgcc = false;
 		int li;
@@ -355,19 +362,22 @@ int main(int argc, char **argv)
 			    !strcmp(lib_names[li], "libgcc"))
 				has_libgcc = true;
 		}
-		if (has_libc)
+		if (force_hosted)
 			hosted = true;
 		if (force_freestanding)
 			hosted = false;
 		set_hosted_mode(hosted);
 
-		/* The GNU driver links libgcc implicitly for hosted programs. */
-		if (has_libc && !has_libgcc) {
-			lib_names = xrealloc(lib_names,
-					     (size_t)(nlib_names + 1) *
-						     sizeof(*lib_names));
-			lib_names[nlib_names++] = xstrdup("gcc");
+		/*
+		 * Normal programs are hosted: link libc and its companion
+		 * libgcc unless the user asked for a freestanding build.
+		 */
+		if (hosted && !has_libc) {
+			add_library_name("c");
+			has_libc = true;
 		}
+		if (has_libc && !has_libgcc)
+			add_library_name("gcc");
 	}
 
 	if (preprocess_only) {

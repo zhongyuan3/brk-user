@@ -67,32 +67,32 @@ for src in $SOURCES; do
 	base=${src##*/}
 	name=${base%.c}
 	send "echo === $name"
-	send "cc /home/tests/cc/$name.c -o /tmp/$name"
+	send "cc -ffreestanding /home/tests/cc/$name.c -o /tmp/$name"
 	case "$name" in
 	io) send "/tmp/$name hello" ;;
 	*) send "/tmp/$name" ;;
 	esac
 done
 send 'echo === multi'
-send 'cc /home/tests/cc/multi_a.c /home/tests/cc/multi_b.c -o /tmp/multi'
+send 'cc -ffreestanding /home/tests/cc/multi_a.c /home/tests/cc/multi_b.c -o /tmp/multi'
 send '/tmp/multi'
-send 'cc -c /home/tests/cc/multi_a.c -o /tmp/a.o'
-send 'cc -c /home/tests/cc/multi_b.c -o /tmp/b.o'
-send 'cc /tmp/a.o /tmp/b.o -o /tmp/multi_obj'
+send 'cc -ffreestanding -c /home/tests/cc/multi_a.c -o /tmp/a.o'
+send 'cc -ffreestanding -c /home/tests/cc/multi_b.c -o /tmp/b.o'
+send 'cc -ffreestanding /tmp/a.o /tmp/b.o -o /tmp/multi_obj'
 send '/tmp/multi_obj'
 send 'echo === link_multi'
-send 'cc /home/tests/cc/link_multi_a.c /home/tests/cc/link_multi_b.c -o /tmp/link_multi'
+send 'cc -ffreestanding /home/tests/cc/link_multi_a.c /home/tests/cc/link_multi_b.c -o /tmp/link_multi'
 send '/tmp/link_multi'
 send 'echo === modes'
 send 'cc -S /home/tests/cc/hello.c -o /tmp/hello.s'
 send 'cc -c /home/tests/cc/hello.c -o /tmp/hello.o'
 send 'echo === abi_cross'
-send 'cc /home/tests/cc/abi_cross.c /home/tests/abi_gcc.o -o /tmp/abi_cross'
+send 'cc -ffreestanding /home/tests/cc/abi_cross.c /home/tests/abi_gcc.o -o /tmp/abi_cross'
 send '/tmp/abi_cross'
 send 'echo === hosted'
-send 'cc /home/tests/cc/hosted.c -lc -o /tmp/hosted'
+send 'cc /home/tests/cc/hosted.c -o /tmp/hosted'
 send '/tmp/hosted'
-send 'cc /home/tests/cc/hosted_libc.c -lc -o /tmp/hosted_libc'
+send 'cc /home/tests/cc/hosted_libc.c -o /tmp/hosted_libc'
 send '/tmp/hosted_libc'
 send 'echo __CC_SUITE_DONE__'
 

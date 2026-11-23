@@ -39,7 +39,8 @@ fail() {
 }
 
 run_cc() {
-	"$CC" -I"$root/build/include" -I"$root/usr/include" -I"$src_dir" "$@"
+	"$CC" -ffreestanding -I"$root/build/include" -I"$root/usr/include" \
+		-I"$src_dir" "$@"
 }
 
 expect_fail() {

@@ -487,6 +487,8 @@ void gen_function(struct obj *fn);
 void gen_runtime(void);
 void gen_start(struct sym *main_sym);
 void reset_codegen_state(void);
+extern bool cc_hosted;
+
 void set_hosted_mode(bool hosted);
 
 /* ------------------------------------------------------------------ */

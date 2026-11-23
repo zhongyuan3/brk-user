@@ -186,8 +186,8 @@ if [[ -d $BUILD_ROOT/include/uapi ]]; then
 fi
 
 # Install stripped static archives so the on-target cc can link hosted
-# programs with -lc and -lgcc.  Debug information is useless in the image
-# and would not fit.
+# programs (the default) with libc and libgcc.  Debug information is useless
+# in the image and would not fit.
 OBJCOPY=${CROSS_COMPILE:+${CROSS_COMPILE}objcopy}
 if [[ -z ${OBJCOPY:-} ]]; then
 	OBJCOPY=riscv64-unknown-elf-objcopy

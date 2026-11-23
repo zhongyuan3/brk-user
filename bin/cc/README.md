@@ -1,6 +1,6 @@
 # cc — A Lightweight User-Space C Compiler for BRK
 
-`bin/cc/` is a small C compiler that runs in BRK/RISC-V64 user space. It does not depend on the target machine's `as`/`ld`; instead, it performs lexing, preprocessing, parsing, code generation, linking, and ELF writing itself. The compiler itself still uses this repository's `libc.a`, but **the generated programs do not link against libc**—they depend only on kernel system calls.
+`bin/cc/` is a small C compiler that runs in BRK/RISC-V64 user space. It does not depend on the target machine's `as`/`ld`; instead, it performs lexing, preprocessing, parsing, code generation, linking, and ELF writing itself. Normal links are hosted and use this repository's `libc.a`/`libgcc.a`; `-ffreestanding` keeps the self-contained raw-syscall mode.
 
 ## Quick Start
 
@@ -44,10 +44,12 @@ cc [-c] [-E] [-S] [-o output] [-I dir] [-L dir] [-l name]
   from those directories (then `/usr/lib`, `/usr/local/lib`, `/lib`)
 - Archive members are extracted on demand, so an unused member is never
   pulled into the executable
-- `-lc` selects hosted mode, links libc and implicitly adds `-lgcc`; the
-  on-target image installs the header tree and both archives
-- `-fhosted` forces hosted mode without linking libc yet (useful with `-c`);
-  `-ffreestanding` forces freestanding mode
+- Hosted mode is the default: links add libc and libgcc automatically and use
+  libc's `_start`; the on-target image installs the header tree and both
+  archives
+- `-ffreestanding` keeps the self-contained mode: raw-syscall builtins,
+  `__cc_start`, and no implicit libc/libgcc
+- `-fhosted` is accepted to force hosted mode explicitly (useful with `-c`)
 - The output file is automatically set to `0755`
 
 ## Preprocessor
@@ -155,8 +157,8 @@ Not supported:
 - GCC-identical bit-field packing for unusual mixed base types; the private
   layout is documented in `docs/cc-internal-abi.md`
 
-Built-in functions (freestanding mode; a hosted `-lc` link calls libc
-instead, so stdio buffering and errno are preserved):
+Built-in functions (freestanding `-ffreestanding` mode; normal hosted links
+call libc instead, so stdio buffering and errno are preserved):
 
 ```c
 int write(int fd, const void *buf, long n);
@@ -168,7 +170,10 @@ int putchar(int c);
 int puts(const char *s);
 ```
 
-Freestanding programs can use the regular `<stdio.h>`, `<stdlib.h>`, `<unistd.h>`, `<fcntl.h>` and `<stdarg.h>` headers: when no libc is linked, the compiler lowers the raw-syscall functions above to builtins.  Hosted programs use the same headers with `-lc` and the libc implementations.
+Freestanding programs (`-ffreestanding`) can use the regular `<stdio.h>`,
+`<stdlib.h>`, `<unistd.h>`, `<fcntl.h>` and `<stdarg.h>` headers: the compiler
+lowers the raw-syscall functions above to builtins.  Hosted programs (the
+default) use the same headers and the libc implementations.
 
 ## Hosted libc programs
 
@@ -177,13 +182,13 @@ The rootfs ships the full libc header tree, `libc.a` and `libgcc.a` under
 hosted programs:
 
 ```sh
-cc hello.c -lc -o hello
+cc hello.c -o hello
 ```
 
-`-lc` switches the callee side off the direct-syscall builtins, adds `-lgcc`,
-and links libc's `_start` so that `argv`/`environ` are initialized and
-`exit()` flushes stdio buffers.  Without a library-provided `_start`, or
-without `-lc`, the compiler still emits the freestanding `__cc_start` path.
+Hosted mode switches the callee side off the direct-syscall builtins, adds
+`-lgcc`, and links libc's `_start` so that `argv`/`environ` are initialized and
+`exit()` flushes stdio buffers.  Pass `-ffreestanding` to keep the
+compiler-generated `__cc_start` and raw-syscall builtins instead.
 See `tests/cc/hosted.c` and `tests/cc/hosted_libc.c` for coverage.
 
 ## Multi-File and Linking
@@ -214,8 +219,8 @@ The built-in linker also reads GCC-produced ELF objects and static archives.
 It supports the relocation forms used by the in-tree libc and libgcc:
 `R_RISCV_BRANCH`, `R_RISCV_CALL(_PLT)`, `R_RISCV_PCREL_HI20/LO12_I/LO12_S`,
 `R_RISCV_LO12_S`, `R_RISCV_RVC_BRANCH`, `R_RISCV_RVC_JUMP`, 32/64-bit absolute
-data, and ADD/SUB data relocations.  This makes `-lc -lgcc` work when the
-archives are available.
+data, and ADD/SUB data relocations.  This is what lets default hosted links
+use libc and libgcc.
 
 Linking rules:
 
@@ -245,13 +250,14 @@ Generated programs are:
 - Fixed load base address `0x10000`, with code starting at file offset `0x1000`
 - `e_flags` sets the LP64D float ABI and adds `EF_RISCV_RVC` when any linked
   input uses compressed instructions
-- The entry point is `_start` when an input object or archive provides it
-  (libc's `_start` calls `exit(main(argc, argv, envp))`); otherwise it is the
+- The entry point is `_start` in hosted mode (libc's `_start` calls
+  `exit(main(argc, argv, envp))`); in `-ffreestanding` mode it is the
   compiler-generated `__cc_start`, which calls `main` and exits via
   `SYS_exit`
 - System call numbers use BRK's POSIX.1-2024 numbering: `read=0, write=1, close=2, open=13, exit=49`.  `open()` is lowered to the kernel's `openat(AT_FDCWD, path, flags, mode)` entry.
 
-`puts`, struct copies, and aggregate initialization zeroing use `__cc_puts`, `__cc_memcpy`, and `__cc_memset`, respectively.
+Hosted code uses libc `puts`/`memcpy`/`memset`; freestanding code uses the
+`__cc_puts`, `__cc_memcpy` and `__cc_memset` helpers injected by the linker.
 
 The generated scalar, floating-point, aggregate and variadic calling
 convention follows the RISC-V LP64D ELF psABI: integer/pointer arguments use
@@ -276,10 +282,7 @@ These limitations exist to keep the implementation sufficiently small:
   `stdatomic.h`, `sigemptyset`, `fdopen`, `fgetpos`, ...)
 - Inline assembly (`__asm__`) in `<sys/syscall.h>`; hosted programs normally
   use the libc wrappers instead
-- 128-bit `long double` (currently represented as `double`)
 - GCC-identical bit-field layout for unusual mixed base types
-- Hosted libc startup/header integration: `-lc -lgcc` archive linking works,
-  but the default startup path and libc headers are the next phase
 
 ## Implementation Structure
 
@@ -318,8 +321,8 @@ Build only the host version (for quickly inspecting generated ELF files):
 
 ```sh
 make -C brk-user cc-host
-./brk-user/build/cc-host -I brk-user/build/include -I brk-user/usr/include \
-    -o /tmp/hello.elf brk-user/tests/cc/hello.c
+./brk-user/build/cc-host -ffreestanding -I brk-user/build/include \
+    -I brk-user/usr/include -o /tmp/hello.elf brk-user/tests/cc/hello.c
 riscv64-unknown-elf-readelf -h -l /tmp/hello.elf
 ```
 
@@ -360,7 +363,7 @@ other to validate the LP64D register/stack/return conventions.
 | `abi.c`                         | LP64D FP/aggregate/stack argument and return classification                     | `3 1 2 3`, `12`, `66`, etc.          |
 | `stdarg.c`                      | GCC-compatible `<stdarg.h>` int/long/double varargs                             | `10 14`                              |
 | `abi_cross.c` + `abi_gcc.c`     | GCC/cc cross-calls: FP fallback, split aggregates, hidden returns, varargs        | Fourteen lines of ABI checks         |
-| `hosted.c`                      | Installed libc headers, `-lc`, libc `_start`/stdio flush                         | `hosted 42 9`                        |
+| `hosted.c`                      | Default hosted link, libc headers/_start/stdio flush                             | `hosted 42 9`                        |
 | `hosted_libc.c`                 | qsort, malloc, float printf, dirent, stdio file I/O through libc                 | Five lines of results                |
 | `args.c`                         | More than eight arguments, stack and float/aggregate slots, varargs             | `55`, `55`, `39`, `43`, `10`, `45`   |
 | `agg_deep.c`                     | Aggregate return with hidden slots plus a ninth stack argument                  | `10 35`, `30 105`, `10 35`           |

@@ -162,27 +162,27 @@ in the writable data segment.
 
 ## 9. Runtime helpers
 
-The linker injects exactly one copy of:
+In freestanding (`-ffreestanding`) mode the linker injects exactly one copy
+of:
 
 - `__cc_puts(const char *s)`: write `s` and a newline to fd 1, return 0;
 - `__cc_memcpy(void *dst, const void *src, unsigned long n)`: return `dst`;
 - `__cc_memset(void *dst, int byte, unsigned long n)`: return `dst`.
 
 These are ordinary generated functions and follow the call sequence above.
+Hosted code instead calls the libc `puts`, `memcpy` and `memset`, and the
+runtime unit is not injected.
 
 ## 10. Startup, builtins and libc
 
-Without a library-provided `_start`, the linker injects `__cc_start`, which
-calls `main(argc, argv, envp)` and exits with `SYS_EXIT`.  When an input
-archive provides `_start` (libc does), it is used as the entry point instead;
-libc's `_start` initializes `environ`, calls `main`, and calls `exit`, which
-flushes stdio.
+Hosted mode is the default: links add `libc.a` and `libgcc.a` and use libc's
+`_start`, which initializes `environ`, calls `main(argc, argv, envp)` and
+calls `exit`, flushing stdio.  In `-ffreestanding` mode the linker injects
+`__cc_start` instead, which calls `main` and exits with `SYS_EXIT`.
 
-`-lc` selects hosted mode.  Then the compiler stops lowering `read`, `write`,
-`close`, `open`, `exit`, `putchar` and `puts` to inline syscalls/helpers and
-emits ordinary calls to the libc symbols.  `-fhosted` does the same without
-linking libc, which is what separate `-c` compilation needs.  Freestanding
-mode (`-ffreestanding` or no `-lc`) keeps the raw-syscall builtins:
+In hosted mode the compiler stops lowering `read`, `write`, `close`, `open`,
+`exit`, `putchar` and `puts` to inline syscalls/helpers and emits ordinary
+calls to the libc symbols.  `-ffreestanding` keeps the raw-syscall builtins:
 
 - `read`, `write` and `close` map directly to `SYS_READ`, `SYS_WRITE` and
   `SYS_CLOSE`;

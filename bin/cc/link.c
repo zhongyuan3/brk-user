@@ -554,6 +554,25 @@ static void patch_unit_relocs(struct unit *u, unsigned long text_section_base,
 	}
 }
 
+static bool runtime_refs_needed(void)
+{
+	struct unit *u;
+
+	for (u = units; u; u = u->next) {
+		struct sym *s;
+
+		for (s = u->syms; s; s = s->next) {
+			if (s->defined || s->is_static || !s->name)
+				continue;
+			if (!strcmp(s->name, "__cc_puts") ||
+			    !strcmp(s->name, "__cc_memcpy") ||
+			    !strcmp(s->name, "__cc_memset"))
+				return true;
+		}
+	}
+	return false;
+}
+
 static bool have_defined_text(const char *name)
 {
 	struct unit *u;
@@ -677,7 +696,13 @@ void link_and_write(const char *path)
 	int fd;
 	int written;
 
-	ensure_runtime_unit();
+	/*
+	 * Hosted code uses libc memcpy/memset, but a freestanding object can
+	 * still be linked into a hosted program; provide the private helpers
+	 * only when something actually references them.
+	 */
+	if (!cc_hosted || runtime_refs_needed())
+		ensure_runtime_unit();
 	if (!have_defined_text("_start"))
 		ensure_start_unit();
 
