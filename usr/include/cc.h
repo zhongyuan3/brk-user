@@ -13,7 +13,7 @@
 
 int write(int fd, const void *buf, long n);
 int read(int fd, void *buf, long n);
-int open(const char *path, int flags, int mode);
+int open(const char *path, int flags, ...);
 int close(int fd);
 void exit(int status);
 int putchar(int c);

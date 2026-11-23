@@ -9,6 +9,8 @@ struct type *ty_int;
 struct type *ty_uint;
 struct type *ty_long;
 struct type *ty_ulong;
+struct type *ty_float;
+struct type *ty_double;
 
 struct obj *globals;
 struct sym *syms;
@@ -82,12 +84,24 @@ void init_types(void)
 	ty_uint = new_type(TY_INT, 4, 4, true);
 	ty_long = new_type(TY_LONG, 8, 8, false);
 	ty_ulong = new_type(TY_LONG, 8, 8, true);
+	ty_float = new_type(TY_FLOAT, 4, 4, false);
+	ty_double = new_type(TY_DOUBLE, 8, 8, false);
 }
 
 bool is_integer(struct type *t)
 {
 	return t->kind == TY_CHAR || t->kind == TY_SHORT || t->kind == TY_INT ||
 	       t->kind == TY_LONG;
+}
+
+bool is_float(struct type *t)
+{
+	return t->kind == TY_FLOAT || t->kind == TY_DOUBLE;
+}
+
+bool is_arith(struct type *t)
+{
+	return is_integer(t) || is_float(t);
 }
 
 bool is_ptr_like(struct type *t)
@@ -102,7 +116,7 @@ bool is_aggregate(struct type *t)
 
 bool is_scalar(struct type *t)
 {
-	return is_integer(t) || t->kind == TY_PTR;
+	return is_integer(t) || is_float(t) || t->kind == TY_PTR;
 }
 
 struct type *decay(struct type *t)
@@ -128,6 +142,15 @@ struct node *new_num(long val)
 
 	n->val = val;
 	n->ty = (val >= -2147483648L && val <= 2147483647L) ? ty_int : ty_long;
+	return n;
+}
+
+struct node *new_float(double val, struct type *ty)
+{
+	struct node *n = new_node(ND_FLOAT);
+
+	n->fval = val;
+	n->ty = ty;
 	return n;
 }
 

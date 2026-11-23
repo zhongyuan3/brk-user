@@ -13,6 +13,45 @@ struct switch_ctx {
 
 static struct switch_ctx *switches;
 
+/*
+ * Calls to functions that are not defined yet are remembered so that a
+ * later prototype or definition can give them their real type and argument
+ * conversions.  A call made through an implicit declaration whose real
+ * return type is floating point or an aggregate is rejected: the enclosing
+ * expression was already built assuming an int result and cannot be
+ * corrected safely.
+ */
+struct fn_state {
+	struct obj *fn;
+	bool implicit;
+	struct fn_state *next;
+};
+
+struct pending_call {
+	struct node *call;
+	struct obj *fn;
+	bool implicit;
+	struct pending_call *next;
+};
+
+static struct fn_state *fn_states;
+static struct pending_call *pending_calls;
+
+static struct fn_state *fn_state_for(struct obj *fn)
+{
+	struct fn_state *s;
+
+	for (s = fn_states; s; s = s->next) {
+		if (s->fn == fn)
+			return s;
+	}
+	s = xcalloc(1, sizeof(*s));
+	s->fn = fn;
+	s->next = fn_states;
+	fn_states = s;
+	return s;
+}
+
 static struct token *cur_token(void)
 {
 	return &tokens[tok_pos];
@@ -163,9 +202,10 @@ static void add_const(const char *name, long val)
 static bool is_typename_at(int pos)
 {
 	static const char *const names[] = {
-		"void",	  "char",   "short",	"int",	  "long",    "unsigned",
-		"signed", "const",  "volatile", "static", "extern",  "register",
-		"inline", "struct", "union",	"enum",	  "typedef",
+		"void",	  "char",   "short", "int",	"long",	   "float",
+		"double", "unsigned", "signed", "const", "volatile", "static",
+		"extern", "register", "inline", "struct", "union",   "enum",
+		"typedef",
 	};
 
 	if (pos < 0 || pos >= ntokens || tokens[pos].kind != TK_IDENT)
@@ -188,6 +228,7 @@ static bool is_typename(void)
 
 static struct node *parse_expr(void);
 static struct node *parse_assign(void);
+static struct node *parse_cond(void);
 static struct node *parse_stmt(void);
 static struct node *parse_block(void);
 static long eval_const(struct node *n);
@@ -226,122 +267,474 @@ static struct node *new_cast(struct node *e, struct type *ty)
 
 	if (is_aggregate(e->ty) || is_aggregate(ty))
 		fatal("cannot cast a struct/union value");
+	if (ty->kind == TY_ARRAY || ty->kind == TY_FUNC)
+		fatal("cannot cast to an array or function type");
 	n->lhs = e;
 	n->ty = ty;
 	return n;
 }
 
+static struct node *cast_node(struct node *e, struct type *ty)
+{
+	if (e->ty == ty)
+		return e;
+	return new_cast(e, ty);
+}
+
+static struct node *decay_node(struct node *e)
+{
+	if (e->ty->kind == TY_ARRAY || e->ty->kind == TY_FUNC)
+		return new_cast(e, decay(e->ty));
+	return e;
+}
+
+static struct type *uint_of_size(int size)
+{
+	return size >= 8 ? ty_ulong : ty_uint;
+}
+
+static struct type *int_of_size(int size)
+{
+	return size >= 8 ? ty_long : ty_int;
+}
+
+static struct type *promote_int_type(struct type *t)
+{
+	if (t->kind == TY_CHAR || t->kind == TY_SHORT)
+		return ty_int;
+	return t;
+}
+
+static struct node *promote_node(struct node *e)
+{
+	if (is_integer(e->ty))
+		return cast_node(e, promote_int_type(e->ty));
+	return e;
+}
+
+/* Usual arithmetic conversions: only scalar arithmetic types reach here. */
+static struct type *usual_arith_type(struct type *a, struct type *b)
+{
+	if (is_float(a) || is_float(b)) {
+		if (a->kind == TY_DOUBLE || b->kind == TY_DOUBLE)
+			return ty_double;
+		return ty_float;
+	}
+	a = promote_int_type(a);
+	b = promote_int_type(b);
+	if (a->size < b->size)
+		return b;
+	if (b->size < a->size)
+		return a;
+	if (a->is_unsigned || b->is_unsigned)
+		return uint_of_size(a->size);
+	return int_of_size(a->size);
+}
+
+static struct type *convert_arith(struct node **lhs, struct node **rhs)
+{
+	struct type *t = usual_arith_type((*lhs)->ty, (*rhs)->ty);
+
+	*lhs = cast_node(*lhs, t);
+	*rhs = cast_node(*rhs, t);
+	return t;
+}
+
 static struct node *new_assign(struct node *lhs, struct node *rhs)
 {
-	struct node *n = new_node(ND_ASSIGN);
+	struct node *n;
+	struct type *lt;
 
 	if (!is_lvalue(lhs))
 		fatal("assignment to non-lvalue");
-	if (is_aggregate(lhs->ty) || is_aggregate(rhs->ty)) {
-		if (!is_aggregate(lhs->ty) || !is_aggregate(rhs->ty) ||
-		    lhs->ty->size != rhs->ty->size)
+	rhs = decay_node(rhs);
+	lt = lhs->ty;
+	n = new_node(ND_ASSIGN);
+	if (is_aggregate(lt) || is_aggregate(rhs->ty)) {
+		if (!is_aggregate(lt) || !is_aggregate(rhs->ty) ||
+		    lt->size != rhs->ty->size)
 			fatal("invalid struct/union assignment");
+	} else if (lt->kind == TY_PTR) {
+		if (is_float(rhs->ty))
+			fatal("cannot assign a floating point value to a pointer");
+		rhs = cast_node(rhs, lt);
+	} else if (is_arith(lt)) {
+		if (rhs->ty->kind == TY_PTR)
+			fatal("cannot assign a pointer to an arithmetic type");
+		if (!is_arith(rhs->ty))
+			fatal("invalid assignment operand");
+		rhs = cast_node(rhs, lt);
+	} else {
+		fatal("invalid assignment target");
 	}
 	n->lhs = lhs;
 	n->rhs = rhs;
-	n->ty = lhs->ty;
+	n->ty = lt;
 	return n;
 }
+
+static struct node *to_cond(struct node *e);
 
 static struct node *new_binary(int kind, struct node *lhs, struct node *rhs)
 {
 	struct node *n = new_node(kind);
-	struct type *lt = decay(lhs->ty);
-	struct type *rt = decay(rhs->ty);
+	struct type *lt;
+	struct type *rt;
 
+	lhs = decay_node(lhs);
+	rhs = decay_node(rhs);
+	lt = lhs->ty;
+	rt = rhs->ty;
 	if (is_aggregate(lt) || is_aggregate(rt))
 		fatal("invalid operands to binary operator");
+
+	if (kind == ND_LOGAND || kind == ND_LOGOR) {
+		n->lhs = to_cond(lhs);
+		n->rhs = to_cond(rhs);
+		n->ty = ty_int;
+		return n;
+	}
+
+	if (kind == ND_ADD || kind == ND_SUB) {
+		bool lptr = is_ptr_like(lt);
+		bool rptr = is_ptr_like(rt);
+
+		if (lptr && rptr) {
+			if (kind == ND_ADD)
+				fatal("cannot add two pointers");
+			n->lhs = lhs;
+			n->rhs = rhs;
+			n->ty = ty_long;
+			return n;
+		}
+		if (lptr || rptr) {
+			struct type *pt = lptr ? lt : rt;
+			struct node *idx = lptr ? rhs : lhs;
+
+			if (kind == ND_SUB && !lptr)
+				fatal("invalid pointer subtraction");
+			if (is_float(idx->ty))
+				fatal("invalid floating point operand in pointer arithmetic");
+			idx = cast_node(promote_node(idx), ty_long);
+			if (lptr) {
+				n->lhs = lhs;
+				n->rhs = idx;
+			} else {
+				n->lhs = idx;
+				n->rhs = rhs;
+			}
+			n->ty = pt;
+			return n;
+		}
+	}
+
+	if (kind == ND_SHL || kind == ND_SHR) {
+		if (!is_integer(lt) || !is_integer(rt))
+			fatal("shift operands must be integers");
+		n->lhs = promote_node(lhs);
+		n->rhs = promote_node(rhs);
+		n->ty = n->lhs->ty;
+		return n;
+	}
+
+	if (is_ptr_like(lt) || is_ptr_like(rt))
+		fatal("invalid pointer arithmetic");
+	if (is_float(lt) || is_float(rt)) {
+		if (kind != ND_ADD && kind != ND_SUB && kind != ND_MUL &&
+		    kind != ND_DIV)
+			fatal("operator requires integer operands");
+		if (!is_arith(lt) || !is_arith(rt))
+			fatal("invalid floating point operands");
+	}
+	n->ty = convert_arith(&lhs, &rhs);
 	n->lhs = lhs;
 	n->rhs = rhs;
-
-	if (kind == ND_ADD) {
-		if (is_ptr_like(lt)) {
-			n->ty = lt;
-		} else if (is_ptr_like(rt)) {
-			n->ty = rt;
-		} else if (lt->size == 8 || rt->size == 8) {
-			n->ty = (lt->is_unsigned || rt->is_unsigned) ?
-					ty_ulong :
-					ty_long;
-		} else {
-			n->ty = (lt->is_unsigned || rt->is_unsigned) ? ty_uint :
-								       ty_int;
-		}
-	} else if (kind == ND_SUB) {
-		if (is_ptr_like(lt) && is_ptr_like(rt))
-			n->ty = ty_long;
-		else if (is_ptr_like(lt))
-			n->ty = lt;
-		else if (is_ptr_like(rt))
-			fatal("invalid pointer subtraction");
-		else if (lt->size == 8 || rt->size == 8)
-			n->ty = (lt->is_unsigned || rt->is_unsigned) ?
-					ty_ulong :
-					ty_long;
-		else
-			n->ty = (lt->is_unsigned || rt->is_unsigned) ? ty_uint :
-								       ty_int;
-	} else if (kind == ND_SHL || kind == ND_SHR) {
-		n->ty = lt;
-	} else {
-		if (is_ptr_like(lt) || is_ptr_like(rt))
-			fatal("invalid pointer arithmetic");
-		if (lt->size == 8 || rt->size == 8)
-			n->ty = (lt->is_unsigned || rt->is_unsigned) ?
-					ty_ulong :
-					ty_long;
-		else
-			n->ty = (lt->is_unsigned || rt->is_unsigned) ? ty_uint :
-								       ty_int;
-	}
 	return n;
 }
 
 static struct node *new_cmp(int kind, struct node *lhs, struct node *rhs)
 {
-	struct node *n = new_node(kind);
+	struct node *n;
 
-	if (is_aggregate(decay(lhs->ty)) || is_aggregate(decay(rhs->ty)))
+	lhs = decay_node(lhs);
+	rhs = decay_node(rhs);
+	if (is_aggregate(lhs->ty) || is_aggregate(rhs->ty))
 		fatal("cannot compare struct/union values");
+	if (is_float(lhs->ty) || is_float(rhs->ty)) {
+		if (!is_arith(lhs->ty) || !is_arith(rhs->ty))
+			fatal("cannot compare a floating point value with a pointer");
+		convert_arith(&lhs, &rhs);
+	} else if (is_ptr_like(lhs->ty) || is_ptr_like(rhs->ty)) {
+		if (is_ptr_like(lhs->ty))
+			rhs = cast_node(rhs, lhs->ty);
+		else
+			lhs = cast_node(lhs, rhs->ty);
+	} else {
+		convert_arith(&lhs, &rhs);
+	}
+	n = new_node(kind);
 	n->lhs = lhs;
 	n->rhs = rhs;
 	n->ty = ty_int;
 	return n;
 }
 
+static struct node *to_cond(struct node *e)
+{
+	e = decay_node(e);
+	if (is_float(e->ty))
+		return new_cmp(ND_NE, e, new_float(0.0, e->ty));
+	if (!is_scalar(e->ty))
+		fatal("scalar value required as a condition");
+	return e;
+}
+
 static struct node *new_unary(int kind, struct node *e)
 {
-	struct node *n = new_node(kind);
+	struct node *n;
+	struct type *t;
 
-	if ((kind == ND_NEG || kind == ND_NOT || kind == ND_BITNOT) &&
-	    is_aggregate(e->ty))
+	if (kind != ND_ADDR && kind != ND_DEREF)
+		e = decay_node(e);
+	t = e->ty;
+	if (kind != ND_DEREF && kind != ND_ADDR && is_aggregate(t))
 		fatal("invalid unary operator on a struct/union value");
-	n->lhs = e;
+	n = new_node(kind);
 	switch (kind) {
-	case ND_DEREF: {
-		struct type *t = decay(e->ty);
-
+	case ND_DEREF:
+		t = decay(e->ty);
 		if (t->kind != TY_PTR)
 			fatal("cannot dereference non-pointer");
+		n->lhs = e;
 		n->ty = t->base;
 		break;
-	}
 	case ND_ADDR:
+		if (e->kind == ND_MEMBER && e->bit_width > 0)
+			fatal("cannot take the address of a bit-field");
+		n->lhs = e;
 		n->ty = ty_ptr(e->ty);
 		break;
+	case ND_NEG:
+		if (!is_arith(t))
+			fatal("invalid operand to unary minus");
+		e = promote_node(e);
+		n->lhs = e;
+		n->ty = e->ty;
+		break;
 	case ND_NOT:
+		n->lhs = to_cond(e);
 		n->ty = ty_int;
 		break;
+	case ND_BITNOT:
+		if (!is_integer(t))
+			fatal("operator '~' requires an integer operand");
+		e = promote_node(e);
+		n->lhs = e;
+		n->ty = e->ty;
+		break;
 	default:
+		n->lhs = e;
 		n->ty = e->ty;
 		break;
 	}
 	return n;
+}
+
+static int temp_id;
+
+static struct obj *new_temp_local(struct type *ty)
+{
+	char name[32];
+
+	if (!scope)
+		fatal("temporary object outside a function scope");
+	snprintf(name, sizeof(name), ".tmp%d", temp_id++);
+	return new_local(name, ty, false, 0);
+}
+
+/* Default argument promotions for unprototyped calls. */
+static struct node *default_promote(struct node *e)
+{
+	e = decay_node(e);
+	if (e->ty->kind == TY_FLOAT)
+		return new_cast(e, ty_double);
+	if (e->ty->kind == TY_CHAR || e->ty->kind == TY_SHORT)
+		return new_cast(e, ty_int);
+	return e;
+}
+
+static struct node *call_arg_cast(struct node *e, struct type *pt)
+{
+	e = decay_node(e);
+	if (is_aggregate(pt)) {
+		if (!is_aggregate(e->ty) || e->ty->size != pt->size)
+			fatal("incompatible struct/union argument");
+		return e;
+	}
+	if (is_aggregate(e->ty))
+		fatal("cannot pass a struct/union value to a scalar parameter");
+	if (pt->kind == TY_PTR && is_float(e->ty))
+		fatal("cannot pass a floating point value to a pointer parameter");
+	if (is_float(pt) && !is_arith(e->ty))
+		fatal("cannot pass a non-arithmetic value to a floating point parameter");
+	return cast_node(e, pt);
+}
+
+/*
+ * Apply the current type of the direct callee to a call node.  This runs
+ * again when a prototype or definition arrives after the call was parsed,
+ * which is how calls to later-defined functions get their final types.
+ */
+static void apply_call_type_with(struct node *call, struct type *fnty,
+				 const char *name, bool can_alloc)
+{
+	struct type *ret = fnty->base ? fnty->base : ty_int;
+	bool unprototyped = fnty->nparams == 0 && !fnty->variadic;
+	int i;
+
+	call->ty = ret;
+	if (is_aggregate(ret)) {
+		if (!ret->is_complete || ret->size <= 0)
+			fatal("call to '%s' returns an incomplete struct/union",
+			      name);
+		if (!call->ret_tmp || call->ret_tmp->ty != ret) {
+			if (!can_alloc)
+				fatal("call to '%s' changes its result type after a declaration",
+				      name);
+			call->ret_tmp = new_temp_local(ret);
+		}
+	} else {
+		call->ret_tmp = NULL;
+	}
+	if (call->nargs > 0 && !call->arg_temps)
+		call->arg_temps = xcalloc((size_t)call->nargs,
+					  sizeof(*call->arg_temps));
+	for (i = 0; i < call->nargs; i++) {
+		struct node *a = call->args[i];
+
+		if (i < fnty->nparams)
+			a = call_arg_cast(a, fnty->params[i].ty);
+		else if (unprototyped || fnty->variadic)
+			a = default_promote(a);
+		else
+			fatal("too many arguments in call to '%s'", name);
+		call->args[i] = a;
+		if (is_aggregate(a->ty)) {
+			if (!a->ty->is_complete || a->ty->size <= 0)
+				fatal("incomplete struct/union argument");
+			if (!call->arg_temps[i] ||
+			    call->arg_temps[i]->ty != a->ty) {
+				if (!can_alloc)
+					fatal("call to '%s' changes its argument types after a declaration",
+					      name);
+				call->arg_temps[i] = new_temp_local(a->ty);
+			}
+		} else {
+			call->arg_temps[i] = NULL;
+		}
+	}
+}
+
+static void apply_call_type(struct node *call)
+{
+	apply_call_type_with(call, call->var->ty, call->var->name, true);
+}
+
+/* Compound assignment, desugared for float/double to get C semantics. */
+static struct node *new_opassign(struct node *lhs, struct node *rhs, int op)
+{
+	struct node *n;
+	struct type *lt;
+
+	if (!is_lvalue(lhs) || !is_scalar(lhs->ty))
+		fatal("invalid compound assignment");
+	rhs = decay_node(rhs);
+	lt = lhs->ty;
+	if (is_float(lt) || is_float(rhs->ty)) {
+		struct obj *addr;
+		struct node *save;
+		struct node *calc;
+		struct node *store;
+		struct node *result;
+		struct node *seq;
+
+		if (op != ND_ADD && op != ND_SUB && op != ND_MUL &&
+		    op != ND_DIV)
+			fatal("operator requires integer operands");
+		if (lhs->kind == ND_MEMBER && lhs->bit_width > 0)
+			fatal("floating point compound assignment on a bit-field");
+		/*
+		 * Evaluate the lvalue once, then compute in the usual
+		 * arithmetic type and convert back to the target type.
+		 */
+		addr = new_temp_local(ty_ptr(lt));
+		save = new_assign(new_var_node(addr),
+				  new_unary(ND_ADDR, lhs));
+		calc = new_binary(op, new_unary(ND_DEREF, new_var_node(addr)),
+				  rhs);
+		store = new_assign(new_unary(ND_DEREF, new_var_node(addr)),
+				   calc);
+		result = new_unary(ND_DEREF, new_var_node(addr));
+		seq = new_node(ND_COMMA);
+		seq->lhs = save;
+		seq->rhs = new_node(ND_COMMA);
+		seq->rhs->lhs = store;
+		seq->rhs->rhs = result;
+		seq->ty = result->ty;
+		seq->rhs->ty = result->ty;
+		return seq;
+	}
+
+	n = new_node(ND_OPASSIGN);
+	n->lhs = lhs;
+	if (is_ptr_like(lt)) {
+		if (op != ND_ADD && op != ND_SUB)
+			fatal("invalid pointer compound assignment");
+		if (!is_integer(rhs->ty))
+			fatal("pointer compound assignment requires an integer operand");
+		n->rhs = cast_node(promote_node(rhs), ty_long);
+	} else if (is_integer(lt)) {
+		if (!is_integer(rhs->ty))
+			fatal("operator requires integer operands");
+		n->rhs = promote_node(rhs);
+	} else {
+		fatal("invalid compound assignment");
+	}
+	n->ty = lt;
+	n->val = op;
+	return n;
+}
+
+static void record_pending_call(struct node *call)
+{
+	struct pending_call *p;
+	struct obj *fn = call->var;
+
+	if (!fn || fn->defined)
+		return;
+	p = xcalloc(1, sizeof(*p));
+	p->call = call;
+	p->fn = fn;
+	p->implicit = fn_state_for(fn)->implicit;
+	p->next = pending_calls;
+	pending_calls = p;
+}
+
+static void patch_calls_for(struct obj *fn)
+{
+	struct pending_call *p;
+
+	for (p = pending_calls; p; p = p->next) {
+		struct type *ret;
+
+		if (p->fn != fn)
+			continue;
+		ret = fn->ty->base;
+		if (p->implicit && (is_float(ret) || is_aggregate(ret)))
+			fatal("call to '%s' with a non-integer return type must follow a declaration",
+			      fn->name);
+		apply_call_type_with(p->call, fn->ty, fn->name, false);
+	}
 }
 
 /* ------------------------------------------------------------------ */
@@ -351,6 +744,7 @@ static struct node *new_unary(int kind, struct node *e)
 static bool declspec_static;
 static bool declspec_extern;
 static bool declspec_typedef;
+static struct type *current_fn_ret;
 
 static struct type *parse_declspec(void)
 {
@@ -360,7 +754,9 @@ static struct type *parse_declspec(void)
 		BS_CHAR,
 		BS_SHORT,
 		BS_INT,
-		BS_LONG
+		BS_LONG,
+		BS_FLOAT,
+		BS_DOUBLE
 	} base = BS_NONE;
 	bool uns = false;
 	bool has_sign = false;
@@ -377,7 +773,8 @@ static struct type *parse_declspec(void)
 
 			if (td) {
 				tok_pos++;
-				while (consume("const") || consume("volatile"))
+				while (consume("const") || consume("volatile") ||
+				       consume("restrict"))
 					;
 				return td;
 			}
@@ -411,7 +808,8 @@ static struct type *parse_declspec(void)
 		} else if (consume("extern")) {
 			declspec_extern = true;
 		} else if (consume("const") || consume("volatile") ||
-			   consume("register") || consume("inline")) {
+			   consume("restrict") || consume("register") ||
+			   consume("inline")) {
 			/* qualifiers are accepted and ignored */
 		} else if (consume("typedef")) {
 			declspec_typedef = true;
@@ -433,9 +831,13 @@ static struct type *parse_declspec(void)
 			declspec_extern = saved_extern;
 			declspec_typedef = saved_typedef;
 			return ty;
-		} else if (consume("float") || consume("double")) {
-			fatal("%d:%d: floating point is not supported",
-			      cur_token()->line, cur_token()->col);
+		} else if (consume("float")) {
+			base = base == BS_LONG ? BS_DOUBLE : BS_FLOAT;
+			seen = true;
+		} else if (consume("double")) {
+			/* "long double" has the same representation as double. */
+			base = BS_DOUBLE;
+			seen = true;
 		} else {
 			break;
 		}
@@ -458,6 +860,12 @@ static struct type *parse_declspec(void)
 		return uns ? ty_ulong : ty_long;
 	case BS_INT:
 		return uns ? ty_uint : ty_int;
+	case BS_FLOAT:
+	case BS_DOUBLE:
+		if (has_sign)
+			fatal("%d:%d: floating point type cannot be signed or unsigned",
+			      line, col);
+		return base == BS_FLOAT ? ty_float : ty_double;
 	case BS_NONE:
 	default:
 		return uns ? ty_uint : ty_int;
@@ -557,8 +965,8 @@ static struct declarator parse_declarator(struct type *base, bool abstract_ok)
 	memset(&d, 0, sizeof(d));
 	while (consume("*")) {
 		base = ty_ptr(base);
-		consume("const");
-		consume("volatile");
+		while (consume("const") || consume("volatile") || consume("restrict"))
+			;
 	}
 	if (consume("(")) {
 		struct type *ph = new_type(TY_PLACEHOLDER, 0, 0, false);
@@ -596,15 +1004,20 @@ static void add_member(struct type *t, const char *name, struct type *ty)
 {
 	int i;
 
-	for (i = 0; i < t->nmembers; i++) {
-		if (!strcmp(t->members[i].name, name))
-			fatal("duplicate member '%s'", name);
+	if (name) {
+		for (i = 0; i < t->nmembers; i++) {
+			if (t->members[i].name &&
+			    !strcmp(t->members[i].name, name))
+				fatal("duplicate member '%s'", name);
+		}
 	}
 	t->members = xrealloc(t->members,
 			      (size_t)(t->nmembers + 1) * sizeof(*t->members));
-	t->members[t->nmembers].name = xstrdup(name);
+	t->members[t->nmembers].name = name ? xstrdup(name) : NULL;
 	t->members[t->nmembers].ty = ty;
 	t->members[t->nmembers].offset = 0;
+	t->members[t->nmembers].bit_offset = 0;
+	t->members[t->nmembers].bit_width = 0;
 	t->nmembers++;
 }
 
@@ -622,6 +1035,10 @@ static struct type *parse_struct_spec(int kind)
 		int offset = 0;
 		int max_align = 1;
 		int max_size = 0;
+		int bit_unit_offset = -1;
+		int bit_unit_bits = 0;
+		int bit_cursor = 0;
+		bool saw_field = false;
 
 		if (tag)
 			ty = find_tag(tag_kind, tag);
@@ -639,47 +1056,113 @@ static struct type *parse_struct_spec(int kind)
 				fatal("typedef inside a struct/union is not supported");
 			for (;;) {
 				struct declarator d =
-					parse_declarator(base, false);
+					parse_declarator(base, true);
+				bool is_bitfield = false;
+				long width = 0;
 				int idx;
 
-				if (!d.name)
-					fatal("member name is missing");
+				if (consume(":")) {
+					is_bitfield = true;
+					if (!is_integer(d.ty))
+						fatal("bit-field '%s' must have an integer type",
+						      d.name ? d.name :
+							       "<anonymous>");
+					width = eval_const(parse_cond());
+					if (width < 0)
+						fatal("negative bit-field width");
+					if (width > (long)d.ty->size * 8)
+						fatal("bit-field width %ld exceeds its type",
+						      width);
+					if (width == 0 && d.name)
+						fatal("zero-width bit-field must be unnamed");
+					if (width == 0 && kind == TY_STRUCT) {
+						offset = align_to(offset,
+								  d.ty->align);
+						bit_unit_offset = -1;
+						bit_unit_bits = 0;
+						bit_cursor = 0;
+					}
+					if (width == 0 && d.ty->align > max_align)
+						max_align = d.ty->align;
+				} else {
+					if (!d.name)
+						fatal("member name is missing");
+				}
 				if (d.ty->kind == TY_VOID)
-					fatal("void member '%s'", d.name);
+					fatal("void member '%s'",
+					      d.name ? d.name : "<anonymous>");
 				if (d.ty->kind == TY_FUNC)
 					fatal("function member '%s' is not supported",
-					      d.name);
-				if (consume(":"))
-					fatal("bit-fields are not supported");
-				if (d.ty->kind == TY_ARRAY &&
-				    d.ty->array_len < 0)
-					fatal("flexible array member '%s' is not supported",
-					      d.name);
-				if ((is_aggregate(d.ty) &&
-				     !d.ty->is_complete) ||
-				    d.ty->size <= 0)
-					fatal("incomplete member type for '%s'",
-					      d.name);
-				add_member(ty, d.name, d.ty);
-				idx = ty->nmembers - 1;
-				if (kind == TY_STRUCT) {
-					offset = align_to(offset, d.ty->align);
-					ty->members[idx].offset = offset;
-					offset += d.ty->size;
-				} else {
-					ty->members[idx].offset = 0;
+					      d.name ? d.name : "<anonymous>");
+				if (!is_bitfield) {
+					if (d.ty->kind == TY_ARRAY &&
+					    d.ty->array_len < 0)
+						fatal("flexible array member '%s' is not supported",
+						      d.name);
+					if ((is_aggregate(d.ty) &&
+					     !d.ty->is_complete) ||
+					    d.ty->size <= 0)
+						fatal("incomplete member type for '%s'",
+						      d.name);
 				}
-				if (d.ty->align > max_align)
-					max_align = d.ty->align;
-				if (d.ty->size > max_size)
-					max_size = d.ty->size;
+				if (!is_bitfield || width > 0) {
+					add_member(ty, d.name, d.ty);
+					saw_field = true;
+					idx = ty->nmembers - 1;
+					if (is_bitfield) {
+						ty->members[idx].bit_width =
+							(int)width;
+						if (kind == TY_UNION) {
+							ty->members[idx].offset = 0;
+							ty->members[idx].bit_offset = 0;
+						} else {
+							int unit_bits =
+								d.ty->size * 8;
+
+							if (bit_unit_offset < 0 ||
+							    bit_unit_bits != unit_bits ||
+							    bit_cursor + (int)width >
+								    unit_bits) {
+								offset = align_to(
+									offset,
+									d.ty->align);
+								bit_unit_offset =
+									offset;
+								bit_unit_bits =
+									unit_bits;
+								bit_cursor = 0;
+								offset += d.ty->size;
+							}
+							ty->members[idx].offset =
+								bit_unit_offset;
+							ty->members[idx]
+								.bit_offset =
+								bit_cursor;
+							bit_cursor += (int)width;
+						}
+					} else if (kind == TY_STRUCT) {
+						offset = align_to(offset,
+								  d.ty->align);
+						ty->members[idx].offset = offset;
+						offset += d.ty->size;
+						bit_unit_offset = -1;
+						bit_unit_bits = 0;
+						bit_cursor = 0;
+					} else {
+						ty->members[idx].offset = 0;
+					}
+					if (d.ty->align > max_align)
+						max_align = d.ty->align;
+					if (d.ty->size > max_size)
+						max_size = d.ty->size;
+				}
 				if (consume(","))
 					continue;
 				expect(";");
 				break;
 			}
 		}
-		if (ty->nmembers == 0)
+		if (!saw_field)
 			fatal("empty %s is not supported",
 			      kind == TY_STRUCT ? "struct" : "union");
 		ty->align = max_align;
@@ -749,13 +1232,72 @@ static void check_function_type(struct type *ty, const char *name)
 		return;
 	if (ty->base->kind == TY_ARRAY || ty->base->kind == TY_FUNC)
 		fatal("function '%s' cannot return an array or function", name);
-	if (is_aggregate(ty->base))
-		fatal("function '%s' returns a struct/union by value (not supported)",
-		      name);
+	if (is_aggregate(ty->base) && !ty->base->is_complete)
+		fatal("function '%s' returns an incomplete struct/union", name);
 	for (i = 0; i < ty->nparams; i++) {
-		if (is_aggregate(ty->params[i].ty))
-			fatal("function '%s' has a struct/union parameter by value (not supported)",
+		struct type *pt = ty->params[i].ty;
+
+		if (is_aggregate(pt) && !pt->is_complete)
+			fatal("function '%s' has an incomplete struct/union parameter",
 			      name);
+	}
+}
+
+static bool types_compatible(struct type *a, struct type *b)
+{
+	int i;
+
+	if (a == b)
+		return true;
+	if (a->kind != b->kind)
+		return false;
+	switch (a->kind) {
+	case TY_PTR:
+		return types_compatible(a->base, b->base);
+	case TY_ARRAY:
+		return a->array_len == b->array_len &&
+		       types_compatible(a->base, b->base);
+	case TY_FUNC:
+		if (!types_compatible(a->base, b->base))
+			return false;
+		if (a->nparams != b->nparams ||
+		    a->variadic != b->variadic)
+			return false;
+		for (i = 0; i < a->nparams; i++) {
+			if (!types_compatible(a->params[i].ty,
+					      b->params[i].ty))
+				return false;
+		}
+		return true;
+	case TY_STRUCT:
+	case TY_UNION:
+		return false;
+	default:
+		return a->size == b->size &&
+		       a->is_unsigned == b->is_unsigned;
+	}
+}
+
+static void check_redeclaration(struct obj *fn, struct type *ty)
+{
+	struct type *old = fn->ty;
+	int i;
+
+	if (!old || fn->defined || fn_state_for(fn)->implicit)
+		return;
+	if (!types_compatible(old->base, ty->base) ||
+	    old->base->kind == TY_ARRAY || old->base->kind == TY_FUNC)
+		fatal("conflicting types for function '%s'", fn->name);
+	/* An old-style declaration does not constrain the parameters. */
+	if ((old->nparams == 0 && !old->variadic) ||
+	    (ty->nparams == 0 && !ty->variadic))
+		return;
+	if (old->nparams != ty->nparams || old->variadic != ty->variadic)
+		fatal("conflicting types for function '%s'", fn->name);
+	for (i = 0; i < old->nparams; i++) {
+		if (!types_compatible(old->params[i].ty, ty->params[i].ty))
+			fatal("conflicting types for function '%s'",
+			      fn->name);
 	}
 }
 
@@ -771,6 +1313,7 @@ static struct obj *get_function_obj(const char *name)
 	o = new_global(name, ty_func(ty_int, NULL, 0, true));
 	o->is_function = true;
 	o->sym = new_sym(name, SEC_TEXT, 0, 4);
+	fn_state_for(o)->implicit = true;
 	return o;
 }
 
@@ -781,12 +1324,15 @@ static void declare_function(struct declarator d, bool is_static)
 	if (!d.name)
 		fatal("function name is missing");
 	fn = get_function_obj(d.name);
+	check_redeclaration(fn, d.ty);
 	if (!fn->defined)
 		fn->ty = d.ty;
+	fn_state_for(fn)->implicit = false;
 	if (!fn->sym)
 		fn->sym = new_sym(d.name, SEC_TEXT, 0, 4);
 	if (is_static)
 		make_local_sym(fn->sym);
+	patch_calls_for(fn);
 }
 
 static void parse_function(struct declarator d, bool is_static)
@@ -796,12 +1342,15 @@ static void parse_function(struct declarator d, bool is_static)
 
 	if (fn->defined)
 		fatal("redefinition of function '%s'", d.name);
+	check_redeclaration(fn, d.ty);
 	fn->ty = d.ty;
 	fn->defined = true;
 	fn->sym->defined = true;
+	fn_state_for(fn)->implicit = false;
 	if (is_static)
 		make_local_sym(fn->sym);
-	locals_size = 16;
+	patch_calls_for(fn);
+	locals_size = 24;
 	enter_scope();
 	for (i = 0; i < d.ty->nparams; i++) {
 		struct param *p = &d.ty->params[i];
@@ -809,16 +1358,21 @@ static void parse_function(struct declarator d, bool is_static)
 		if (!p->name)
 			fatal("parameter name is missing in definition of '%s'",
 			      d.name);
-		if (i >= 8)
-			fatal("more than 8 parameters are not supported");
 		p->obj = new_local(p->name, p->ty, true, i);
 	}
 	if (d.ty->variadic)
-		fn->va_area = new_local("__cc_va_area", ty_array(ty_ulong, 8),
+		fn->va_area = new_local("__cc_va_area", ty_array(ty_ulong, 16),
 					false, 0);
 	else
 		fn->va_area = NULL;
+	if (is_aggregate(d.ty->base))
+		fn->ret_ptr = new_local(".retptr", ty_ptr(d.ty->base), false,
+					0);
+	else
+		fn->ret_ptr = NULL;
+	current_fn_ret = d.ty->base;
 	fn->body = parse_block();
+	current_fn_ret = NULL;
 	fn->frame_size = align_to(locals_size, 16);
 	leave_scope();
 }
@@ -916,12 +1470,192 @@ static long eval_const(struct node *n)
 	}
 }
 
+static bool expr_has_float(struct node *n)
+{
+	if (!n)
+		return false;
+	if (is_float(n->ty))
+		return true;
+	switch (n->kind) {
+	case ND_FLOAT:
+		return true;
+	case ND_CAST:
+	case ND_NEG:
+	case ND_NOT:
+	case ND_BITNOT:
+		return expr_has_float(n->lhs);
+	case ND_ADD:
+	case ND_SUB:
+	case ND_MUL:
+	case ND_DIV:
+	case ND_MOD:
+	case ND_BITAND:
+	case ND_BITOR:
+	case ND_BITXOR:
+	case ND_SHL:
+	case ND_SHR:
+	case ND_EQ:
+	case ND_NE:
+	case ND_LT:
+	case ND_LE:
+	case ND_GT:
+	case ND_GE:
+	case ND_LOGAND:
+	case ND_LOGOR:
+	case ND_COMMA:
+		return expr_has_float(n->lhs) || expr_has_float(n->rhs);
+	case ND_COND:
+		return expr_has_float(n->cond) || expr_has_float(n->then) ||
+		       expr_has_float(n->els);
+	default:
+		return false;
+	}
+}
+
+static double round_const_type(struct type *ty, double v)
+{
+	if (ty->kind == TY_FLOAT)
+		return (double)(float)v;
+	return v;
+}
+
+/*
+ * Constant evaluator for initialisers that involve floating point.
+ * Integer-only subtrees are evaluated by eval_const so 64-bit values keep
+ * their exact bit pattern.
+ */
+static double eval_const_double(struct node *n)
+{
+	double a;
+	double b;
+
+	if (!expr_has_float(n))
+		return (double)eval_const(n);
+	switch (n->kind) {
+	case ND_FLOAT:
+		return round_const_type(n->ty, n->fval);
+	case ND_CAST:
+		a = eval_const_double(n->lhs);
+		if (is_float(n->ty))
+			return round_const_type(n->ty, a);
+		if (n->ty->kind == TY_VOID)
+			return 0.0;
+		if (n->ty->kind == TY_PTR)
+			return (double)(long)a;
+		return (double)truncate_const((long)a, n->ty);
+	case ND_NEG:
+		return round_const_type(n->ty, -eval_const_double(n->lhs));
+	case ND_NOT:
+		return eval_const_double(n->lhs) == 0.0;
+	case ND_BITNOT:
+		return (double)~((long)eval_const_double(n->lhs));
+	case ND_ADD:
+		return round_const_type(n->ty, eval_const_double(n->lhs) +
+							eval_const_double(n->rhs));
+	case ND_SUB:
+		return round_const_type(n->ty, eval_const_double(n->lhs) -
+							eval_const_double(n->rhs));
+	case ND_MUL:
+		return round_const_type(n->ty, eval_const_double(n->lhs) *
+							eval_const_double(n->rhs));
+	case ND_DIV:
+		a = eval_const_double(n->lhs);
+		b = eval_const_double(n->rhs);
+		if (is_float(n->ty)) {
+			if (b == 0.0)
+				fatal("division by zero in constant expression");
+			return round_const_type(n->ty, a / b);
+		}
+		if ((long)b == 0)
+			fatal("division by zero in constant expression");
+		return (double)((long)a / (long)b);
+	case ND_MOD:
+		a = eval_const_double(n->lhs);
+		b = eval_const_double(n->rhs);
+		if ((long)b == 0)
+			fatal("division by zero in constant expression");
+		return (double)((long)a % (long)b);
+	case ND_BITAND:
+		return (double)((long)eval_const_double(n->lhs) &
+				(long)eval_const_double(n->rhs));
+	case ND_BITOR:
+		return (double)((long)eval_const_double(n->lhs) |
+				(long)eval_const_double(n->rhs));
+	case ND_BITXOR:
+		return (double)((long)eval_const_double(n->lhs) ^
+				(long)eval_const_double(n->rhs));
+	case ND_SHL:
+		return (double)((long)eval_const_double(n->lhs) <<
+				(long)eval_const_double(n->rhs));
+	case ND_SHR:
+		return (double)((long)eval_const_double(n->lhs) >>
+				(long)eval_const_double(n->rhs));
+	case ND_EQ:
+		return eval_const_double(n->lhs) == eval_const_double(n->rhs);
+	case ND_NE:
+		return eval_const_double(n->lhs) != eval_const_double(n->rhs);
+	case ND_LT:
+		return eval_const_double(n->lhs) < eval_const_double(n->rhs);
+	case ND_LE:
+		return eval_const_double(n->lhs) <= eval_const_double(n->rhs);
+	case ND_GT:
+		return eval_const_double(n->lhs) > eval_const_double(n->rhs);
+	case ND_GE:
+		return eval_const_double(n->lhs) >= eval_const_double(n->rhs);
+	case ND_LOGAND:
+		return eval_const_double(n->lhs) != 0.0 &&
+		       eval_const_double(n->rhs) != 0.0;
+	case ND_LOGOR:
+		return eval_const_double(n->lhs) != 0.0 ||
+		       eval_const_double(n->rhs) != 0.0;
+	case ND_COND:
+		return eval_const_double(n->cond) != 0.0 ?
+			       eval_const_double(n->then) :
+			       eval_const_double(n->els);
+	case ND_COMMA:
+		(void)eval_const_double(n->lhs);
+		return eval_const_double(n->rhs);
+	default:
+		fatal("not a constant expression");
+		return 0.0;
+	}
+}
+
 static void store_int(unsigned char *p, long val, int size)
 {
 	int i;
 
 	for (i = 0; i < size; i++)
 		p[i] = (unsigned char)((unsigned long)val >> (i * 8));
+}
+
+static void store_float(unsigned char *p, double val, struct type *ty)
+{
+	if (ty->kind == TY_FLOAT) {
+		float f = (float)val;
+
+		memcpy(p, &f, sizeof(f));
+	} else {
+		double d = val;
+
+		memcpy(p, &d, sizeof(d));
+	}
+}
+
+static void materialize_scalar_global(struct sym *s, struct type *ty,
+				      struct node *expr, int offset)
+{
+	if (is_float(ty)) {
+		store_float(s->init + offset, eval_const_double(expr), ty);
+		return;
+	}
+	if (expr_has_float(expr)) {
+		long v = (long)eval_const_double(expr);
+
+		store_int(s->init + offset, truncate_const(v, ty), ty->size);
+		return;
+	}
+	store_int(s->init + offset, eval_const(expr), ty->size);
 }
 
 static struct sym *new_string_sym(const unsigned char *bytes, int len)
@@ -1016,18 +1750,22 @@ static void parse_global_var(struct declarator d, bool is_static,
 	if (d.ty->kind == TY_ARRAY && d.ty->array_len < 0) {
 		int len;
 
-		if (!init)
-			fatal("array size is missing for '%s'", d.name);
-		if (init->kind == INIT_STRING)
-			len = init->str_len;
-		else if (init->kind == INIT_LIST)
-			len = init->max_index;
-		else
-			fatal("cannot infer array size for '%s'", d.name);
-		if (len <= 0)
-			fatal("zero-length array '%s'", d.name);
-		d.ty->array_len = len;
-		d.ty->size = d.ty->base->size * len;
+		if (is_extern && !has_init) {
+			/* An incomplete extern array is completed by a definition. */
+		} else {
+			if (!init)
+				fatal("array size is missing for '%s'", d.name);
+			if (init->kind == INIT_STRING)
+				len = init->str_len;
+			else if (init->kind == INIT_LIST)
+				len = init->max_index;
+			else
+				fatal("cannot infer array size for '%s'", d.name);
+			if (len <= 0)
+				fatal("zero-length array '%s'", d.name);
+			d.ty->array_len = len;
+			d.ty->size = d.ty->base->size * len;
+		}
 	}
 	if (init && init->kind == INIT_STRING) {
 		if (d.ty->kind != TY_ARRAY || d.ty->base->kind != TY_CHAR)
@@ -1101,11 +1839,19 @@ static int member_index(struct type *ty, const char *name)
 	int i;
 
 	for (i = 0; i < ty->nmembers; i++) {
-		if (!strcmp(ty->members[i].name, name))
+		if (ty->members[i].name &&
+		    !strcmp(ty->members[i].name, name))
 			return i;
 	}
 	fatal("no member named '%s'", name);
 	return -1;
+}
+
+static int next_named_member(struct type *ty, int idx)
+{
+	while (idx < ty->nmembers && !ty->members[idx].name)
+		idx++;
+	return idx;
 }
 
 static struct init *parse_flat(struct type *ty);
@@ -1169,6 +1915,10 @@ static struct init *parse_initializer(struct type *ty)
 					idx = (int)v;
 				} else {
 					idx = next_index;
+					if (ty->kind == TY_STRUCT ||
+					    ty->kind == TY_UNION)
+						idx = next_named_member(ty,
+									idx);
 				}
 
 				if (ty->kind == TY_ARRAY) {
@@ -1245,30 +1995,46 @@ static struct init *parse_flat(struct type *ty)
 		n = ty->array_len;
 		if (n < 0)
 			fatal("cannot flatten an incomplete array");
-	} else if (ty->kind == TY_STRUCT) {
-		n = ty->nmembers;
-	} else if (ty->kind == TY_UNION) {
-		n = ty->nmembers > 0 ? 1 : 0;
-	} else {
+		for (i = 0; i < n; i++) {
+			init_add(in, parse_flat(ty->base), i);
+			if (i + 1 < n) {
+				if (is("}"))
+					break;
+				expect(",");
+				if (is("}"))
+					break;
+			}
+		}
+		return in;
+	}
+	if (ty->kind == TY_UNION) {
+		for (i = 0; i < ty->nmembers; i++) {
+			if (ty->members[i].name)
+				break;
+		}
+		if (i < ty->nmembers)
+			init_add(in, parse_flat(ty->members[i].ty), i);
+		return in;
+	}
+	if (ty->kind != TY_STRUCT) {
 		fatal("invalid flat initialiser");
 		return NULL;
 	}
-	for (i = 0; i < n; i++) {
-		struct type *sub;
+	{
+		int added = 0;
 
-		if (ty->kind == TY_ARRAY)
-			sub = ty->base;
-		else if (ty->kind == TY_STRUCT)
-			sub = ty->members[i].ty;
-		else
-			sub = ty->members[0].ty;
-		init_add(in, parse_flat(sub), i);
-		if (i + 1 < n) {
-			if (is("}"))
-				break;
-			expect(",");
-			if (is("}"))
-				break;
+		for (i = 0; i < ty->nmembers; i++) {
+			if (!ty->members[i].name)
+				continue;
+			if (added > 0) {
+				if (is("}"))
+					break;
+				expect(",");
+				if (is("}"))
+					break;
+			}
+			init_add(in, parse_flat(ty->members[i].ty), i);
+			added++;
 		}
 	}
 	return in;
@@ -1280,6 +2046,8 @@ static struct node *new_member_node(struct node *base, struct member *m)
 
 	n->lhs = base;
 	n->member_offset = m->offset;
+	n->bit_offset = m->bit_offset;
+	n->bit_width = m->bit_width;
 	n->ty = m->ty;
 	return n;
 }
@@ -1388,6 +2156,9 @@ static void add_data_reloc(struct sym *s, int offset, struct sym *target,
 	s->drel = dr;
 }
 
+static bool global_pointer_value(struct node *e, struct sym **target,
+				 long *addend);
+
 static bool global_addr_of(struct node *e, struct sym **target, long *addend)
 {
 	if (e->kind == ND_VAR && !e->var->is_local) {
@@ -1401,7 +2172,24 @@ static bool global_addr_of(struct node *e, struct sym **target, long *addend)
 		*addend += e->member_offset;
 		return true;
 	}
+	if (e->kind == ND_DEREF)
+		return global_pointer_value(e->lhs, target, addend);
+	if (e->kind == ND_CAST)
+		return global_addr_of(e->lhs, target, addend);
+	if (e->kind == ND_STR) {
+		*target = e->sym;
+		*addend = 0;
+		return true;
+	}
 	return false;
+}
+
+static long global_addr_step(struct type *t)
+{
+	t = decay(t);
+	if (t->kind != TY_PTR || !t->base || t->base->size <= 0)
+		return 1;
+	return t->base->size;
 }
 
 static bool global_pointer_value(struct node *e, struct sym **target,
@@ -1420,9 +2208,64 @@ static bool global_pointer_value(struct node *e, struct sym **target,
 		*addend = 0;
 		return true;
 	}
+	if (e->kind == ND_MEMBER && !e->var &&
+	    (e->ty->kind == TY_ARRAY || e->ty->kind == TY_FUNC)) {
+		/* An array/function member decays to the address of the member. */
+		return global_addr_of(e, target, addend);
+	}
 	if (e->kind == ND_ADDR)
 		return global_addr_of(e->lhs, target, addend);
+	if (e->kind == ND_ADD || e->kind == ND_SUB) {
+		struct node *p;
+		struct node *idx;
+		long step;
+		long n;
+
+		if (global_pointer_value(e->lhs, target, addend)) {
+			p = e->lhs;
+			idx = e->rhs;
+		} else if (e->kind == ND_ADD &&
+			   global_pointer_value(e->rhs, target, addend)) {
+			p = e->rhs;
+			idx = e->lhs;
+		} else {
+			return false;
+		}
+		step = global_addr_step(p->ty);
+		n = eval_const(idx);
+		if (e->kind == ND_SUB)
+			n = -n;
+		*addend += n * step;
+		return true;
+	}
 	return false;
+}
+
+static void materialize_global_bitfield(struct sym *s, struct member *m,
+					struct init *in, int offset)
+{
+	unsigned long unit = 0;
+	unsigned long fmask;
+	unsigned long mask;
+	long v;
+	int i;
+	int bytes = m->ty->size;
+
+	if (!in || in->kind != INIT_EXPR)
+		fatal("unsupported bit-field initialiser");
+	if (expr_has_float(in->expr))
+		v = (long)eval_const_double(in->expr);
+	else
+		v = eval_const(in->expr);
+	if (m->bit_width >= 64)
+		fmask = ~0UL;
+	else
+		fmask = (1UL << m->bit_width) - 1;
+	mask = fmask << m->bit_offset;
+	for (i = 0; i < bytes; i++)
+		unit |= (unsigned long)s->init[offset + i] << (i * 8);
+	unit = (unit & ~mask) | (((unsigned long)v << m->bit_offset) & mask);
+	store_int(s->init + offset, (long)unit, bytes);
 }
 
 static void materialize_global_init(struct sym *s, struct type *ty,
@@ -1434,7 +2277,7 @@ static void materialize_global_init(struct sym *s, struct type *ty,
 		return;
 	if (in->kind == INIT_EXPR) {
 		if (is_aggregate(ty))
-			fatal("global aggregate copy initialiser is not supported");
+			fatal("aggregate copy initialiser is not a constant expression");
 		if (ty->kind == TY_PTR) {
 			struct sym *target;
 			long addend;
@@ -1444,11 +2287,7 @@ static void materialize_global_init(struct sym *s, struct type *ty,
 				return;
 			}
 		}
-		{
-			long val = eval_const(in->expr);
-
-			store_int(s->init + offset, val, ty->size);
-		}
+		materialize_scalar_global(s, ty, in->expr, offset);
 		return;
 	}
 	if (in->kind == INIT_STRING) {
@@ -1478,12 +2317,19 @@ static void materialize_global_init(struct sym *s, struct type *ty,
 		if (ty->kind == TY_STRUCT) {
 			for (i = 0; i < in->n; i++) {
 				int idx = in->indices[i];
+				struct member *m;
 
 				if (idx < 0 || idx >= ty->nmembers)
 					fatal("struct initialiser index out of range");
-				materialize_global_init(
-					s, ty->members[idx].ty, in->items[i],
-					offset + ty->members[idx].offset);
+				m = &ty->members[idx];
+				if (m->bit_width > 0)
+					materialize_global_bitfield(
+						s, m, in->items[i],
+						offset + m->offset);
+				else
+					materialize_global_init(
+						s, m->ty, in->items[i],
+						offset + m->offset);
 			}
 			return;
 		}
@@ -1492,12 +2338,19 @@ static void materialize_global_init(struct sym *s, struct type *ty,
 				fatal("too many union initialisers");
 			if (in->n == 1) {
 				int idx = in->indices[0];
+				struct member *m;
 
 				if (idx < 0 || idx >= ty->nmembers)
 					fatal("union initialiser index out of range");
-				materialize_global_init(
-					s, ty->members[idx].ty, in->items[0],
-					offset + ty->members[idx].offset);
+				m = &ty->members[idx];
+				if (m->bit_width > 0)
+					materialize_global_bitfield(
+						s, m, in->items[0],
+						offset + m->offset);
+				else
+					materialize_global_init(
+						s, m->ty, in->items[0],
+						offset + m->offset);
 			}
 			return;
 		}
@@ -1509,16 +2362,65 @@ static void materialize_global_init(struct sym *s, struct type *ty,
 /* statements                                                          */
 /* ------------------------------------------------------------------ */
 
+static int local_sym_id;
+
+static char *new_local_sym_name(const char *name)
+{
+	char *p;
+	size_t n = strlen(name) + 40;
+
+	p = xmalloc(n);
+	snprintf(p, n, "%s.__s%d_%d", name, unit_id, local_sym_id++);
+	return p;
+}
+
+static struct obj *new_scoped_obj(const char *name, struct type *ty,
+				  struct sym *s)
+{
+	struct obj *o = xcalloc(1, sizeof(*o));
+
+	if (!scope)
+		fatal("object declared outside a block scope");
+	o->name = xstrdup(name);
+	o->ty = ty;
+	o->is_local = false;
+	o->defined = s->defined;
+	o->sym = s;
+	o->next = scope->vars;
+	scope->vars = o;
+	return o;
+}
+
+static void infer_local_array_size(struct type *ty, struct init *in,
+				   const char *name)
+{
+	int len;
+
+	if (ty->kind != TY_ARRAY || ty->array_len >= 0)
+		return;
+	if (!in)
+		fatal("array '%s' needs a size", name);
+	if (in->kind == INIT_STRING)
+		len = in->str_len;
+	else if (in->kind == INIT_LIST)
+		len = in->max_index;
+	else
+		fatal("cannot infer size of array '%s'", name);
+	if (len <= 0)
+		fatal("zero-length array '%s'", name);
+	ty->array_len = len;
+	ty->size = ty->base->size * len;
+}
+
 static struct node *parse_local_decl(void)
 {
 	struct type *base = parse_declspec();
 	bool is_typedef = declspec_typedef;
+	bool is_static = declspec_static;
+	bool is_extern = declspec_extern;
 	struct node *head = NULL;
 	struct node **tail = &head;
 
-	if (declspec_static || declspec_extern)
-		fatal("%d:%d: static/extern locals are not supported",
-		      cur_token()->line, cur_token()->col);
 	if (consume(";")) {
 		if (is_typedef)
 			fatal("typedef requires a name");
@@ -1541,33 +2443,35 @@ static struct node *parse_local_decl(void)
 
 	for (;;) {
 		struct declarator d = parse_declarator(base, false);
-		struct obj *v;
 		struct init *in = NULL;
+		struct obj *v;
 		struct node *lv;
 
 		if (!d.name)
 			fatal("variable name is missing");
-		if (d.ty->kind == TY_FUNC)
-			fatal("local function declarations are not supported");
-		if (consume("="))
-			in = parse_initializer(d.ty);
-		if (d.ty->kind == TY_ARRAY && d.ty->array_len < 0) {
-			int len;
-
-			if (!in)
-				fatal("local array '%s' needs a size", d.name);
-			if (in->kind == INIT_STRING)
-				len = in->str_len;
-			else if (in->kind == INIT_LIST)
-				len = in->max_index;
-			else
-				fatal("cannot infer size of local array '%s'",
+		if (d.ty->kind == TY_FUNC) {
+			if (is_static)
+				fatal("block-scope static function declaration '%s'",
 				      d.name);
-			if (len <= 0)
-				fatal("zero-length local array '%s'", d.name);
-			d.ty->array_len = len;
-			d.ty->size = d.ty->base->size * len;
+			declare_function(d, false);
+			if (consume("="))
+				fatal("function '%s' cannot have an initialiser",
+				      d.name);
+			if (consume(","))
+				continue;
+			expect(";");
+			break;
 		}
+		if (is_static && is_extern)
+			fatal("'%s' cannot be both static and extern", d.name);
+		if (consume("=")) {
+			if (is_extern)
+				fatal("'extern' local '%s' cannot have an initialiser",
+				      d.name);
+			in = parse_initializer(d.ty);
+		}
+		if (!is_extern)
+			infer_local_array_size(d.ty, in, d.name);
 		if (in && in->kind == INIT_STRING) {
 			if (d.ty->kind != TY_ARRAY ||
 			    d.ty->base->kind != TY_CHAR)
@@ -1575,22 +2479,68 @@ static struct node *parse_local_decl(void)
 			if (in->str_len - 1 > d.ty->array_len)
 				fatal("initialiser string too long");
 		}
-		v = new_local(d.name, d.ty, false, 0);
-		if (in) {
-			lv = new_var_node(v);
-			if ((is_aggregate(d.ty) || d.ty->kind == TY_ARRAY) &&
-			    in->kind != INIT_EXPR) {
-				struct node *mz = new_node(ND_MEMZERO);
+		if (is_extern) {
+			struct sym *s;
+			struct obj *g = find_global(d.name);
 
-				mz->lhs = lv;
-				mz->val = d.ty->size;
-				append_stmt(&tail, mz);
-				build_local_init(lv, d.ty, in, &tail);
+			if (d.ty->kind == TY_VOID ||
+			    (is_aggregate(d.ty) && !d.ty->is_complete) ||
+			    (d.ty->kind != TY_ARRAY && d.ty->size <= 0))
+				fatal("incomplete type for extern '%s'", d.name);
+			if (g && g->sym) {
+				if (g->is_function)
+					fatal("extern '%s' is a function",
+					      d.name);
+				if (g->ty->size != d.ty->size)
+					fatal("conflicting types for extern '%s'",
+					      d.name);
+				s = g->sym;
 			} else {
-				if (!in->expr)
-					fatal("invalid initialiser");
-				append_expr_stmt(&tail,
-						 new_assign(lv, in->expr));
+				s = new_sym(d.name, SEC_BSS, d.ty->size,
+					    d.ty->align);
+				s->defined = false;
+			}
+			new_scoped_obj(d.name, d.ty, s);
+		} else if (is_static) {
+			struct sym *s;
+			char *sname;
+			int sec = in ? SEC_DATA : SEC_BSS;
+
+			if (d.ty->kind == TY_VOID ||
+			    (is_aggregate(d.ty) && !d.ty->is_complete) ||
+			    d.ty->size <= 0)
+				fatal("incomplete type for static '%s'", d.name);
+			sname = new_local_sym_name(d.name);
+			s = new_sym(sname, sec, d.ty->size, d.ty->align);
+			free(sname);
+			s->defined = true;
+			s->is_static = true;
+			if (in) {
+				s->init = xcalloc(1, (size_t)s->size);
+				materialize_global_init(s, d.ty, in, 0);
+			}
+			new_scoped_obj(d.name, d.ty, s);
+		} else {
+			v = new_local(d.name, d.ty, false, 0);
+			if (in) {
+				lv = new_var_node(v);
+				if ((is_aggregate(d.ty) ||
+				     d.ty->kind == TY_ARRAY) &&
+				    in->kind != INIT_EXPR) {
+					struct node *mz =
+						new_node(ND_MEMZERO);
+
+					mz->lhs = lv;
+					mz->val = d.ty->size;
+					append_stmt(&tail, mz);
+					build_local_init(lv, d.ty, in, &tail);
+				} else {
+					if (!in->expr)
+						fatal("invalid initialiser");
+					append_expr_stmt(&tail,
+							 new_assign(lv,
+								    in->expr));
+				}
 			}
 		}
 		if (consume(","))
@@ -1619,6 +2569,8 @@ static struct node *parse_stmt(void)
 
 		expect("(");
 		n->cond = parse_expr();
+		if (!is_integer(decay(n->cond->ty)))
+			fatal("switch condition must have an integer type");
 		expect(")");
 		ctx.cases = NULL;
 		ctx.prev = switches;
@@ -1696,7 +2648,7 @@ static struct node *parse_stmt(void)
 		struct node *n = new_node(ND_IF);
 
 		expect("(");
-		n->cond = parse_expr();
+		n->cond = to_cond(parse_expr());
 		expect(")");
 		n->then = parse_stmt();
 		if (consume("else"))
@@ -1707,7 +2659,7 @@ static struct node *parse_stmt(void)
 		struct node *n = new_node(ND_WHILE);
 
 		expect("(");
-		n->cond = parse_expr();
+		n->cond = to_cond(parse_expr());
 		expect(")");
 		n->body = parse_stmt();
 		return n;
@@ -1718,7 +2670,7 @@ static struct node *parse_stmt(void)
 		n->body = parse_stmt();
 		expect("while");
 		expect("(");
-		n->cond = parse_expr();
+		n->cond = to_cond(parse_expr());
 		expect(")");
 		expect(";");
 		return n;
@@ -1740,7 +2692,7 @@ static struct node *parse_stmt(void)
 			n->init->lhs = e;
 		}
 		if (!consume(";")) {
-			n->cond = parse_expr();
+			n->cond = to_cond(parse_expr());
 			expect(";");
 		}
 		if (!is(")"))
@@ -1754,7 +2706,38 @@ static struct node *parse_stmt(void)
 		struct node *n = new_node(ND_RETURN);
 
 		if (!consume(";")) {
-			n->lhs = parse_expr();
+			struct node *e = parse_expr();
+
+			if (current_fn_ret) {
+				struct type *rt = current_fn_ret;
+
+				if (is_aggregate(rt)) {
+					if (!is_aggregate(e->ty) ||
+					    e->ty->size != rt->size)
+						fatal("return type mismatch in function returning a struct/union");
+				} else {
+					e = decay_node(e);
+					if (rt->kind == TY_VOID) {
+						e = new_cast(e, ty_void);
+					} else if (is_float(rt)) {
+						if (!is_arith(e->ty))
+							fatal("cannot return a non-arithmetic value from a function returning %s",
+							      rt->kind == TY_FLOAT ?
+								      "float" :
+								      "double");
+						e = cast_node(e, rt);
+					} else if (rt->kind == TY_PTR) {
+						if (is_float(e->ty))
+							fatal("cannot return a floating point value from a function returning a pointer");
+						e = cast_node(e, rt);
+					} else {
+						if (!is_arith(e->ty))
+							fatal("cannot return a non-arithmetic value from a function returning an integer");
+						e = cast_node(e, rt);
+					}
+				}
+			}
+			n->lhs = e;
 			expect(";");
 		}
 		return n;
@@ -1812,6 +2795,14 @@ static struct node *parse_primary(void)
 {
 	if (is_kind(TK_NUM)) {
 		struct node *n = new_num(cur_token()->val);
+
+		tok_pos++;
+		return n;
+	}
+	if (is_kind(TK_FLOAT)) {
+		struct token *t = cur_token();
+		struct node *n = new_float(
+			t->fval, t->is_float32 ? ty_float : ty_double);
 
 		tok_pos++;
 		return n;
@@ -1885,7 +2876,8 @@ static struct member *find_member(struct type *ty, const char *name)
 	if (!ty->is_complete)
 		fatal("member access on an incomplete type");
 	for (i = 0; i < ty->nmembers; i++) {
-		if (!strcmp(ty->members[i].name, name))
+		if (ty->members[i].name &&
+		    !strcmp(ty->members[i].name, name))
 			return &ty->members[i];
 	}
 	fatal("no member named '%s' in %s '%s'", name,
@@ -1923,6 +2915,8 @@ static struct node *parse_postfix(void)
 			mem = new_node(ND_MEMBER);
 			mem->lhs = n;
 			mem->member_offset = m->offset;
+			mem->bit_offset = m->bit_offset;
+			mem->bit_width = m->bit_width;
 			mem->ty = m->ty;
 			free(mname);
 			n = mem;
@@ -1968,20 +2962,18 @@ static struct node *parse_postfix(void)
 					}
 				}
 			}
-			if (nargs > 8)
-				fatal("more than 8 call arguments are not supported");
-			for (int ai = 0; ai < nargs; ai++) {
-				if (is_aggregate(args[ai]->ty))
-					fatal("struct/union arguments are not supported");
-			}
 			call = new_node(ND_CALL);
 			call->var = fn;
 			call->callee = callee;
 			call->args = args;
 			call->nargs = nargs;
-			call->ty = fnty->base ? fnty->base : ty_int;
-			if (is_aggregate(call->ty))
-				fatal("functions returning a struct/union by value are not supported");
+			if (fn) {
+				apply_call_type(call);
+				record_pending_call(call);
+			} else {
+				apply_call_type_with(call, fnty,
+						     "<function pointer>", true);
+			}
 			n = call;
 			continue;
 		}
@@ -2014,8 +3006,13 @@ static struct node *parse_postfix(void)
 
 static struct node *parse_unary(void)
 {
-	if (consume("+"))
-		return parse_unary();
+	if (consume("+")) {
+		struct node *e = parse_unary();
+
+		if (!is_arith(e->ty))
+			fatal("invalid operand to unary plus");
+		return promote_node(e);
+	}
 	if (consume("-"))
 		return new_unary(ND_NEG, parse_unary());
 	if (consume("!"))
@@ -2060,6 +3057,8 @@ static struct node *parse_unary(void)
 		{
 			struct node *e = parse_unary();
 
+			if (e->kind == ND_MEMBER && e->bit_width > 0)
+				fatal("sizeof cannot be applied to a bit-field");
 			return new_num(sizeof_type(e->ty));
 		}
 	}
@@ -2201,13 +3200,46 @@ static struct node *parse_cond(void)
 
 	if (consume("?")) {
 		struct node *c = new_node(ND_COND);
+		struct node *then;
+		struct node *els;
 
-		c->cond = n;
-		c->then = parse_expr();
+		c->cond = to_cond(n);
+		then = decay_node(parse_expr());
 		expect(":");
-		c->els = parse_cond();
-		c->ty = c->then->ty->size >= c->els->ty->size ? c->then->ty :
-								c->els->ty;
+		els = decay_node(parse_cond());
+		if (is_float(then->ty) || is_float(els->ty)) {
+			if (!is_arith(then->ty) || !is_arith(els->ty))
+				fatal("invalid conditional operands");
+			c->ty = convert_arith(&then, &els);
+		} else if (is_ptr_like(then->ty) ||
+			   is_ptr_like(els->ty)) {
+			if (is_ptr_like(then->ty) && is_ptr_like(els->ty)) {
+				els = cast_node(els, then->ty);
+				c->ty = then->ty;
+			} else if (is_ptr_like(then->ty)) {
+				els = cast_node(els, then->ty);
+				c->ty = then->ty;
+			} else {
+				then = cast_node(then, els->ty);
+				c->ty = els->ty;
+			}
+		} else if (is_aggregate(then->ty) ||
+			   is_aggregate(els->ty)) {
+			if (!is_aggregate(then->ty) ||
+			    !is_aggregate(els->ty) ||
+			    then->ty->size != els->ty->size)
+				fatal("invalid conditional operands");
+			c->ty = then->ty;
+		} else if (then->ty->kind == TY_VOID &&
+			   els->ty->kind == TY_VOID) {
+			c->ty = ty_void;
+		} else if (is_arith(then->ty) && is_arith(els->ty)) {
+			c->ty = convert_arith(&then, &els);
+		} else {
+			fatal("invalid conditional operands");
+		}
+		c->then = then;
+		c->els = els;
 		return c;
 	}
 	return n;
@@ -2229,17 +3261,9 @@ static struct node *parse_assign(void)
 	if (consume("="))
 		return new_assign(lhs, parse_assign());
 	for (size_t i = 0; i < sizeof(ops) / sizeof(ops[0]); i++) {
-		if (consume(ops[i].op)) {
-			struct node *n = new_node(ND_OPASSIGN);
-
-			if (!is_lvalue(lhs) || !is_scalar(lhs->ty))
-				fatal("invalid compound assignment");
-			n->lhs = lhs;
-			n->rhs = parse_assign();
-			n->ty = lhs->ty;
-			n->val = ops[i].kind;
-			return n;
-		}
+		if (consume(ops[i].op))
+			return new_opassign(lhs, parse_assign(),
+					    ops[i].kind);
 	}
 	return lhs;
 }
@@ -2302,6 +3326,8 @@ void parse_translation_unit(void)
 					break;
 				}
 				declare_function(d, is_static);
+				if (consume(","))
+					continue;
 				expect(";");
 				break;
 			}
@@ -2319,5 +3345,10 @@ void reset_parser_state(void)
 	typedefs = NULL;
 	tags = NULL;
 	consts = NULL;
+	fn_states = NULL;
+	pending_calls = NULL;
+	current_fn_ret = NULL;
 	tok_pos = 0;
+	temp_id = 0;
+	local_sym_id = 0;
 }

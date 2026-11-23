@@ -13,7 +13,7 @@ static char *read_source(const char *path, int *out_len)
 	return buf;
 }
 
-static void compile_source(const char *path)
+static void compile_source(const char *path, const char *asm_path)
 {
 	char *src;
 	char *pp;
@@ -43,6 +43,8 @@ static void compile_source(const char *path)
 		gen_function(o);
 	}
 
+	if (asm_path)
+		asm_print_unit(asm_path);
 	finalize_unit();
 	unit_id++;
 }
@@ -50,8 +52,8 @@ static void compile_source(const char *path)
 static void usage(const char *argv0)
 {
 	fprintf(stderr,
-		"usage: %s [-c] [-E] [-o output] [-I dir] [-D name[=value]] "
-		"[-U name] input.c|input.o [...]\n",
+		"usage: %s [-c] [-E] [-S] [-o output] [-I dir] "
+		"[-D name[=value]] [-U name] input.c|input.o [...]\n",
 		argv0);
 }
 
@@ -82,6 +84,25 @@ static char *object_path(const char *input)
 	return p;
 }
 
+static char *assembly_path(const char *input)
+{
+	const char *base = strrchr(input, '/');
+	size_t n;
+	char *p;
+
+	base = base ? base + 1 : input;
+	n = strlen(base);
+	p = xmalloc(n + 3);
+	if (n > 2 && !strcmp(base + n - 2, ".c")) {
+		memcpy(p, base, n - 2);
+		p[n - 2] = '\0';
+	} else {
+		memcpy(p, base, n + 1);
+	}
+	strcat(p, ".s");
+	return p;
+}
+
 static void write_stdout(const char *buf, int len)
 {
 	int off = 0;
@@ -103,6 +124,7 @@ int main(int argc, char **argv)
 	int i;
 	bool preprocess_only = false;
 	bool compile_only = false;
+	bool assembly_only = false;
 	bool out_given = false;
 
 	for (i = 1; i < argc; i++) {
@@ -113,6 +135,8 @@ int main(int argc, char **argv)
 			out_given = true;
 		} else if (!strcmp(argv[i], "-c")) {
 			compile_only = true;
+		} else if (!strcmp(argv[i], "-S")) {
+			assembly_only = true;
 		} else if (!strcmp(argv[i], "-I")) {
 			if (i + 1 >= argc)
 				usage(argv[0]);
@@ -153,8 +177,13 @@ int main(int argc, char **argv)
 	}
 	if (compile_only && preprocess_only)
 		fatal("-c and -E are mutually exclusive");
-	if (compile_only && ninputs > 1 && out_given)
-		fatal("-o with -c requires a single input file");
+	if (assembly_only && preprocess_only)
+		fatal("-S and -E are mutually exclusive");
+	if (assembly_only && compile_only)
+		fatal("-S and -c are mutually exclusive");
+	if ((compile_only || assembly_only) && ninputs > 1 && out_given)
+		fatal("-o with %s requires a single input file",
+		      compile_only ? "-c" : "-S");
 
 	pp_add_inc_path(".");
 	pp_add_inc_path("/usr/include");
@@ -180,6 +209,23 @@ int main(int argc, char **argv)
 		return 0;
 	}
 
+	if (assembly_only) {
+		for (i = 0; i < ninputs; i++) {
+			char *asm_path;
+
+			if (ends_with(inputs[i], ".o"))
+				fatal("cannot use -S with object file '%s'",
+				      inputs[i]);
+			asm_path = (out_given && ninputs == 1) ?
+					   (char *)out :
+					   assembly_path(inputs[i]);
+			compile_source(inputs[i], asm_path);
+			if (asm_path != out)
+				free(asm_path);
+		}
+		return 0;
+	}
+
 	if (compile_only) {
 		for (i = 0; i < ninputs; i++) {
 			char *obj;
@@ -187,7 +233,7 @@ int main(int argc, char **argv)
 			if (ends_with(inputs[i], ".o"))
 				fatal("cannot use -c with object file '%s'",
 				      inputs[i]);
-			compile_source(inputs[i]);
+			compile_source(inputs[i], NULL);
 			obj = (out_given && ninputs == 1) ?
 				      (char *)out :
 				      object_path(inputs[i]);
@@ -202,7 +248,7 @@ int main(int argc, char **argv)
 		if (ends_with(inputs[i], ".o"))
 			(void)read_object(inputs[i]);
 		else
-			compile_source(inputs[i]);
+			compile_source(inputs[i], NULL);
 	}
 
 	link_and_write(out);

@@ -169,6 +169,88 @@ static void lex_char(void)
 	push_token(TK_NUM, xstrdup("0"), (long)(unsigned char)c, line, col);
 }
 
+/*
+ * A decimal number is a floating constant when a '.', 'e' or 'E' follows
+ * the leading digit sequence.  Hexadecimal integers keep their old
+ * behaviour; hexadecimal floating constants are not supported.
+ */
+static bool decimal_is_float(void)
+{
+	int i = lex_pos;
+
+	if (peekc() == '.')
+		return true;
+	if (peekc() == '0' && (peekc2() == 'x' || peekc2() == 'X'))
+		return false;
+	while (i < lex_len && lex_src[i] >= '0' && lex_src[i] <= '9')
+		i++;
+	return i < lex_len &&
+	       (lex_src[i] == '.' || lex_src[i] == 'e' || lex_src[i] == 'E');
+}
+
+static long lex_float(void)
+{
+	int line = lex_line;
+	int col = lex_col;
+	int start = lex_pos;
+	bool is32 = false;
+	int suffix = 0;
+	char *text;
+	char *end;
+	double v;
+
+	if (peekc() == '.') {
+		advancec();
+		while (peekc() >= '0' && peekc() <= '9')
+			advancec();
+	} else {
+		while (peekc() >= '0' && peekc() <= '9')
+			advancec();
+		if (peekc() == '.') {
+			advancec();
+			while (peekc() >= '0' && peekc() <= '9')
+				advancec();
+		}
+	}
+	if (peekc() == 'e' || peekc() == 'E') {
+		advancec();
+		if (peekc() == '+' || peekc() == '-')
+			advancec();
+		while (peekc() >= '0' && peekc() <= '9')
+			advancec();
+	}
+	if (peekc() == 'f' || peekc() == 'F') {
+		is32 = true;
+		suffix = 1;
+		advancec();
+	} else if (peekc() == 'l' || peekc() == 'L') {
+		/* long double is represented as double */
+		suffix = 1;
+		advancec();
+	}
+
+	if (peekc() == '.' || starts_ident(peekc()) ||
+	    (peekc() >= '0' && peekc() <= '9'))
+		fatal("%d:%d: malformed floating literal", line, col);
+
+	text = xstrndup(lex_src + start, (size_t)(lex_pos - start));
+	v = strtod(text, &end);
+	if (end == text ||
+	    end != text + (size_t)(lex_pos - start) - (size_t)suffix) {
+		/*
+		 * strtod rejects "1e" and "1.2.3" by stopping early; the
+		 * suffix was already consumed above, so anything left
+		 * before it is malformed.
+		 */
+		free(text);
+		fatal("%d:%d: malformed floating literal", line, col);
+	}
+	push_token(TK_FLOAT, text, 0, line, col);
+	tokens[ntokens - 1].fval = v;
+	tokens[ntokens - 1].is_float32 = is32;
+	return 0;
+}
+
 static long lex_number(void)
 {
 	int line = lex_line;
@@ -178,6 +260,8 @@ static long lex_number(void)
 	int start = lex_pos;
 	int c;
 
+	if (decimal_is_float())
+		return lex_float();
 	if (peekc() == '0' && (peekc2() == 'x' || peekc2() == 'X')) {
 		advancec();
 		advancec();
@@ -267,6 +351,8 @@ void lex_all(const char *src, int len)
 	lex_src = src;
 	lex_pos = 0;
 	lex_len = len;
+	lex_line = 1;
+	lex_col = 1;
 
 	for (;;) {
 		int c = peekc();
@@ -306,6 +392,10 @@ void lex_all(const char *src, int len)
 			continue;
 		}
 		if (c >= '0' && c <= '9') {
+			lex_number();
+			continue;
+		}
+		if (c == '.' && peekc2() >= '0' && peekc2() <= '9') {
 			lex_number();
 			continue;
 		}

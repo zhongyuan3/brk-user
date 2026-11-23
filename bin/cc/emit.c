@@ -8,8 +8,31 @@ int nlabels;
 struct unit *units;
 struct unit *unit_tail;
 
+/*
+ * Parallel instruction record list used by the structured assembler.
+ * asm.c reads these records for -S output and re-encoding; the byte
+ * stream in struct buf code stays authoritative for finalize_unit,
+ * which keeps this branch usable while main.c does not yet call
+ * asm_finalize().
+ */
+unsigned int *asm_records;
+int asm_nrecords;
+static int asm_record_cap;
+
+static void record_insn(unsigned int x)
+{
+	if (asm_nrecords == asm_record_cap) {
+		asm_record_cap = asm_record_cap ? asm_record_cap * 2 : 256;
+		asm_records = xrealloc(asm_records,
+				       (size_t)asm_record_cap *
+					       sizeof(*asm_records));
+	}
+	asm_records[asm_nrecords++] = x;
+}
+
 void emit32(unsigned int x)
 {
+	record_insn(x);
 	buf_u32(&code, x);
 }
 
@@ -248,6 +271,17 @@ void jump_to(int label)
 	add_fixup(label);
 }
 
+static void write_insn(int pos, unsigned int ins)
+{
+	if (pos < 0 || pos % 4 != 0 || pos + 4 > code.len)
+		fatal("internal error: instruction record out of range");
+	code.data[pos + 0] = (unsigned char)(ins & 0xff);
+	code.data[pos + 1] = (unsigned char)((ins >> 8) & 0xff);
+	code.data[pos + 2] = (unsigned char)((ins >> 16) & 0xff);
+	code.data[pos + 3] = (unsigned char)((ins >> 24) & 0xff);
+	asm_records[pos / 4] = ins;
+}
+
 void patch_fixups(void)
 {
 	struct fixup *f;
@@ -260,14 +294,7 @@ void patch_fixups(void)
 		off = label_pos[f->label] - f->pos;
 		if (off < -(1 << 20) || off >= (1 << 20))
 			fatal("function too large for jump");
-		code.data[f->pos + 0] =
-			(unsigned char)(enc_j(0x6f, X0, off) & 0xff);
-		code.data[f->pos + 1] =
-			(unsigned char)((enc_j(0x6f, X0, off) >> 8) & 0xff);
-		code.data[f->pos + 2] =
-			(unsigned char)((enc_j(0x6f, X0, off) >> 16) & 0xff);
-		code.data[f->pos + 3] =
-			(unsigned char)((enc_j(0x6f, X0, off) >> 24) & 0xff);
+		write_insn(f->pos, enc_j(0x6f, X0, off));
 	}
 	fixups = NULL;
 }
@@ -317,6 +344,10 @@ void reset_emit_state(void)
 	fixups = NULL;
 	nlabels = 0;
 	label_pos = NULL;
+	free(asm_records);
+	asm_records = NULL;
+	asm_nrecords = 0;
+	asm_record_cap = 0;
 	globals = NULL;
 	scope = NULL;
 	locals_size = 0;

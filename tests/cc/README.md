@@ -58,6 +58,51 @@ cc -c /home/tests/cc/multi_a.c -o /tmp/a.o
 cc -c /home/tests/cc/multi_b.c -o /tmp/b.o
 cc /tmp/a.o /tmp/b.o -o /tmp/multi_obj
 /tmp/multi_obj
+
+# Preprocessor additions
+cc /home/tests/cc/pp_float.c -o /tmp/pp_float
+/tmp/pp_float
+cc /home/tests/cc/pp_line.c -o /tmp/pp_line
+/tmp/pp_line
+
+# Code-generation additions
+cc /home/tests/cc/float.c -o /tmp/float
+/tmp/float
+cc /home/tests/cc/byvalue.c -o /tmp/byvalue
+/tmp/byvalue
+cc /home/tests/cc/bitfield.c -o /tmp/bitfield
+/tmp/bitfield
+cc /home/tests/cc/args.c -o /tmp/args
+/tmp/args
+cc /home/tests/cc/agg_deep.c -o /tmp/agg_deep
+/tmp/agg_deep
+cc /home/tests/cc/float_cast.c -o /tmp/float_cast
+/tmp/float_cast
+
+# Global address constants and block-scope function declarations
+cc /home/tests/cc/gaddr.c -o /tmp/gaddr
+/tmp/gaddr
+cc /home/tests/cc/blockfn.c -o /tmp/blockfn
+/tmp/blockfn
+
+# Front-end feature fixtures
+cc /home/tests/cc/front_float.c -o /tmp/front_float
+/tmp/front_float
+cc /home/tests/cc/front_aggregate.c -o /tmp/front_aggregate
+/tmp/front_aggregate
+cc /home/tests/cc/front_bitfield.c -o /tmp/front_bitfield
+/tmp/front_bitfield
+cc /home/tests/cc/front_static.c -o /tmp/front_static
+/tmp/front_static
+cc /home/tests/cc/front_manyargs.c -o /tmp/front_manyargs
+/tmp/front_manyargs
+
+# Cross-unit CCO2/relocation fixture
+cc /home/tests/cc/link_multi_a.c /home/tests/cc/link_multi_b.c -o /tmp/link_multi
+/tmp/link_multi
+
+# Assembly listing mode
+cc -S /home/tests/cc/hello.c -o /tmp/hello.s
 ```
 
 Expected results:
@@ -90,6 +135,36 @@ Expected results:
 - `multi`: `multi`, `5`, `101`, `1`, `2`, `7`
 - `multi_obj`: the same as `multi`; both `.o` files contain a same-named `static helper`,
   used to verify that local symbols do not conflict
+- `pp_float`: `pp_float ok`
+- `pp_line`: `pp_line ok`
+- `float`: `4 5 7 4 9`, `3 4 1 1 1 1 0`, `8 6`, `3 3 3`, `1 1 1`
+- `byvalue`: `7`, `10`, `7 10`, `10 13`, `10 14`, `8 11`
+- `bitfield`: `5 17 -3 1`, `7 0 1 -8 7`, `0`, `0`, `123 9 456`,
+  `1 579`, `7 -3 1 -6`, `18 703710 155`
+- `args`: `55`, `55`, `39`, `43`, `10`, `45`
+- `agg_deep`: `10 35`, `30 105`, `10 35`
+- `float_cast`: `-2 1 -1`, `1 1`
+- `gaddr`: `20 30 30 6`
+- `blockfn`: `5 6 7`
+- `front_float`: `1 -2 -6 2 -1 4 1`, `-1 6 1 4 8 8`, `-2`, `6`, `5`,
+  `3 9`, `0 0 1 1 7`, `63`, `3 6`, `3 2`, `3 11`, `2`, `3`, `125`
+- `front_aggregate`: `13 24`, `3 103`, `170`, `13 24`, `8 16 4`, `1`, `3 6`
+- `front_bitfield`: `8`, `0 15 6 74565`, `25859`, `-3 12 1`, `8`, `4 4`,
+  `6 31 2`, `120 121 4`
+- `front_static`: `1 2 3`, `100`, `10 20`, `13 1 2 3`, `13 1 2 3`,
+  `2 3 11`, `7`, `8`, `5 6`
+- `front_manyargs`: `55`, `45`, `78`, `550`, `155`, `24`
+- `link_multi`: `link`, `42`, `5`, `1`, `2`, `10`, `20`, `ab`, `17`, `0`, `0`,
+  `cross`
+- `hello.s`: a readable `.text` listing containing `main:` and RISC-V mnemonics
 
 `pp.c` depends on `/usr/include/cc.h` and `pp.h` in the same directory, so the rootfs build script must first
 install the headers and copy the entire `tests/` directory.
+
+Host-side CCO2, relocation, malformed-object and ELF-layout checks live in
+`link_tests.sh`; run them without booting BRK:
+
+```sh
+make cc-host HOSTCC=gcc
+make cc-link-tests
+```

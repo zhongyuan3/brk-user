@@ -221,8 +221,8 @@ CC_HOST_OBJS := $(patsubst %.c,$(CC_HOST_OBJDIR)/%.o,$(CC_HOST_SRCS))
 DEPS += $(CC_HOST_OBJS:.o=.d)
 
 .PHONY: all lib cc-host tests check check-in-system host-tests clean \
-	help hooks list-progs kernel rootfs run debug gdb-server gdb-client \
-	dtb dts FORCE
+	cc-tests cc-link-tests help hooks list-progs kernel rootfs run debug \
+	gdb-server gdb-client dtb dts FORCE
 
 all: $(USER_BINS)
 
@@ -235,7 +235,7 @@ tests: $(TEST_BINS)
 # One entry point for validation.  check covers everything that runs
 # without a kernel boot: the libc tests are built (they execute inside
 # BRK) and the float engines are compared against glibc on the host.
-check: tests host-tests
+check: tests host-tests cc-link-tests
 
 # Boots BRK in QEMU through scripts/run-brktest.sh, runs the brktest
 # suites inside the guest and reports pass/fail.  Rebuilds the kernel
@@ -243,6 +243,16 @@ check: tests host-tests
 check-in-system:
 	$(Q)KERNEL_ROOT="$(abspath $(KERNEL_ROOT))" \
 		CROSS_COMPILE="$(CROSS_COMPILE)" scripts/run-brktest.sh all
+
+# Boots BRK and compiles/runs the tests/cc sources with the on-target cc.
+cc-tests:
+	$(Q)KERNEL_ROOT="$(abspath $(KERNEL_ROOT))" \
+		CROSS_COMPILE="$(CROSS_COMPILE)" scripts/run-cc-tests.sh
+
+# Host-side CCO2/object/linker tests; runs the RISC-V ELF writer but does
+# not execute the resulting programs.
+cc-link-tests: $(CC_HOST)
+	$(Q)tests/cc/link_tests.sh
 
 # Host-side validation of the libc floating-point stack: the engines
 # are pure arithmetic, so host results transfer to the riscv64 build.
@@ -396,6 +406,8 @@ help:
 	@echo "  tests        Build libc tests under tests/libc"
 	@echo "  check        Build libc tests and run the host float validation"
 	@echo "  check-in-system   Boot BRK in QEMU and run the brktest suites"
+	@echo "  cc-tests     Compile and run tests/cc with the on-target cc"
+	@echo "  cc-link-tests Host-side CCO2/object/linker tests"
 	@echo "  host-tests   Run the host float validation under tests/host"
 	@echo "  list-progs   Print the names of all user programs"
 	@echo "  kernel       Build the kernel (KERNEL_BUILD=debug|release)"

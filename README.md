@@ -64,6 +64,12 @@ make cc-host
 # Build the libc tests under tests/libc
 make tests
 
+# Boot BRK and exercise the tests/cc sources with the on-target cc
+make cc-tests
+
+# Host-side CCO2/object/linker checks (does not boot BRK)
+make cc-link-tests
+
 # List all discovered commands
 make list-progs
 
@@ -172,13 +178,14 @@ The suites live in different places because they run differently:
 | libc/system functional + stress | `usr/bin/brktest/` | inside BRK | `/usr/bin/brktest all` |
 | libc unit tests                 | `tests/libc`  | inside BRK  | `/home/tests/libc/alloc` |
 | cc tests                        | `tests/cc`    | inside BRK  | compile with the on-target cc |
+| cc object/linker tests          | `tests/cc`    | on the host | `make cc-link-tests` |
 | Lua smoke test                  | `tests/lua`   | inside BRK  | `lua /home/tests/lua/smoke.lua` |
 | float engine validation         | `tests/host`  | on the host | `make host-tests` |
 
-Two targets wrap these entry points: `make check` builds the libc tests
-and runs the host float validation without booting anything, and
-`make check-in-system` boots BRK in QEMU and runs the brktest suites end
-to end (it rebuilds the kernel and rootfs as needed).
+Two targets wrap these entry points: `make check` builds the libc tests,
+runs the host float validation and the host cc linker tests without booting
+anything, and `make check-in-system` boots BRK in QEMU and runs the brktest
+suites end to end (it rebuilds the kernel and rootfs as needed).
 
 ### brktest
 
@@ -210,6 +217,10 @@ cc /home/tests/cc/hello.c -o /tmp/hello
 cc /home/tests/cc/multi_a.c /home/tests/cc/multi_b.c -o /tmp/multi
 /tmp/multi
 ```
+
+`make cc-tests` boots BRK in QEMU and runs the same sources automatically;
+`make cc-link-tests` checks the host-side object and linker paths without a
+guest boot.
 
 See [`tests/cc/README.md`](tests/cc/README.md) for the full list and expected
 outputs.  The compiler implementation is documented in

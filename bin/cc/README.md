@@ -30,12 +30,13 @@ cc /home/tests/cc/multi_a.c /home/tests/cc/multi_b.c -o /tmp/multi
 Usage:
 
 ```text
-cc [-c] [-E] [-o output] [-I dir] [-D name[=value]] [-U name] input.c|input.o [...]
+cc [-c] [-E] [-S] [-o output] [-I dir] [-D name[=value]] [-U name] input.c|input.o [...]
 ```
 
 - If `-o` is not specified, the output is `a.out`
 - Multiple `.c` files are compiled separately within the same invocation and then linked into a single executable
-- `-c` compiles only, without linking, using the built-in `CCO1` object format
+- `-S` compiles only and writes a human-readable RISC-V assembly listing
+- `-c` compiles only, without linking, using the built-in `CCO2` object format
 - `.o` inputs are passed to the linker together with `.c` inputs
 - The output file is automatically set to `0755`
 
@@ -54,35 +55,43 @@ Supported:
 - Conditional compilation: `#ifdef`, `#ifndef`, `#if`, `#elif`, `#else`, `#endif`
 - `#if` supports integer constants, `defined(NAME)`, `!`, arithmetic/comparison/bitwise operations/`&&`/`||`
 - `#error`, `#warning`
+- `#` stringification, `##` token pasting
+- Macro-named `#include`, macro invocations spanning physical lines
+- `#pragma once`, `#line`
+- Built-in `__FILE__`, `__LINE__`, `__STDC__`, `__STDC_VERSION__`, `__DATE__`, `__TIME__`
 - `-D name[=value]`, `-U name`, `-E`
 
 Not supported:
 
-- `#` stringification, `##` token pasting
-- `#include` followed by a macro name
-- Macro invocations spanning physical lines (a macro invocation must be within the same logical line)
+- Hexadecimal floating constants (`0x1p3`)
 - Complex standard headers (the target machine provides only a minimal `usr/include/cc.h`)
 
 ## Supported C Subset
 
 Types:
 
-- `void`, `char`, `short`, `int`, `long`
+- `void`, `char`, `short`, `int`, `long`, `long long`
+- `float`, `double` (`long double` uses the double representation)
 - `signed` / `unsigned`
 - Pointers, arrays (including multidimensional arrays), functions, function pointers
 - `struct`, `union`, `enum`, `typedef`
+- Bit-fields in structs/unions (named, unnamed and zero-width)
 - `char` is **unsigned** by default (RISC-V psABI); `signed char` explicitly declares it signed
 
 Declarations:
 
 - Global variables, local variables, function definitions, function prototypes
-- `extern` global declarations and `static` file-scope symbols
+- `extern` declarations at file scope and block scope
+- `static` file-scope symbols and `static` local variables with persistent storage
 - Multiple declarators in one declaration, e.g. `int a, *p, b[4];`
 - Declarations in `for (int i = 0; ...)`
-- Calls to functions defined later (the compiler creates implicit function symbols)
+- Calls to functions defined later (the compiler creates implicit function symbols;
+  when the later definition has a non-integer return type, a visible prototype is required)
 - Function pointers, e.g. `int (*fp)(int, int);`
 - Functions returning function pointers, e.g. `int (*pick(int))(int, int);`
 - Arrays of function pointers, function pointer members in structs
+- Aggregate parameters and return values by value
+- Any number of parameters/arguments (slots beyond the first eight go on the stack)
 
 Statements:
 
@@ -94,24 +103,25 @@ Statements:
 
 Expressions:
 
-- Arithmetic: `+ - * / %`
+- Arithmetic: `+ - * / %` for integers; `+ - * /` for floating point
 - Bitwise: `& | ^ << >> ~`
-- Comparison: `== != < <= > >=`
-- Logical: `&& || !`
+- Comparison: `== != < <= > >=` (integer and floating point)
+- Logical: `&& || !` (floating-point operands use numeric truth)
 - Assignment, compound assignment: `= += -= *= /= %= &= |= ^= <<= >>=`
-- Increment/decrement: `++ --` (prefix/postfix)
+- Increment/decrement: `++ --` (prefix/postfix, integers and floating point)
 - Ternary, comma, casts, `sizeof`
 - Address-of `&`, dereference `*`, array subscripting
-- Member access `.` and `->`
-- Direct calls and indirect calls through function pointers (up to 8 arguments)
+- Member access `.` and `->` (including bit-fields and aggregate rvalues)
+- Direct calls and indirect calls through function pointers (any argument count)
 - Variadic functions: `...`, `va_list`, `va_start`, `va_arg`, `va_end`, `va_copy`
 
 Initializers:
 
-- Global scalars: constant expressions
+- Global scalars: integer and floating constant expressions
 - Global `char[]`: string literals
 - Global arrays: `{ ... }` constant lists (can infer `[]` length automatically)
 - Global `struct` / `union`: `{ ... }` constant lists, with nesting support
+- Global bit-field initializers
 - Global multidimensional arrays, arrays of structs
 - Global pointers: string literals, `0`, `&global`, array/function addresses
 - Global function pointers: function addresses
@@ -130,14 +140,17 @@ Not supported:
 - Chained designators (e.g. `.a.b = ...`, `[i].x = ...`)
 - All edge cases of mixing designated initializers with complex brace elision
 - Global aggregate copy initialization (e.g. file-scope `struct P p = other;`)
-- Bit-fields, flexible array members
+- Flexible array members
+- By-value `struct`/`union` arguments through `...` (`va_arg` of an aggregate)
+- GCC-identical bit-field packing for unusual mixed base types; the private
+  layout is documented in `docs/cc-internal-abi.md`
 
 Built-in functions (if the user has not defined functions with the same names):
 
 ```c
 int write(int fd, const void *buf, long n);
 int read(int fd, void *buf, long n);
-int open(const char *path, int flags, int mode);
+int open(const char *path, int flags, ...);
 int close(int fd);
 void exit(int status);
 int putchar(int c);
@@ -163,7 +176,7 @@ cc a.o b.o -o prog
 cc a.c b.o -o prog
 ```
 
-Object files use the compiler's private `CCO1` format, not standard ELF `.o`; they are used only for this compiler's linking stage.
+Object files use the compiler's private `CCO2` format, not standard ELF `.o`; they are used only for this compiler's linking stage.  The reader also accepts older `CCO1` objects.
 
 Linking rules:
 
@@ -191,25 +204,27 @@ Generated programs are:
 - Fixed load base address `0x10000`, with code starting at file offset `0x1000`
 - The entry point is the compiler-generated `__cc_start`
 - `__cc_start` receives `a0=argc, a1=argv, a2=envp` per the kernel convention, calls `main`, and then exits via `SYS_exit`
-- System call numbers use BRK's POSIX.1-2024 numbering: `read=0, write=1, open=2, close=3, exit=49`
+- System call numbers use BRK's POSIX.1-2024 numbering: `read=0, write=1, close=2, open=13, exit=49`.  `open()` is lowered to the kernel's `openat(AT_FDCWD, path, flags, mode)` entry.
 
 `puts`, struct copies, and aggregate initialization zeroing use `__cc_puts`, `__cc_memcpy`, and `__cc_memset`, respectively.
+
+The generated calling convention is private to this toolchain: every argument
+occupies one 8-byte slot (`a0`-`a7`, then the caller stack), `float`/`double`
+values travel as raw IEEE bits in those slots, aggregates are passed by pointer
+to a caller copy, and aggregate returns use a hidden result pointer in `a0`.
+The complete contract is in `docs/cc-internal-abi.md`.
 
 ## Explicitly Unsupported Features
 
 These limitations exist to keep the implementation sufficiently small:
 
-- `float` / `double`
-- Passing/returning `struct` / `union` by value
-- Bit-fields, flexible array members
-- `double` and by-value `struct` arguments in variadic functions
-- Macro `#` stringification, `##` token pasting
+- Flexible array members
+- By-value `struct`/`union` arguments through `...`
 - Chained designators, mixing with complex brace elision
 - Global aggregate copy initialization
-- `static` local variables (reported as an error)
 - Standard ELF `.o`, static libraries/dynamic libraries
-
-In addition, the kernel currently does not save floating-point context, so generated code uses only integer instructions.
+- Interactions with the system compiler's ABI (the `cc` calling convention is
+  intentionally private and documented in `docs/cc-internal-abi.md`)
 
 ## Implementation Structure
 
@@ -220,10 +235,13 @@ In addition, the kernel currently does not save floating-point context, so gener
 - `lexer.c`: integer/character/string literals, identifiers, operators, comments, escapes
 - `preprocess.c`: macro tables, include search, conditional compilation, `#if` expression evaluation
 - `types.c`: `struct type`, `struct node`, global/local symbols, and scopes
-- `emit.c`: `enc_r/enc_i/enc_s/enc_b/enc_u/enc_j`, pseudo-instructions, labels, and relocations
+- `emit.c`: instruction encoding, pseudo-instructions, labels, relocations and
+  the structured instruction-record list
+- `asm.c`: assembler finalization and the `-S` human-readable listing
 - `parser.c`: declaration, initializer, statement, and expression parsing
 - `codegen.c`: stack-based evaluation; expression results are placed in `a0`, and lvalue addresses are placed in `a0`
 - `link.c`: merges text/data/bss from multiple units, resolves symbols, and patches relocations
+- `obj.c`: CCO2 object serialization/deserialization (CCO1 reader compatible)
 - `main.c`: command-line driver and ELF output entry point
 - `include/cc.h`: the runtime header for compiled programs—a raw-syscall subset with no `libc.a` dependency; installed into the rootfs as `/usr/include/cc.h`, the only userland header the image ships
 
@@ -248,6 +266,11 @@ make -C brk-user cc-host
 riscv64-unknown-elf-readelf -h -l /tmp/hello.elf
 ```
 
+`make cc-tests` boots BRK in QEMU and runs the on-target sources;
+`make cc-link-tests` runs the host-side CCO2/relocation/linker checks.
+The linker fixture `tests/cc/link_tests.sh` covers CCO1 compatibility,
+malformed objects, duplicate/undefined symbols and ELF layout.
+
 `tests/cc/` contains verified examples:
 
 | File                             | Coverage                                                                        | Expected Output                      |
@@ -267,6 +290,22 @@ riscv64-unknown-elf-readelf -h -l /tmp/hello.elf
 | `macros.c`                       | Function-like macros, variadic macros, nested expansion                         | Multiple lines of numbers            |
 | `control.c`                      | `switch`/`case`/`default`/fallthrough/`goto`                                    | Multiple lines of numbers            |
 | `varargs.c`                      | `va_list`/`va_start`/`va_arg`/`va_copy`, variadic function pointers             | Multiple lines of numbers            |
+| `float.c`                        | Floating arithmetic, comparisons, casts, compound assignment, conditions        | `4 5 7 4 9`, etc.                    |
+| `float_cast.c`                   | Toward-zero float casts and local double negation                               | `-2 1 -1`, `1 1`                     |
+| `gaddr.c`                        | Constant address initializers (`&a[i]`, pointer + offset, `&s.field`)           | `20 30 30 6`                         |
+| `blockfn.c`                      | Block-scope function declarations and function pointers                         | `5 6 7`                              |
+| `byvalue.c`                      | Aggregate parameters/returns by value, large structs                            | `7`, `10`, `7 10`, etc.              |
+| `bitfield.c`                     | Bit-field load/store/RMW, signed and wide fields                                | Multiple lines of numbers            |
+| `args.c`                         | More than eight arguments, stack and float/aggregate slots, varargs             | `55`, `55`, `39`, `43`, `10`, `45`   |
+| `agg_deep.c`                     | Aggregate return with hidden slots plus a ninth stack argument                  | `10 35`, `30 105`, `10 35`           |
+| `pp_float.c`                     | Decimal floating literals and suffixes                                          | `pp_float ok`                        |
+| `pp_line.c`                      | `#pragma once`, `#line`, predefined macros                                      | `pp_line ok`                         |
+| `front_float.c`                  | Front-end floating conversions, globals, loops and truth                        | Multiple lines of numbers            |
+| `front_aggregate.c`              | Aggregate parameters, returns, function pointers, unions                        | Multiple lines of numbers            |
+| `front_bitfield.c`               | Bit-field layout, unions, zero-width and padding                                | Multiple lines of numbers            |
+| `front_static.c`                 | Static locals, nested statics, extern locals                                    | Multiple lines of numbers            |
+| `front_manyargs.c`               | Nine-plus parameters and mixed argument slots                                   | `55`, `45`, `78`, `550`, `155`, `24` |
+| `link_multi_a.c` + `link_multi_b.c` | CCO2 cross-unit data relocations, bss, static name collisions                | `link`, `42`, etc.                   |
 | `multi_a.c` + `multi_b.c`        | Multi-file linking, `extern`, `static` internal linkage                         | `multi`, `5`, `101`, `1`, `2`, `7`   |
 | `multi_a.c` + `multi_b.c` (`-c`) | Separate compilation, object files, local symbols                               | Same as above                        |
 

@@ -47,6 +47,7 @@ enum {
 	TK_EOF = 0,
 	TK_IDENT,
 	TK_NUM,
+	TK_FLOAT,
 	TK_STR,
 	TK_PUNCT,
 };
@@ -55,6 +56,8 @@ struct token {
 	int kind;
 	char *text;
 	long val;
+	double fval;
+	bool is_float32; /* TK_FLOAT with an f/F suffix */
 	unsigned char *str;
 	int str_len;
 	int line;
@@ -90,6 +93,8 @@ enum {
 	TY_SHORT,
 	TY_INT,
 	TY_LONG,
+	TY_FLOAT,
+	TY_DOUBLE,
 	TY_PTR,
 	TY_ARRAY,
 	TY_FUNC,
@@ -110,6 +115,8 @@ struct member {
 	char *name;
 	struct type *ty;
 	int offset;
+	int bit_offset;
+	int bit_width; /* 0 means a normal member */
 };
 
 struct type {
@@ -137,6 +144,8 @@ extern struct type *ty_int;
 extern struct type *ty_uint;
 extern struct type *ty_long;
 extern struct type *ty_ulong;
+extern struct type *ty_float;
+extern struct type *ty_double;
 
 struct type *new_type(int kind, int size, int align, bool uns);
 struct type *ty_ptr(struct type *base);
@@ -146,6 +155,8 @@ struct type *ty_func(struct type *ret, struct param *params, int n,
 struct type *new_aggregate_type(int kind, const char *tag);
 void init_types(void);
 bool is_integer(struct type *t);
+bool is_float(struct type *t);
+bool is_arith(struct type *t);
 bool is_ptr_like(struct type *t);
 bool is_aggregate(struct type *t);
 bool is_scalar(struct type *t);
@@ -159,6 +170,7 @@ enum {
 	ND_NULL = 0,
 	ND_MEMZERO,
 	ND_NUM,
+	ND_FLOAT,
 	ND_STR,
 	ND_VAR,
 	ND_ADD,
@@ -232,7 +244,12 @@ struct node {
 	struct case_entry *cases;
 	char *label_name;
 	long val;
+	double fval;
 	int member_offset;
+	int bit_offset;
+	int bit_width;
+	struct obj *ret_tmp;  /* hidden result temporary for aggregate calls */
+	struct obj **arg_temps; /* per-argument aggregate copies, or NULL */
 	int case_label;
 };
 
@@ -245,6 +262,7 @@ struct case_entry {
 
 struct node *new_node(int kind);
 struct node *new_num(long val);
+struct node *new_float(double val, struct type *ty);
 struct node *new_var_node(struct obj *var);
 
 /* ------------------------------------------------------------------ */
@@ -290,6 +308,7 @@ struct obj {
 	struct sym *sym;
 	struct node *body;
 	struct obj *va_area;
+	struct obj *ret_ptr; /* hidden aggregate-return pointer */
 	int frame_size;
 	struct obj *next;
 };
@@ -329,10 +348,14 @@ enum {
 	T1 = 6,
 	T2 = 7,
 	S0 = 8,
+	S1 = 9,
 	A0 = 10,
 	A1 = 11,
 	A2 = 12,
 	T6 = 31,
+	F0 = 0,
+	F1 = 1,
+	F2 = 2,
 };
 
 extern struct buf code;
@@ -425,6 +448,10 @@ void i_call_sym(struct sym *sym);
 unsigned int rd_of(unsigned int ins);
 unsigned int rs1_of(unsigned int ins);
 void reset_emit_state(void);
+
+/* Structured assembler: instruction records -> encoded text section. */
+void asm_finalize(void);
+void asm_print_unit(const char *path);
 
 /* ------------------------------------------------------------------ */
 /* parser                                                              */

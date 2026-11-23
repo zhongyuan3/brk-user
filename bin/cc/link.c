@@ -1,5 +1,7 @@
 #include "brkcc.h"
 
+#include <limits.h>
+
 /* ------------------------------------------------------------------ */
 /* ELF writer                                                          */
 /* ------------------------------------------------------------------ */
@@ -8,6 +10,8 @@
 #define TEXT_FILE_OFF 0x1000
 #define EM_RISCV 243
 #define EF_RISCV_FLOAT_ABI_DOUBLE 4
+#define LINK_MAX_ALIGN 4096
+#define LINK_MAX_SECTION 0x40000000
 
 static void put16(unsigned char *p, unsigned int v)
 {
@@ -71,10 +75,29 @@ static unsigned long resolve_sym(struct sym *s)
 
 	if (s->defined)
 		return s->addr;
+	if (s->is_static)
+		fatal("undefined static symbol '%s'", s->name);
 	l = link_find(s->name);
 	if (!l)
 		fatal("undefined symbol '%s'", s->name);
 	return l->sym->addr;
+}
+
+static unsigned long add_addend(unsigned long addr, long addend,
+				const char *what, const char *name)
+{
+	unsigned long mag;
+
+	if (addend < 0) {
+		mag = (unsigned long)(-(addend + 1)) + 1;
+		if (mag > addr)
+			fatal("%s relocation underflow for '%s'", what, name);
+		return addr - mag;
+	}
+	mag = (unsigned long)addend;
+	if (mag > (unsigned long)-1 - addr)
+		fatal("%s relocation overflow for '%s'", what, name);
+	return addr + mag;
 }
 
 static void put_ins(unsigned char *buf, int pos, unsigned int ins)
@@ -85,13 +108,44 @@ static void put_ins(unsigned char *buf, int pos, unsigned int ins)
 	buf[pos + 3] = (unsigned char)((ins >> 24) & 0xff);
 }
 
+static int sym_alignment(struct sym *s)
+{
+	if (s->align <= 0 || s->align > LINK_MAX_ALIGN)
+		fatal("internal error: bad alignment for symbol '%s'", s->name);
+	if (s->align & (s->align - 1))
+		fatal("internal error: non-power-of-two alignment for symbol '%s'",
+		      s->name);
+	return s->align;
+}
+
+static int align_off(int off, int a, const char *what)
+{
+	int pad;
+
+	if (off < 0)
+		fatal("internal error: negative %s offset", what);
+	pad = (a - off % a) % a;
+	if (pad > INT_MAX - off)
+		fatal("internal error: %s section too large", what);
+	return off + pad;
+}
+
 void finalize_unit(void)
 {
+	/*
+	 * The back end records instructions in a structured list and keeps the
+	 * byte buffer synchronized for compatibility.  Encode the final records
+	 * here, after all fixups have been applied, so the unit always carries
+	 * the authoritative text bytes.
+	 */
+	asm_finalize();
 	struct unit *u = xcalloc(1, sizeof(*u));
 	struct sym *s;
 	struct buf data;
 	int off;
 
+	if (code.len < 0 || code.len > LINK_MAX_SECTION)
+		fatal("text section too large");
 	u->code_len = code.len;
 	u->code = xmalloc((size_t)(code.len > 0 ? code.len : 1));
 	if (code.len > 0)
@@ -99,12 +153,29 @@ void finalize_unit(void)
 	u->syms = syms;
 	u->relocs = relocs;
 
+	for (s = syms; s; s = s->next) {
+		if (s->sec < SEC_TEXT || s->sec > SEC_BSS)
+			fatal("internal error: bad section for symbol '%s'",
+			      s->name);
+		if (!s->defined)
+			continue;
+		if (s->size < 0 || s->offset < 0)
+			fatal("internal error: bad extent for symbol '%s'",
+			      s->name);
+		if (s->sec == SEC_TEXT &&
+		    (s->offset > u->code_len || (s->offset % 4)))
+			fatal("internal error: text symbol '%s' outside text section",
+			      s->name);
+	}
+
 	off = 0;
 	for (s = syms; s; s = s->next) {
 		if (!s->defined || s->sec != SEC_DATA)
 			continue;
-		off = align_to(off, s->align);
+		off = align_off(off, sym_alignment(s), "data");
 		s->offset = off;
+		if (s->size > LINK_MAX_SECTION - off)
+			fatal("data section too large");
 		off += s->size;
 	}
 
@@ -128,8 +199,10 @@ void finalize_unit(void)
 	for (s = syms; s; s = s->next) {
 		if (!s->defined || s->sec != SEC_BSS)
 			continue;
-		off = align_to(off, s->align);
+		off = align_off(off, sym_alignment(s), "bss");
 		s->offset = off;
+		if (s->size > LINK_MAX_SECTION - off)
+			fatal("bss section too large");
 		off += s->size;
 	}
 	u->bss_len = off;
@@ -147,18 +220,30 @@ static void patch_unit_relocs(struct unit *u, unsigned long text_section_base)
 	struct sym *s;
 
 	for (r = u->relocs; r; r = r->next) {
-		unsigned long target =
-			resolve_sym(r->sym) + (unsigned long)r->addend;
-		unsigned long pos_abs = text_section_base + u->text_base +
-					(unsigned long)r->pos;
+		unsigned long target;
+		unsigned long pos_abs;
 		unsigned int old;
 		unsigned int ins;
+
+		if (r->pos < 0 || r->pos > u->code_len - 4 || (r->pos % 4))
+			fatal("text relocation out of range in '%s'",
+			      r->sym->name);
+		target = add_addend(resolve_sym(r->sym), r->addend, "text",
+				    r->sym->name);
+		if (target > 0x7fffffffUL)
+			fatal("relocation target out of range for '%s'",
+			      r->sym->name);
+		pos_abs = text_section_base + u->text_base +
+			  (unsigned long)r->pos;
 
 		memcpy(&old, u->code + r->pos, 4);
 		switch (r->kind) {
 		case R_HI20: {
 			long hi = (long)((target + 0x800) >> 12);
 
+			if (hi > (1L << 19) - 1)
+				fatal("relocation target out of range for '%s'",
+				      r->sym->name);
 			ins = enc_u(0x37, (int)rd_of(old), (int)hi);
 			break;
 		}
@@ -176,13 +261,13 @@ static void patch_unit_relocs(struct unit *u, unsigned long text_section_base)
 
 			if (off & 1)
 				fatal("internal error: unaligned call");
-			if (off < -(1 << 20) || off >= (1 << 20))
+			if (off < -(1L << 20) || off >= (1L << 20))
 				fatal("program too large for direct call");
 			ins = enc_j(0x6f, (int)rd_of(old), (int)off);
 			break;
 		}
 		default:
-			fatal("internal error: bad relocation");
+			fatal("bad relocation kind %d in object", r->kind);
 			return;
 		}
 		put_ins(u->code, r->pos, ins);
@@ -194,12 +279,21 @@ static void patch_unit_relocs(struct unit *u, unsigned long text_section_base)
 		if (!s->defined || s->sec != SEC_DATA)
 			continue;
 		for (dr = s->drel; dr; dr = dr->next) {
-			unsigned long target = resolve_sym(dr->sym) +
-					       (unsigned long)dr->addend;
-			int at = s->offset + dr->offset;
+			unsigned long target;
+			unsigned long at;
 
-			if (at + 8 > u->data_len)
-				fatal("internal error: data relocation overflow");
+			if (dr->offset < 0 || s->size < 8 ||
+			    dr->offset > s->size - 8)
+				fatal("data relocation out of range for '%s'",
+				      s->name);
+			target = add_addend(resolve_sym(dr->sym), dr->addend,
+					    "data", s->name);
+			at = (unsigned long)s->offset +
+			     (unsigned long)dr->offset;
+			if (at > (unsigned long)u->data_len ||
+			    (unsigned long)u->data_len - at < 8)
+				fatal("data relocation out of range for '%s'",
+				      s->name);
 			put64(u->data + at, target);
 		}
 	}
@@ -246,6 +340,50 @@ static void ensure_start_unit(void)
 	finalize_unit();
 }
 
+static unsigned long align_up(unsigned long n, unsigned long a,
+			      const char *what)
+{
+	unsigned long pad;
+
+	if (a == 0 || a > LINK_MAX_ALIGN || (a & (a - 1)))
+		fatal("internal error: bad %s alignment", what);
+	pad = (a - n % a) % a;
+	if (n > (unsigned long)-1 - pad)
+		fatal("program too large");
+	return n + pad;
+}
+
+static unsigned long unit_align(struct unit *u, int sec)
+{
+	unsigned long a = 16;
+	struct sym *s;
+
+	for (s = u->syms; s; s = s->next) {
+		unsigned long sa;
+
+		if (!s->defined || s->sec != sec)
+			continue;
+		sa = (unsigned long)sym_alignment(s);
+		if (sa > a)
+			a = sa;
+	}
+	return a;
+}
+
+static unsigned long section_align(int sec)
+{
+	unsigned long a = 16;
+	struct unit *u;
+
+	for (u = units; u; u = u->next) {
+		unsigned long ua = unit_align(u, sec);
+
+		if (ua > a)
+			a = ua;
+	}
+	return a;
+}
+
 void link_and_write(const char *path)
 {
 	struct unit *u;
@@ -272,26 +410,43 @@ void link_and_write(const char *path)
 
 	link_syms = NULL;
 	for (u = units; u; u = u->next) {
-		text_off = (unsigned long)align_to((int)text_off, 16);
+		text_off = align_up(text_off, unit_align(u, SEC_TEXT), "text");
+		if (text_off > LINK_MAX_SECTION)
+			fatal("program too large");
 		u->text_base = text_off;
+		if ((unsigned long)u->code_len >
+		    (unsigned long)LINK_MAX_SECTION - text_off)
+			fatal("program too large");
 		text_off += (unsigned long)u->code_len;
 	}
 	for (u = units; u; u = u->next) {
-		data_off = (unsigned long)align_to((int)data_off, 16);
+		data_off = align_up(data_off, unit_align(u, SEC_DATA), "data");
+		if (data_off > LINK_MAX_SECTION)
+			fatal("program too large");
 		u->data_base = data_off;
+		if ((unsigned long)u->data_len >
+		    (unsigned long)LINK_MAX_SECTION - data_off)
+			fatal("program too large");
 		data_off += (unsigned long)u->data_len;
 	}
 	for (u = units; u; u = u->next) {
-		bss_off = (unsigned long)align_to((int)bss_off, 16);
+		bss_off = align_up(bss_off, unit_align(u, SEC_BSS), "bss");
+		if (bss_off > LINK_MAX_SECTION)
+			fatal("program too large");
 		u->bss_base = bss_off;
+		if ((unsigned long)u->bss_len >
+		    (unsigned long)LINK_MAX_SECTION - bss_off)
+			fatal("program too large");
 		bss_off += (unsigned long)u->bss_len;
 	}
 
 	text_section_base = USER_BASE + TEXT_FILE_OFF;
-	data_section_base = (unsigned long)align_to(
-		(int)(text_section_base + text_off), 16);
-	bss_section_base = (unsigned long)align_to(
-		(int)(data_section_base + data_off), 16);
+	data_section_base = align_up(text_section_base + text_off,
+				     section_align(SEC_DATA), "data section");
+	bss_section_base = align_up(data_section_base + data_off,
+				    section_align(SEC_BSS), "bss section");
+	if (data_section_base - USER_BASE > (unsigned long)INT_MAX)
+		fatal("program too large");
 
 	for (u = units; u; u = u->next) {
 		for (s = u->syms; s; s = s->next)
@@ -336,6 +491,9 @@ void link_and_write(const char *path)
 	data_file_off = (int)(data_section_base - USER_BASE);
 	file_len = (unsigned long)data_file_off + data_off;
 	mem_len = (bss_section_base - USER_BASE) + bss_off;
+	if (file_len > (unsigned long)INT_MAX ||
+	    mem_len > (unsigned long)INT_MAX)
+		fatal("program too large");
 	file = xcalloc(1, (size_t)file_len);
 	memcpy(file + TEXT_FILE_OFF, text, (size_t)text_off);
 	if (data_off)
@@ -390,282 +548,4 @@ void link_and_write(const char *path)
 	free(file);
 	free(text);
 	free(data);
-}
-
-struct rd {
-	const unsigned char *p;
-	int len;
-	int pos;
-};
-
-static unsigned char rd_u8(struct rd *r)
-{
-	if (r->pos + 1 > r->len)
-		fatal("truncated object file");
-	return r->p[r->pos++];
-}
-
-static unsigned int rd_u32(struct rd *r)
-{
-	unsigned int v;
-
-	if (r->pos + 4 > r->len)
-		fatal("truncated object file");
-	v = (unsigned int)r->p[r->pos] | ((unsigned int)r->p[r->pos + 1] << 8) |
-	    ((unsigned int)r->p[r->pos + 2] << 16) |
-	    ((unsigned int)r->p[r->pos + 3] << 24);
-	r->pos += 4;
-	return v;
-}
-
-static unsigned long rd_u64(struct rd *r)
-{
-	unsigned long v = 0;
-	int i;
-
-	if (r->pos + 8 > r->len)
-		fatal("truncated object file");
-	for (i = 0; i < 8; i++)
-		v |= (unsigned long)r->p[r->pos + i] << (i * 8);
-	r->pos += 8;
-	return v;
-}
-
-static void rd_bytes(struct rd *r, void *dst, int n)
-{
-	if (n < 0 || r->pos + n > r->len)
-		fatal("truncated object file");
-	memcpy(dst, r->p + r->pos, (size_t)n);
-	r->pos += n;
-}
-
-static char *rd_name(struct rd *r)
-{
-	unsigned int n = rd_u32(r);
-	char *s;
-
-	if ((int)n < 0 || r->pos + (int)n > r->len)
-		fatal("truncated object file");
-	s = xmalloc((size_t)n + 1);
-	memcpy(s, r->p + r->pos, n);
-	s[n] = '\0';
-	r->pos += (int)n;
-	return s;
-}
-
-static void write_file_bytes(const char *path, const unsigned char *buf,
-			     int len, int mode)
-{
-	int fd;
-	int off = 0;
-
-	fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, mode);
-	if (fd < 0)
-		fatal("cannot open '%s'", path);
-	while (off < len) {
-		ssize_t n = write(fd, buf + off, (size_t)(len - off));
-
-		if (n <= 0)
-			fatal("write failed");
-		off += (int)n;
-	}
-	close(fd);
-	chmod(path, mode);
-}
-
-static int sym_index(struct sym **arr, int n, struct sym *s)
-{
-	int i;
-
-	for (i = 0; i < n; i++) {
-		if (arr[i] == s)
-			return i;
-	}
-	fatal("internal error: object relocation target is not in symbol table");
-	return 0;
-}
-
-void write_object(const char *path, struct unit *u)
-{
-	struct buf b;
-	struct sym **arr;
-	struct sym *s;
-	struct reloc *r;
-	int nsyms = 0;
-	int ndrels = 0;
-	int nrelocs = 0;
-	int i = 0;
-
-	for (s = u->syms; s; s = s->next)
-		nsyms++;
-	for (s = u->syms; s; s = s->next) {
-		struct data_reloc *dr;
-
-		for (dr = s->drel; dr; dr = dr->next)
-			ndrels++;
-	}
-	for (r = u->relocs; r; r = r->next)
-		nrelocs++;
-
-	arr = xcalloc((size_t)(nsyms > 0 ? nsyms : 1), sizeof(*arr));
-	for (s = u->syms; s; s = s->next)
-		arr[i++] = s;
-
-	buf_init(&b);
-	buf_byte(&b, 'C');
-	buf_byte(&b, 'C');
-	buf_byte(&b, 'O');
-	buf_byte(&b, '1');
-	buf_u32(&b, 1); /* version */
-	buf_u32(&b, (unsigned int)u->code_len);
-	buf_u32(&b, (unsigned int)u->data_len);
-	buf_u32(&b, (unsigned int)u->bss_len);
-	buf_u32(&b, (unsigned int)nsyms);
-	buf_u32(&b, (unsigned int)ndrels);
-	buf_u32(&b, (unsigned int)nrelocs);
-
-	buf_grow(&b, u->code_len);
-	memcpy(b.data + b.len, u->code, (size_t)u->code_len);
-	b.len += u->code_len;
-	buf_grow(&b, u->data_len);
-	memcpy(b.data + b.len, u->data, (size_t)u->data_len);
-	b.len += u->data_len;
-
-	for (i = 0; i < nsyms; i++) {
-		int n = (int)strlen(arr[i]->name);
-
-		buf_u32(&b, (unsigned int)n);
-		buf_grow(&b, n);
-		memcpy(b.data + b.len, arr[i]->name, (size_t)n);
-		b.len += n;
-		buf_u32(&b, (unsigned int)arr[i]->sec);
-		buf_u32(&b, (unsigned int)arr[i]->offset);
-		buf_u32(&b, (unsigned int)arr[i]->size);
-		buf_u32(&b, (unsigned int)arr[i]->align);
-		buf_byte(&b, arr[i]->defined ? 1 : 0);
-		buf_byte(&b, arr[i]->is_static ? 1 : 0);
-	}
-
-	for (i = 0; i < nsyms; i++) {
-		struct data_reloc *dr;
-
-		for (dr = arr[i]->drel; dr; dr = dr->next) {
-			buf_u32(&b, (unsigned int)i);
-			buf_u32(&b, (unsigned int)dr->offset);
-			buf_u32(&b,
-				(unsigned int)sym_index(arr, nsyms, dr->sym));
-			buf_u64(&b, (unsigned long)dr->addend);
-		}
-	}
-	for (r = u->relocs; r; r = r->next) {
-		buf_u32(&b, (unsigned int)r->pos);
-		buf_u32(&b, (unsigned int)r->kind);
-		buf_u32(&b, (unsigned int)sym_index(arr, nsyms, r->sym));
-		buf_u64(&b, (unsigned long)r->addend);
-	}
-
-	write_file_bytes(path, b.data, b.len, 0644);
-	free(arr);
-}
-
-struct unit *read_object(const char *path)
-{
-	struct unit *u;
-	struct sym **arr;
-	struct sym *tail = NULL;
-	char *buf;
-	int len;
-	struct rd rd;
-	unsigned int nsyms;
-	unsigned int ndrels;
-	unsigned int nrelocs;
-	int i;
-
-	if (try_read_file(path, &buf, &len) < 0)
-		fatal("cannot open object file '%s'", path);
-	memset(&rd, 0, sizeof(rd));
-	rd.p = (const unsigned char *)buf;
-	rd.len = len;
-	if (rd_u8(&rd) != 'C' || rd_u8(&rd) != 'C' || rd_u8(&rd) != 'O' ||
-	    rd_u8(&rd) != '1')
-		fatal("'%s' is not a cc object file", path);
-	if (rd_u32(&rd) != 1)
-		fatal("unsupported object file version in '%s'", path);
-
-	u = xcalloc(1, sizeof(*u));
-	u->code_len = (int)rd_u32(&rd);
-	u->data_len = (int)rd_u32(&rd);
-	u->bss_len = (int)rd_u32(&rd);
-	nsyms = rd_u32(&rd);
-	ndrels = rd_u32(&rd);
-	nrelocs = rd_u32(&rd);
-
-	u->code = xmalloc((size_t)(u->code_len > 0 ? u->code_len : 1));
-	rd_bytes(&rd, u->code, u->code_len);
-	u->data = xmalloc((size_t)(u->data_len > 0 ? u->data_len : 1));
-	rd_bytes(&rd, u->data, u->data_len);
-
-	arr = xcalloc((size_t)(nsyms > 0 ? nsyms : 1), sizeof(*arr));
-	for (i = 0; i < (int)nsyms; i++) {
-		struct sym *s = xcalloc(1, sizeof(*s));
-
-		s->name = rd_name(&rd);
-		s->sec = (int)rd_u32(&rd);
-		s->offset = (int)rd_u32(&rd);
-		s->size = (int)rd_u32(&rd);
-		s->align = (int)rd_u32(&rd);
-		s->defined = rd_u8(&rd) != 0;
-		s->is_static = rd_u8(&rd) != 0;
-		arr[i] = s;
-		if (tail)
-			tail->next = s;
-		else
-			u->syms = s;
-		tail = s;
-	}
-
-	for (i = 0; i < (int)ndrels; i++) {
-		unsigned int owner = rd_u32(&rd);
-		unsigned int off = rd_u32(&rd);
-		unsigned int target = rd_u32(&rd);
-		unsigned long addend = rd_u64(&rd);
-		struct data_reloc *dr;
-
-		if (owner >= nsyms || target >= nsyms)
-			fatal("bad symbol index in object file '%s'", path);
-		dr = xcalloc(1, sizeof(*dr));
-		dr->offset = (int)off;
-		dr->sym = arr[target];
-		dr->addend = (long)addend;
-		dr->next = arr[owner]->drel;
-		arr[owner]->drel = dr;
-	}
-	for (i = 0; i < (int)nrelocs; i++) {
-		unsigned int pos = rd_u32(&rd);
-		unsigned int kind = rd_u32(&rd);
-		unsigned int target = rd_u32(&rd);
-		unsigned long addend = rd_u64(&rd);
-		struct reloc *r;
-
-		if (target >= nsyms)
-			fatal("bad symbol index in object file '%s'", path);
-		r = xcalloc(1, sizeof(*r));
-		r->pos = (int)pos;
-		r->kind = (int)kind;
-		r->sym = arr[target];
-		r->addend = (long)addend;
-		r->next = u->relocs;
-		u->relocs = r;
-	}
-	if (rd.pos != rd.len)
-		fatal("trailing data in object file '%s'", path);
-
-	free(arr);
-	free(buf);
-	if (unit_tail)
-		unit_tail->next = u;
-	else
-		units = u;
-	unit_tail = u;
-	return u;
 }

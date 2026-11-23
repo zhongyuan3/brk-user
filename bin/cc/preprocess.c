@@ -1,5 +1,8 @@
 #include "brkcc.h"
 
+#include <limits.h>
+#include <time.h>
+
 /* ------------------------------------------------------------------ */
 /* preprocessor                                                        */
 /* ------------------------------------------------------------------ */
@@ -24,6 +27,11 @@ struct inc_path {
 	struct inc_path *next;
 };
 
+struct once_path {
+	char *path;
+	struct once_path *next;
+};
+
 struct cond {
 	bool parent_active;
 	bool active;
@@ -35,8 +43,12 @@ struct cond {
 static struct macro *macros;
 static const char *pp_cur_path;
 static int pp_cur_line;
+static const char *pp_display_file;
+static char *pp_owned_display;
+static int pp_line_delta;
 static struct inc_path *inc_paths;
 static struct inc_path *inc_tail;
+static struct once_path *once_paths;
 static struct cond *conds;
 static int pp_include_depth;
 
@@ -256,6 +268,57 @@ static char *path_dirname(const char *path)
 	return xstrndup(path, (size_t)(slash - path));
 }
 
+/*
+ * Canonical absolute path for the #pragma once registry.  realpath()
+ * also folds "." and ".." and follows symlinks, so every spelling of
+ * the same file maps to one entry.
+ */
+static char *canonical_path(const char *path)
+{
+	char resolved[PATH_MAX];
+
+	if (realpath(path, resolved))
+		return xstrdup(resolved);
+	return xstrdup(path);
+}
+
+static bool once_seen(const char *path)
+{
+	struct once_path *p;
+
+	for (p = once_paths; p; p = p->next) {
+		if (!strcmp(p->path, path))
+			return true;
+	}
+	return false;
+}
+
+static void once_mark(const char *path)
+{
+	struct once_path *p;
+
+	if (once_seen(path))
+		return;
+	p = xcalloc(1, sizeof(*p));
+	p->path = xstrdup(path);
+	p->next = once_paths;
+	once_paths = p;
+}
+
+static void once_clear(void)
+{
+	struct once_path *p = once_paths;
+
+	while (p) {
+		struct once_path *next = p->next;
+
+		free(p->path);
+		free(p);
+		p = next;
+	}
+	once_paths = NULL;
+}
+
 static bool is_space_ch(int c)
 {
 	return c == ' ' || c == '\t' || c == '\r' || c == '\n';
@@ -345,6 +408,14 @@ static bool pp_active(void)
 	return !conds || conds->active;
 }
 
+static bool predefined_name(const char *name)
+{
+	return !strcmp(name, "__FILE__") || !strcmp(name, "__LINE__") ||
+	       !strcmp(name, "__STDC__") ||
+	       !strcmp(name, "__STDC_VERSION__") ||
+	       !strcmp(name, "__DATE__") || !strcmp(name, "__TIME__");
+}
+
 static char *trim_right(char *s)
 {
 	char *e = s + strlen(s);
@@ -352,6 +423,35 @@ static char *trim_right(char *s)
 	while (e > s && (e[-1] == ' ' || e[-1] == '\t' || e[-1] == '\r'))
 		*--e = '\0';
 	return s;
+}
+
+static char pp_date_buf[64];
+static char pp_time_buf[64];
+static bool pp_datetime_ready;
+
+static void pp_prepare_datetime(void)
+{
+	static const char *const months[] = {
+		"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+		"Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+	};
+	struct tm tm;
+	time_t now;
+
+	if (pp_datetime_ready)
+		return;
+	pp_datetime_ready = true;
+	now = time(NULL);
+	if (now == (time_t)-1 || !localtime_r(&now, &tm) || tm.tm_mon < 0 ||
+	    tm.tm_mon > 11) {
+		strcpy(pp_date_buf, "??? ?? ????");
+		strcpy(pp_time_buf, "??:??:??");
+		return;
+	}
+	snprintf(pp_date_buf, sizeof(pp_date_buf), "%s %2d %04d",
+		 months[tm.tm_mon], tm.tm_mday, tm.tm_year + 1900);
+	snprintf(pp_time_buf, sizeof(pp_time_buf), "%02d:%02d:%02d",
+		 tm.tm_hour, tm.tm_min, tm.tm_sec);
 }
 
 static void expand_func_macro(struct buf *out, struct macro *m,
@@ -400,10 +500,13 @@ static void expand_into(struct buf *out, const char *text, struct hide *hide,
 				i++;
 			name = xstrndup(text + start, (size_t)(i - start));
 			if (!strcmp(name, "__FILE__") && pp_cur_path) {
+				const char *file = pp_display_file;
 				const char *q;
 
+				if (!file)
+					file = pp_cur_path;
 				buf_byte(out, '"');
-				for (q = pp_cur_path; *q; q++) {
+				for (q = file; *q; q++) {
 					if (*q == '"' || *q == '\\')
 						buf_byte(out, '\\');
 					buf_byte(out, *q);
@@ -430,6 +533,31 @@ static void expand_into(struct buf *out, const char *text, struct hide *hide,
 			}
 			if (!strcmp(name, "__STDC__")) {
 				buf_byte(out, '1');
+				free(name);
+				continue;
+			}
+			if (!strcmp(name, "__STDC_VERSION__")) {
+				static const char ver[] = "201112L";
+				int k;
+
+				for (k = 0; ver[k]; k++)
+					buf_byte(out, (unsigned char)ver[k]);
+				free(name);
+				continue;
+			}
+			if (!strcmp(name, "__DATE__") ||
+			    !strcmp(name, "__TIME__")) {
+				const char *s;
+
+				pp_prepare_datetime();
+				if (!strcmp(name, "__DATE__"))
+					s = pp_date_buf;
+				else
+					s = pp_time_buf;
+				buf_byte(out, '"');
+				while (*s)
+					buf_byte(out, (unsigned char)*s++);
+				buf_byte(out, '"');
 				free(name);
 				continue;
 			}
@@ -1094,7 +1222,7 @@ static long pp_primary(struct pp_parser *p, bool eval)
 			if (p->tok.kind != PP_IDENT)
 				fatal("expected identifier after defined");
 			name = xstrndup(p->tok.s, (size_t)p->tok.len);
-			v = find_macro(name) ? 1 : 0;
+			v = (find_macro(name) || predefined_name(name)) ? 1 : 0;
 			free(name);
 			pp_next(p);
 			if (paren)
@@ -1106,10 +1234,16 @@ static long pp_primary(struct pp_parser *p, bool eval)
 			struct macro *m = find_macro(name);
 			long v = 0;
 
+			if (!strcmp(name, "__LINE__"))
+				v = pp_cur_line;
+			else if (!strcmp(name, "__STDC__"))
+				v = 1;
+			else if (!strcmp(name, "__STDC_VERSION__"))
+				v = 201112L;
+			else if (m && eval)
+				v = pp_eval_text(m->body, p->depth + 1);
 			free(name);
 			pp_next(p);
-			if (m && eval)
-				v = pp_eval_text(m->body, p->depth + 1);
 			return eval ? v : 0;
 		}
 	}
@@ -1404,6 +1538,67 @@ static int load_include(const char *name, bool quoted, const char *cur_dir,
 static void pp_process(const char *path, const char *src, int len,
 		       struct buf *out, struct cond *floor);
 
+/*
+ * #line N ["file"].  The arguments are macro-expanded first.  Only the
+ * predefined __LINE__/__FILE__ values follow the new mapping; token line
+ * numbers reported by the lexer still count preprocessed output lines.
+ */
+static void pp_line_directive(const char *path, int line_no, char *arg)
+{
+	struct buf eb;
+	char *p;
+	char *end;
+	long n;
+	char *name = NULL;
+
+	buf_init(&eb);
+	expand_into(&eb, arg, NULL, 0);
+	buf_byte(&eb, 0);
+	p = (char *)eb.data;
+	while (*p == ' ' || *p == '\t')
+		p++;
+	if (*p < '0' || *p > '9')
+		fatal("%s:%d: bad #line directive", path, line_no);
+	n = strtol(p, &end, 10);
+	if (end == p || n < 1 || n > 2147483647L)
+		fatal("%s:%d: bad #line directive", path, line_no);
+	p = end;
+	while (*p == ' ' || *p == '\t')
+		p++;
+	if (*p == '"') {
+		struct buf fb;
+
+		buf_init(&fb);
+		p++;
+		while (*p && *p != '"') {
+			if (*p == '\\' && p[1]) {
+				p++;
+				if (*p != '\\' && *p != '"')
+					buf_byte(&fb, '\\');
+			}
+			buf_byte(&fb, (unsigned char)*p);
+			p++;
+		}
+		if (*p != '"')
+			fatal("%s:%d: bad #line directive", path, line_no);
+		p++;
+		buf_byte(&fb, 0);
+		name = (char *)fb.data;
+	}
+	while (*p == ' ' || *p == '\t')
+		p++;
+	if (*p != '\0')
+		fatal("%s:%d: bad #line directive", path, line_no);
+
+	pp_line_delta = (int)(n - (line_no + 1));
+	if (name) {
+		free(pp_owned_display);
+		pp_owned_display = name;
+		pp_display_file = pp_owned_display;
+	}
+	free(eb.data);
+}
+
 static void pp_include(const char *path, int line_no, char *arg,
 		       struct buf *out)
 {
@@ -1446,6 +1641,17 @@ static void pp_include(const char *path, int line_no, char *arg,
 	free(cur_dir);
 	if (err < 0)
 		fatal("%s:%d: cannot find include '%s'", path, line_no, name);
+	{
+		char *canon = canonical_path(resolved);
+
+		if (once_seen(canon)) {
+			free(canon);
+			free(resolved);
+			free(text);
+			return;
+		}
+		free(canon);
+	}
 	if (++pp_include_depth > PP_MAX_INCLUDE)
 		fatal("%s:%d: include nesting too deep", path, line_no);
 	pp_process(resolved, text, tlen, out, conds);
@@ -1465,8 +1671,14 @@ static void pp_process(const char *path, const char *src, int len,
 	int line_no = 1;
 	char *cur_dir = path_dirname(path);
 	const char *saved_path = pp_cur_path;
+	const char *saved_display = pp_display_file;
+	char *saved_owned = pp_owned_display;
+	int saved_delta = pp_line_delta;
 
 	pp_cur_path = path;
+	pp_display_file = path;
+	pp_owned_display = NULL;
+	pp_line_delta = 0;
 	joined = splice_lines(src, len, &jlen);
 	clean = strip_comments(joined, jlen, &clen);
 	free(joined);
@@ -1477,6 +1689,8 @@ static void pp_process(const char *path, const char *src, int len,
 		bool had_nl;
 		char *line;
 		char *p;
+
+		pp_cur_line = line_no + pp_line_delta;
 
 		while (pos < clen && clean[pos] != '\n')
 			pos++;
@@ -1654,7 +1868,8 @@ static void pp_process(const char *path, const char *src, int len,
 				while (is_ident_char((unsigned char)*ne))
 					ne++;
 				mname = xstrndup(n, (size_t)(ne - n));
-				val = find_macro(mname) != NULL;
+				val = find_macro(mname) != NULL ||
+				      predefined_name(mname);
 				free(mname);
 				push_cond(parent, parent && val);
 			} else if (name_len == 6 &&
@@ -1671,7 +1886,8 @@ static void pp_process(const char *path, const char *src, int len,
 				while (is_ident_char((unsigned char)*ne))
 					ne++;
 				mname = xstrndup(n, (size_t)(ne - n));
-				val = find_macro(mname) == NULL;
+				val = find_macro(mname) == NULL &&
+				      !predefined_name(mname);
 				free(mname);
 				push_cond(parent, parent && val);
 			} else if (name_len == 2 && !strncmp(name, "if", 2)) {
@@ -1725,9 +1941,17 @@ static void pp_process(const char *path, const char *src, int len,
 						path, line_no, arg);
 			} else if (name_len == 6 &&
 				   !strncmp(name, "pragma", 6)) {
-				/* ignored */
+				if (pp_active() && !strncmp(arg, "once", 4) &&
+				    (arg[4] == '\0' || arg[4] == ' ' ||
+				     arg[4] == '\t')) {
+					char *canon = canonical_path(path);
+
+					once_mark(canon);
+					free(canon);
+				}
 			} else if (name_len == 4 && !strncmp(name, "line", 4)) {
-				/* ignored */
+				if (pp_active())
+					pp_line_directive(path, line_no, arg);
 			}
 		} else if (pp_active()) {
 			/*
@@ -1760,7 +1984,7 @@ static void pp_process(const char *path, const char *src, int len,
 				free(cont);
 				line_no++;
 			}
-			pp_cur_line = line_no;
+			pp_cur_line = line_no + pp_line_delta;
 			expand_into(out, line, NULL, 0);
 			buf_byte(out, '\n');
 		}
@@ -1770,7 +1994,11 @@ static void pp_process(const char *path, const char *src, int len,
 
 	if (conds != floor)
 		fatal("%s: unterminated conditional directive", path);
+	free(pp_owned_display);
 	pp_cur_path = saved_path;
+	pp_display_file = saved_display;
+	pp_owned_display = saved_owned;
+	pp_line_delta = saved_delta;
 	free(cur_dir);
 	free(clean);
 }
@@ -1779,6 +2007,7 @@ char *preprocess(const char *path, const char *src, int len, int *out_len)
 {
 	struct buf out;
 
+	reset_pp_state();
 	buf_init(&out);
 	pp_process(path, src, len, &out, NULL);
 	*out_len = out.len;
@@ -1789,4 +2018,11 @@ char *preprocess(const char *path, const char *src, int len, int *out_len)
 void reset_pp_state(void)
 {
 	pp_include_depth = 0;
+	pp_cur_path = NULL;
+	pp_cur_line = 0;
+	pp_display_file = NULL;
+	free(pp_owned_display);
+	pp_owned_display = NULL;
+	pp_line_delta = 0;
+	once_clear();
 }
