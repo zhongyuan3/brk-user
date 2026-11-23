@@ -195,11 +195,185 @@ void record_cli_macro(bool undef, const char *arg)
 	cli_macros_tail = m;
 }
 
+struct predef {
+	const char *name;
+	const char *body;
+};
+
+static const struct predef predefs[] = {
+	{ "__SIZE_TYPE__", "unsigned long" },
+	{ "__PTRDIFF_TYPE__", "long" },
+	{ "__WCHAR_TYPE__", "int" },
+	{ "__WINT_TYPE__", "unsigned int" },
+
+	{ "__INT8_TYPE__", "signed char" },
+	{ "__UINT8_TYPE__", "unsigned char" },
+	{ "__INT16_TYPE__", "short" },
+	{ "__UINT16_TYPE__", "unsigned short" },
+	{ "__INT32_TYPE__", "int" },
+	{ "__UINT32_TYPE__", "unsigned int" },
+	{ "__INT64_TYPE__", "long" },
+	{ "__UINT64_TYPE__", "unsigned long" },
+
+	{ "__INT_LEAST8_TYPE__", "signed char" },
+	{ "__UINT_LEAST8_TYPE__", "unsigned char" },
+	{ "__INT_LEAST16_TYPE__", "short" },
+	{ "__UINT_LEAST16_TYPE__", "unsigned short" },
+	{ "__INT_LEAST32_TYPE__", "int" },
+	{ "__UINT_LEAST32_TYPE__", "unsigned int" },
+	{ "__INT_LEAST64_TYPE__", "long" },
+	{ "__UINT_LEAST64_TYPE__", "unsigned long" },
+
+	{ "__INT_FAST8_TYPE__", "signed char" },
+	{ "__UINT_FAST8_TYPE__", "unsigned char" },
+	{ "__INT_FAST16_TYPE__", "long" },
+	{ "__UINT_FAST16_TYPE__", "unsigned long" },
+	{ "__INT_FAST32_TYPE__", "long" },
+	{ "__UINT_FAST32_TYPE__", "unsigned long" },
+	{ "__INT_FAST64_TYPE__", "long" },
+	{ "__UINT_FAST64_TYPE__", "unsigned long" },
+
+	{ "__INTPTR_TYPE__", "long" },
+	{ "__UINTPTR_TYPE__", "unsigned long" },
+	{ "__INTMAX_TYPE__", "long" },
+	{ "__UINTMAX_TYPE__", "unsigned long" },
+
+	{ "__INT8_MAX__", "127" },
+	{ "__UINT8_MAX__", "255" },
+	{ "__INT16_MAX__", "32767" },
+	{ "__UINT16_MAX__", "65535" },
+	{ "__INT32_MAX__", "2147483647" },
+	{ "__UINT32_MAX__", "4294967295U" },
+	{ "__INT64_MAX__", "9223372036854775807L" },
+	{ "__UINT64_MAX__", "18446744073709551615UL" },
+
+	{ "__INT_LEAST8_MAX__", "127" },
+	{ "__UINT_LEAST8_MAX__", "255" },
+	{ "__INT_LEAST16_MAX__", "32767" },
+	{ "__UINT_LEAST16_MAX__", "65535" },
+	{ "__INT_LEAST32_MAX__", "2147483647" },
+	{ "__UINT_LEAST32_MAX__", "4294967295U" },
+	{ "__INT_LEAST64_MAX__", "9223372036854775807L" },
+	{ "__UINT_LEAST64_MAX__", "18446744073709551615UL" },
+
+	{ "__INT_FAST8_MAX__", "127" },
+	{ "__UINT_FAST8_MAX__", "255" },
+	{ "__INT_FAST16_MAX__", "9223372036854775807L" },
+	{ "__UINT_FAST16_MAX__", "18446744073709551615UL" },
+	{ "__INT_FAST32_MAX__", "9223372036854775807L" },
+	{ "__UINT_FAST32_MAX__", "18446744073709551615UL" },
+	{ "__INT_FAST64_MAX__", "9223372036854775807L" },
+	{ "__UINT_FAST64_MAX__", "18446744073709551615UL" },
+
+	{ "__INTPTR_MAX__", "9223372036854775807L" },
+	{ "__UINTPTR_MAX__", "18446744073709551615UL" },
+	{ "__INTMAX_MAX__", "9223372036854775807L" },
+	{ "__UINTMAX_MAX__", "18446744073709551615UL" },
+	{ "__SIZE_MAX__", "18446744073709551615UL" },
+	{ "__PTRDIFF_MAX__", "9223372036854775807L" },
+
+	{ "__SCHAR_MAX__", "127" },
+	{ "__SHRT_MAX__", "32767" },
+	{ "__INT_MAX__", "2147483647" },
+	{ "__LONG_MAX__", "9223372036854775807L" },
+	{ "__LONG_LONG_MAX__", "9223372036854775807LL" },
+	{ "__WCHAR_MAX__", "2147483647" },
+	{ "__WCHAR_MIN__", "(-2147483647 - 1)" },
+	{ "__WINT_MAX__", "4294967295U" },
+	{ "__WINT_MIN__", "0U" },
+	{ "__SIG_ATOMIC_MAX__", "2147483647" },
+	{ "__SIG_ATOMIC_MIN__", "(-2147483647 - 1)" },
+
+	{ "__CHAR_BIT__", "8" },
+	{ "__CHAR_UNSIGNED__", "1" },
+	{ "__SIZEOF_SHORT__", "2" },
+	{ "__SIZEOF_INT__", "4" },
+	{ "__SIZEOF_LONG__", "8" },
+	{ "__SIZEOF_LONG_LONG__", "8" },
+	{ "__SIZEOF_FLOAT__", "4" },
+	{ "__SIZEOF_DOUBLE__", "8" },
+	{ "__SIZEOF_SIZE_T__", "8" },
+	{ "__SIZEOF_PTRDIFF_T__", "8" },
+	{ "__SIZEOF_POINTER__", "8" },
+
+	{ "__ORDER_LITTLE_ENDIAN__", "1234" },
+	{ "__ORDER_BIG_ENDIAN__", "4321" },
+	{ "__ORDER_PDP_ENDIAN__", "3412" },
+	{ "__BYTE_ORDER__", "1234" },
+
+	{ "__FLT_RADIX__", "2" },
+	{ "__FLT_MANT_DIG__", "24" },
+	{ "__DBL_MANT_DIG__", "53" },
+	{ "__LDBL_MANT_DIG__", "53" },
+	{ "__FLT_DIG__", "6" },
+	{ "__DBL_DIG__", "15" },
+	{ "__LDBL_DIG__", "15" },
+	{ "__FLT_MIN_EXP__", "(-125)" },
+	{ "__DBL_MIN_EXP__", "(-1021)" },
+	{ "__LDBL_MIN_EXP__", "(-1021)" },
+	{ "__FLT_MIN_10_EXP__", "(-37)" },
+	{ "__DBL_MIN_10_EXP__", "(-307)" },
+	{ "__LDBL_MIN_10_EXP__", "(-307)" },
+	{ "__FLT_MAX_EXP__", "128" },
+	{ "__DBL_MAX_EXP__", "1024" },
+	{ "__LDBL_MAX_EXP__", "1024" },
+	{ "__FLT_MAX_10_EXP__", "38" },
+	{ "__DBL_MAX_10_EXP__", "308" },
+	{ "__LDBL_MAX_10_EXP__", "308" },
+	{ "__FLT_MAX__", "3.40282347e+38F" },
+	{ "__DBL_MAX__", "1.7976931348623157e+308" },
+	{ "__LDBL_MAX__", "1.7976931348623157e+308" },
+	{ "__FLT_EPSILON__", "1.19209290e-7F" },
+	{ "__DBL_EPSILON__", "2.2204460492503131e-16" },
+	{ "__LDBL_EPSILON__", "2.2204460492503131e-16" },
+	{ "__FLT_MIN__", "1.17549435e-38F" },
+	{ "__DBL_MIN__", "2.2250738585072014e-308" },
+	{ "__LDBL_MIN__", "2.2250738585072014e-308" },
+	{ "__FLT_DENORM_MIN__", "1.40129846e-45F" },
+	{ "__DBL_DENORM_MIN__", "4.9406564584124654e-324" },
+	{ "__LDBL_DENORM_MIN__", "4.9406564584124654e-324" },
+	{ "__FLT_DECIMAL_DIG__", "9" },
+	{ "__DBL_DECIMAL_DIG__", "17" },
+	{ "__LDBL_DECIMAL_DIG__", "17" },
+	{ "__DECIMAL_DIG__", "17" },
+	{ "__FLT_HAS_DENORM__", "1" },
+	{ "__DBL_HAS_DENORM__", "1" },
+	{ "__LDBL_HAS_DENORM__", "1" },
+	{ "__FLT_HAS_INFINITY__", "1" },
+	{ "__DBL_HAS_INFINITY__", "1" },
+	{ "__LDBL_HAS_INFINITY__", "1" },
+	{ "__FLT_HAS_QUIET_NAN__", "1" },
+	{ "__DBL_HAS_QUIET_NAN__", "1" },
+	{ "__LDBL_HAS_QUIET_NAN__", "1" },
+	{ "__FLT_EVAL_METHOD__", "0" },
+
+	{ "__riscv", "1" },
+	{ "__riscv_xlen", "64" },
+	{ "__riscv_flen", "64" },
+	{ "__riscv_float_abi_double", "1" },
+	{ "__riscv_compressed", "0" },
+	{ "__riscv_atomic", "1" },
+	{ "__riscv_mul", "1" },
+	{ "__riscv_div", "1" },
+	{ "__ELF__", "1" },
+	{ "__LP64__", "1" },
+	{ "_LP64", "1" },
+};
+
+static void define_predefs(void)
+{
+	size_t i;
+
+	for (i = 0; i < sizeof(predefs) / sizeof(predefs[0]); i++)
+		define_macro(predefs[i].name, predefs[i].body);
+}
+
 void apply_cli_macros(void)
 {
 	struct cli_macro *m;
 
 	macros = NULL;
+	define_predefs();
 	for (m = cli_macros; m; m = m->next) {
 		if (m->undef)
 			pp_undef_cli(m->arg);

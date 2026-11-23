@@ -361,12 +361,14 @@ rootfs: dyn
 	$(Q)KERNEL_ROOT="$(abspath $(KERNEL_ROOT))" \
 		BUILD_ROOT="$(abspath $(BUILD_ROOT))" \
 		BUILD="$(BUILD)" \
+		CROSS_COMPILE="$(CROSS_COMPILE)" \
 		$(MKROOTFS) "$(ROOTFS_IMG)"
 
 $(ROOTFS_IMG): $(ROOTFS_DEPS)
 	$(Q)KERNEL_ROOT="$(abspath $(KERNEL_ROOT))" \
 		BUILD_ROOT="$(abspath $(BUILD_ROOT))" \
 		BUILD="$(BUILD)" \
+		CROSS_COMPILE="$(CROSS_COMPILE)" \
 		$(MKROOTFS) "$@"
 
 run: $(ROOTFS_IMG) kernel

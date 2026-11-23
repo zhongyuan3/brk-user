@@ -25,7 +25,7 @@ else
 	for f in "$USER_ROOT"/tests/cc/*.c; do
 		base=${f##*/}
 		case "$base" in
-		multi_*.c|link_multi_*.c) continue ;;
+		multi_*.c|link_multi_*.c|hosted*.c) continue ;;
 		esac
 		grep -qE '(^|[^A-Za-z0-9_])main[[:space:]]*\(' "$f" || continue
 		SOURCES="$SOURCES tests/cc/$base"
@@ -86,6 +86,11 @@ send '/tmp/link_multi'
 send 'echo === modes'
 send 'cc -S /home/tests/cc/hello.c -o /tmp/hello.s'
 send 'cc -c /home/tests/cc/hello.c -o /tmp/hello.o'
+send 'echo === hosted'
+send 'cc /home/tests/cc/hosted.c -lc -o /tmp/hosted'
+send '/tmp/hosted'
+send 'cc /home/tests/cc/hosted_libc.c -lc -o /tmp/hosted_libc'
+send '/tmp/hosted_libc'
 send 'echo __CC_SUITE_DONE__'
 
 DEADLINE=$(( $(date +%s) + RUN_TIME ))

@@ -926,6 +926,12 @@ static void gen_cond_expr(struct node *n)
 static struct sym *puts_sym;
 static struct sym *memcpy_sym;
 static struct sym *memset_sym;
+static bool hosted_mode;
+
+void set_hosted_mode(bool hosted)
+{
+	hosted_mode = hosted;
+}
 
 static int builtin_syscall(const char *name)
 {
@@ -944,7 +950,7 @@ static void gen_call(struct node *n)
 {
 	const char *name = n->var ? n->var->name : NULL;
 	bool direct = n->var != NULL;
-	bool builtin_ok = direct && !n->var->defined;
+	bool builtin_ok = direct && !n->var->defined && !hosted_mode;
 	bool indirect = n->callee != NULL;
 	struct type *rt = n->ty;
 	struct type *fnty = NULL;

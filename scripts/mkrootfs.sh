@@ -169,18 +169,54 @@ if [[ -f $VARIANT_ROOT/libdyn.so ]]; then
 	"$BRKFS" cp --parents "$VARIANT_ROOT/libdyn.so" "/lib/libdyn.so" "$IMG"
 fi
 
-# usr/include/cc.h is the runtime header for programs compiled by the
-# on-target cc: a raw-syscall subset with no libc dependency.  It is
-# the only header installed into the image so far; a future on-target
-# toolchain would install all of usr/include the same way.
-if [[ -f $USER_ROOT/usr/include/cc.h ]]; then
-	"$BRKFS" cp "$USER_ROOT/usr/include/cc.h" "/usr/include/cc.h" "$IMG"
+# On-target toolchain: install the full libc header tree plus the kernel
+# UAPI headers it derives its ABI types from.  <cc.h> remains available for
+# freestanding programs.
+if [[ -d $USER_ROOT/usr/include ]]; then
+	"$BRKFS" cp -r --parents "$USER_ROOT/usr/include" "/usr/include" "$IMG"
+fi
+if [[ -d $BUILD_ROOT/include/uapi ]]; then
+	"$BRKFS" cp -r --parents "$BUILD_ROOT/include/uapi" "/usr/include/uapi" "$IMG"
 fi
 
-# The on-target compiler now understands the standard GCC-compatible
-# <stdarg.h> builtins; install it alongside the freestanding cc.h.
-if [[ -f $USER_ROOT/usr/include/stdarg.h ]]; then
-	"$BRKFS" cp "$USER_ROOT/usr/include/stdarg.h" "/usr/include/stdarg.h" "$IMG"
+# Install stripped static archives so the on-target cc can link hosted
+# programs with -lc and -lgcc.  Debug information is useless in the image
+# and would not fit.
+OBJCOPY=${CROSS_COMPILE:+${CROSS_COMPILE}objcopy}
+if [[ -z ${OBJCOPY:-} ]]; then
+	OBJCOPY=riscv64-unknown-elf-objcopy
+fi
+if ! command -v "$OBJCOPY" >/dev/null 2>&1; then
+	OBJCOPY=objcopy
+fi
+
+install_static_lib()
+{
+	local src=$1 dest=$2 name
+	[[ -f $src ]] || return 0
+	name=${dest##*/}
+	"$OBJCOPY" --strip-debug "$src" "$ROOTFS_TREE/$name"
+	"$BRKFS" cp --parents "$ROOTFS_TREE/$name" "$dest" "$IMG"
+}
+
+install_static_lib "$VARIANT_ROOT/libc.a" "/usr/lib/libc.a"
+install_static_lib "$VARIANT_ROOT/libcmdfw.a" "/usr/lib/libcmdfw.a"
+
+LIBGCC_A=
+if [[ -n ${CROSS_COMPILE:-} ]]; then
+	LIBGCC_A=$("${CROSS_COMPILE}gcc" -march=rv64gc -mabi=lp64d \
+		-print-file-name=libgcc.a 2>/dev/null || true)
+else
+	for gcc in riscv64-unknown-elf-gcc riscv64-elf-gcc riscv64-none-elf-gcc; do
+		if command -v "$gcc" >/dev/null 2>&1; then
+			LIBGCC_A=$("$gcc" -march=rv64gc -mabi=lp64d \
+				-print-file-name=libgcc.a 2>/dev/null || true)
+			[[ -f $LIBGCC_A ]] && break
+		fi
+	done
+fi
+if [[ -f ${LIBGCC_A:-} ]]; then
+	install_static_lib "$LIBGCC_A" "/usr/lib/libgcc.a"
 fi
 
 for doc in README.md README.cn.md LICENSE; do

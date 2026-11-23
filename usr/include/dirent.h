@@ -20,8 +20,8 @@ struct posix_dent {
 
 /* Layout used by readdir(). */
 struct dirent {
-	__brk_s32 d_ino;
-	__brk_s32 d_off;
+	__brk_ino_t d_ino;
+	__brk_off_t d_off;
 	__brk_u16 d_reclen;
 	__brk_u8 d_type;
 	char d_name[256];

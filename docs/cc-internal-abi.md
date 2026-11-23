@@ -170,9 +170,26 @@ The linker injects exactly one copy of:
 
 These are ordinary generated functions and follow the call sequence above.
 
-## 10. Kernel entry mapping
+## 10. Startup, builtins and libc
 
-`read`, `write` and `close` map directly to `SYS_READ`, `SYS_WRITE` and
-`SYS_CLOSE`.  BRK's `SYS_OPEN` entry is `openat(dirfd, path, flags, mode)`, so
-the `open(path, flags[, mode])` builtin is lowered with `AT_FDCWD` in `a0`,
-the path in `a1`, flags in `a2` and mode in `a3` (mode is zero when omitted).
+Without a library-provided `_start`, the linker injects `__cc_start`, which
+calls `main(argc, argv, envp)` and exits with `SYS_EXIT`.  When an input
+archive provides `_start` (libc does), it is used as the entry point instead;
+libc's `_start` initializes `environ`, calls `main`, and calls `exit`, which
+flushes stdio.
+
+`-lc` selects hosted mode.  Then the compiler stops lowering `read`, `write`,
+`close`, `open`, `exit`, `putchar` and `puts` to inline syscalls/helpers and
+emits ordinary calls to the libc symbols.  `-fhosted` does the same without
+linking libc, which is what separate `-c` compilation needs.  Freestanding
+mode (`-ffreestanding` or no `-lc`) keeps the raw-syscall builtins:
+
+- `read`, `write` and `close` map directly to `SYS_READ`, `SYS_WRITE` and
+  `SYS_CLOSE`;
+- BRK's `SYS_OPEN` entry is `openat(dirfd, path, flags, mode)`, so the
+  `open(path, flags[, mode])` builtin is lowered with `AT_FDCWD` in `a0`,
+  the path in `a1`, flags in `a2` and mode in `a3` (mode is zero when
+  omitted).
+
+`__cc_puts`, `__cc_memcpy` and `__cc_memset` are still injected for
+freestanding code and for struct copies/zeroing in hosted code.

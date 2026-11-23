@@ -723,6 +723,7 @@ struct unit *read_elf_object(const char *path, const unsigned char *buf,
 	struct unit *u;
 	struct sym *tail = NULL;
 	struct sym **byidx;
+	struct sym **secsym;
 	struct buf textbuf;
 	struct buf databuf;
 	unsigned long shoff;
@@ -827,6 +828,8 @@ struct unit *read_elf_object(const char *path, const unsigned char *buf,
 
 	buf_init(&textbuf);
 	buf_init(&databuf);
+	u = xcalloc(1, sizeof(*u));
+	secsym = xcalloc(nsecs, sizeof(*secsym));
 	for (i = 1; i < nsecs; i++) {
 		struct elf_section *s = &secs[i];
 		const char *name = shstr + s->name;
@@ -863,6 +866,26 @@ struct unit *read_elf_object(const char *path, const unsigned char *buf,
 		default:
 			break;
 		}
+		if (s->kind != ESEC_IGNORE) {
+			struct sym *ssym = xcalloc(1, sizeof(*ssym));
+
+			ssym->name = xstrdup(name);
+			ssym->sec = er_kind_sec(s->kind);
+			ssym->defined = true;
+			ssym->is_static = true;
+			ssym->offset = (int)s->base;
+			ssym->size = (int)s->size;
+			ssym->align = (int)align;
+			if (ssym->align < 1 || ssym->align > 4096 ||
+			    (ssym->align & (ssym->align - 1)))
+				ssym->align = 1;
+			secsym[i] = ssym;
+			if (tail)
+				tail->next = ssym;
+			else
+				u->syms = ssym;
+			tail = ssym;
+		}
 	}
 
 	nsyms = (unsigned int)(secs[symtab_sec].size / 24);
@@ -870,7 +893,6 @@ struct unit *read_elf_object(const char *path, const unsigned char *buf,
 		fatal("ELF object '%s' has an empty symbol table", path);
 	byidx = xcalloc(nsyms, sizeof(*byidx));
 
-	u = xcalloc(1, sizeof(*u));
 	u->code = textbuf.data;
 	u->code_len = textbuf.len;
 	u->data = databuf.data;
@@ -897,30 +919,8 @@ struct unit *read_elf_object(const char *path, const unsigned char *buf,
 			struct sym *s;
 
 			if (type == STT_SECTION) {
-				if (shndx < nsecs &&
-				    secs[shndx].kind != ESEC_IGNORE) {
-					const struct elf_section *ss =
-						&secs[shndx];
-
-					s = xcalloc(1, sizeof(*s));
-					s->name = xstrdup(shstr + ss->name);
-					s->sec = er_kind_sec(ss->kind);
-					s->defined = true;
-					s->is_static = true;
-					s->offset = (int)ss->base;
-					s->size = (int)ss->size;
-					s->align = (int)(ss->align ?
-								 ss->align : 1);
-					if (s->align < 1 || s->align > 4096 ||
-					    (s->align & (s->align - 1)))
-						s->align = 1;
-					byidx[i] = s;
-					if (tail)
-						tail->next = s;
-					else
-						u->syms = s;
-					tail = s;
-				}
+				if (shndx < nsecs && secsym[shndx])
+					byidx[i] = secsym[shndx];
 				continue;
 			}
 			if (type == STT_FILE)
@@ -1176,6 +1176,7 @@ struct unit *read_elf_object(const char *path, const unsigned char *buf,
 
 	/* Section symbol names are not repeated in the global string table. */
 	free(byidx);
+	free(secsym);
 	free(secs);
 	if (unit_tail)
 		unit_tail->next = u;

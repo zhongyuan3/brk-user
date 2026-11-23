@@ -28,8 +28,8 @@ struct dirent *readdir(DIR *d)
 	}
 
 	namelen = strnlen(dent->d_name, sizeof(d->cur.d_name) - 1);
-	d->cur.d_ino = (__brk_s32)dent->d_ino;
-	d->cur.d_off = (__brk_s32)d->tell;
+	d->cur.d_ino = dent->d_ino;
+	d->cur.d_off = d->tell;
 	d->cur.d_reclen = (unsigned short)(offsetof(struct dirent, d_name) +
 					  namelen + 1);
 	d->cur.d_type = dent->d_type;

@@ -65,6 +65,12 @@ cc /home/tests/cc/abi.c -o /tmp/abi
 cc /home/tests/cc/stdarg.c -o /tmp/stdarg
 /tmp/stdarg
 
+# Hosted libc programs
+cc /home/tests/cc/hosted.c -lc -o /tmp/hosted
+/tmp/hosted
+cc /home/tests/cc/hosted_libc.c -lc -o /tmp/hosted_libc
+/tmp/hosted_libc
+
 # Preprocessor additions
 cc /home/tests/cc/pp_float.c -o /tmp/pp_float
 /tmp/pp_float
@@ -144,6 +150,9 @@ Expected results:
 - `abi`: `3 1 2 3`, `12`, `66`, `4 6`, `45`, `66`, `10`, `55`, `66`, `58`,
   `88`, `42`
 - `stdarg`: `10 14`
+- `hosted`: `hosted 42 9`
+- `hosted_libc`: `qsort 1a 2b 3c`, `malloc heap`, `sqrt 3.0`,
+  `dirent 3`, `read file 7`
 - `pp_float`: `pp_float ok`
 - `pp_line`: `pp_line ok`
 - `float`: `4 5 7 4 9`, `3 4 1 1 1 1 0`, `8 6`, `3 3 3`, `1 1 1`

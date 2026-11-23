@@ -554,6 +554,22 @@ static void patch_unit_relocs(struct unit *u, unsigned long text_section_base,
 	}
 }
 
+static bool have_defined_text(const char *name)
+{
+	struct unit *u;
+
+	for (u = units; u; u = u->next) {
+		struct sym *s;
+
+		for (s = u->syms; s; s = s->next) {
+			if (s->defined && !s->is_static && s->sec == SEC_TEXT &&
+			    !strcmp(s->name, name))
+				return true;
+		}
+	}
+	return false;
+}
+
 static struct sym *find_main_sym(void)
 {
 	struct sym *found = NULL;
@@ -662,7 +678,8 @@ void link_and_write(const char *path)
 	int written;
 
 	ensure_runtime_unit();
-	ensure_start_unit();
+	if (!have_defined_text("_start"))
+		ensure_start_unit();
 
 	link_syms = NULL;
 	for (u = units; u; u = u->next) {
@@ -735,9 +752,11 @@ void link_and_write(const char *path)
 	for (u = units; u; u = u->next)
 		patch_unit_relocs(u, text_section_base, data_section_base);
 
-	l = link_find("__cc_start");
+	l = link_find("_start");
 	if (!l)
-		fatal("no definition of 'main'");
+		l = link_find("__cc_start");
+	if (!l)
+		fatal("no start symbol (missing main?)");
 	entry = l->sym->addr;
 
 	text = xcalloc(1, text_off ? (size_t)text_off : 1);

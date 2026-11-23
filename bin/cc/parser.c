@@ -85,6 +85,28 @@ static void expect(const char *s)
 		      cur_token()->col, s, cur_token()->text);
 }
 
+static void skip_attributes(void)
+{
+	while (is("__attribute__") || is("__attribute")) {
+		int depth;
+
+		tok_pos++;
+		if (!consume("("))
+			continue;
+		depth = 1;
+		while (depth > 0) {
+			if (is_kind(TK_EOF))
+				fatal("unterminated __attribute__");
+			if (consume("("))
+				depth++;
+			else if (consume(")"))
+				depth--;
+			else
+				tok_pos++;
+		}
+	}
+}
+
 /* ---- typedef, tag and enumerator namespaces ---- */
 
 struct typedef_sym {
@@ -746,7 +768,7 @@ static bool declspec_extern;
 static bool declspec_typedef;
 static struct type *current_fn_ret;
 
-static struct type *parse_declspec(void)
+static struct type *parse_declspec_inner(void)
 {
 	enum {
 		BS_NONE,
@@ -874,6 +896,16 @@ static struct type *parse_declspec(void)
 	}
 }
 
+static struct type *parse_declspec(void)
+{
+	struct type *ty;
+
+	skip_attributes();
+	ty = parse_declspec_inner();
+	skip_attributes();
+	return ty;
+}
+
 static struct type *replace_placeholder(struct type *t, struct type *ph,
 					struct type *repl)
 {
@@ -960,7 +992,7 @@ static struct type *parse_type_suffix(struct type *ty)
 	return ty;
 }
 
-static struct declarator parse_declarator(struct type *base, bool abstract_ok)
+static struct declarator parse_declarator_inner(struct type *base, bool abstract_ok)
 {
 	struct declarator d;
 
@@ -979,7 +1011,8 @@ static struct declarator parse_declarator(struct type *base, bool abstract_ok)
 		d.ty = replace_placeholder(inner.ty, ph,
 					   parse_type_suffix(base));
 	} else {
-		if (is_kind(TK_IDENT) && !is_typename()) {
+		if (is_kind(TK_IDENT) &&
+		    (!is_typename() || declspec_typedef)) {
 			d.name = xstrdup(cur_token()->text);
 			tok_pos++;
 		} else if (!abstract_ok) {
@@ -989,9 +1022,15 @@ static struct declarator parse_declarator(struct type *base, bool abstract_ok)
 		}
 		d.ty = parse_type_suffix(base);
 	}
+	skip_attributes();
 	if (d.ty->kind == TY_FUNC)
 		check_function_type(d.ty, d.name ? d.name : "<function>");
 	return d;
+}
+
+static struct declarator parse_declarator(struct type *base, bool abstract_ok)
+{
+	return parse_declarator_inner(base, abstract_ok);
 }
 
 static struct type *parse_type_name(void)
@@ -1041,6 +1080,7 @@ static struct type *parse_struct_spec(int kind)
 		int bit_unit_bits = 0;
 		int bit_cursor = 0;
 		bool saw_field = false;
+		bool saw_flexible = false;
 
 		if (tag)
 			ty = find_tag(tag_kind, tag);
@@ -1057,8 +1097,11 @@ static struct type *parse_struct_spec(int kind)
 			if (is_td)
 				fatal("typedef inside a struct/union is not supported");
 			for (;;) {
-				struct declarator d =
-					parse_declarator(base, true);
+				struct declarator d;
+
+				if (saw_flexible)
+					fatal("flexible array member must be the last member");
+				d = parse_declarator(base, true);
 				bool is_bitfield = false;
 				long width = 0;
 				int idx;
@@ -1097,15 +1140,19 @@ static struct type *parse_struct_spec(int kind)
 					fatal("function member '%s' is not supported",
 					      d.name ? d.name : "<anonymous>");
 				if (!is_bitfield) {
-					if (d.ty->kind == TY_ARRAY &&
-					    d.ty->array_len < 0)
-						fatal("flexible array member '%s' is not supported",
-						      d.name);
-					if ((is_aggregate(d.ty) &&
-					     !d.ty->is_complete) ||
-					    d.ty->size <= 0)
+					bool flexible = d.ty->kind == TY_ARRAY &&
+							d.ty->array_len < 0;
+
+					if (flexible && kind == TY_UNION)
+						fatal("flexible array member in a union");
+					if (!flexible &&
+					    ((is_aggregate(d.ty) &&
+					      !d.ty->is_complete) ||
+					     d.ty->size <= 0))
 						fatal("incomplete member type for '%s'",
 						      d.name);
+					if (flexible)
+						saw_flexible = true;
 				}
 				if (!is_bitfield || width > 0) {
 					add_member(ty, d.name, d.ty);

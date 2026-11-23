@@ -193,6 +193,19 @@ static void resolve_libraries(void)
 		free(path);
 	}
 
+	/*
+	 * Prefer the conventional _start when a library provides one: this is
+	 * what makes libc's exit()/stdio cleanup run.  A program that defines
+	 * its own _start keeps it, and freestanding links fall back to the
+	 * compiler-generated __cc_start.
+	 */
+	if (!global_defined("_start")) {
+		for (i = 0; i < nlib_names; i++) {
+			if (archive_load_symbol(ars[i], "_start"))
+				break;
+		}
+	}
+
 	progress = true;
 	while (progress) {
 		struct unit *u;
@@ -229,6 +242,8 @@ int main(int argc, char **argv)
 	bool compile_only = false;
 	bool assembly_only = false;
 	bool cco2_object = false;
+	bool force_freestanding = false;
+	bool force_hosted = false;
 	bool out_given = false;
 
 	for (i = 1; i < argc; i++) {
@@ -241,6 +256,10 @@ int main(int argc, char **argv)
 			compile_only = true;
 		} else if (!strcmp(argv[i], "--cco2-object")) {
 			cco2_object = true;
+		} else if (!strcmp(argv[i], "-ffreestanding")) {
+			force_freestanding = true;
+		} else if (!strcmp(argv[i], "-fhosted")) {
+			force_hosted = true;
 		} else if (!strcmp(argv[i], "-S")) {
 			assembly_only = true;
 		} else if (!strcmp(argv[i], "-I")) {
@@ -321,6 +340,35 @@ int main(int argc, char **argv)
 
 	init_types();
 	buf_init(&code);
+
+	{
+		bool hosted = force_hosted;
+		bool has_libc = false;
+		bool has_libgcc = false;
+		int li;
+
+		for (li = 0; li < nlib_names; li++) {
+			if (!strcmp(lib_names[li], "c") ||
+			    !strcmp(lib_names[li], "libc"))
+				has_libc = true;
+			if (!strcmp(lib_names[li], "gcc") ||
+			    !strcmp(lib_names[li], "libgcc"))
+				has_libgcc = true;
+		}
+		if (has_libc)
+			hosted = true;
+		if (force_freestanding)
+			hosted = false;
+		set_hosted_mode(hosted);
+
+		/* The GNU driver links libgcc implicitly for hosted programs. */
+		if (has_libc && !has_libgcc) {
+			lib_names = xrealloc(lib_names,
+					     (size_t)(nlib_names + 1) *
+						     sizeof(*lib_names));
+			lib_names[nlib_names++] = xstrdup("gcc");
+		}
+	}
 
 	if (preprocess_only) {
 		for (i = 0; i < ninputs; i++) {

@@ -31,7 +31,8 @@ Usage:
 
 ```text
 cc [-c] [-E] [-S] [-o output] [-I dir] [-L dir] [-l name]
-   [-D name[=value]] [-U name] [--cco2-object] input.c|input.o [...]
+   [-fhosted|-ffreestanding] [-D name[=value]] [-U name]
+   [--cco2-object] input.c|input.o [...]
 ```
 
 - If `-o` is not specified, the output is `a.out`
@@ -43,6 +44,10 @@ cc [-c] [-E] [-S] [-o output] [-I dir] [-L dir] [-l name]
   from those directories (then `/usr/lib`, `/usr/local/lib`, `/lib`)
 - Archive members are extracted on demand, so an unused member is never
   pulled into the executable
+- `-lc` selects hosted mode, links libc and implicitly adds `-lgcc`; the
+  on-target image installs the header tree and both archives
+- `-fhosted` forces hosted mode without linking libc yet (useful with `-c`);
+  `-ffreestanding` forces freestanding mode
 - The output file is automatically set to `0755`
 
 ## Preprocessor
@@ -150,7 +155,8 @@ Not supported:
 - GCC-identical bit-field packing for unusual mixed base types; the private
   layout is documented in `docs/cc-internal-abi.md`
 
-Built-in functions (if the user has not defined functions with the same names):
+Built-in functions (freestanding mode; a hosted `-lc` link calls libc
+instead, so stdio buffering and errno are preserved):
 
 ```c
 int write(int fd, const void *buf, long n);
@@ -162,7 +168,23 @@ int putchar(int c);
 int puts(const char *s);
 ```
 
-`usr/include/cc.h` provides these prototypes as well as `NULL`, `EOF`, and `O_*` constants.
+`usr/include/cc.h` provides these prototypes as well as `NULL`, `EOF`, and `O_*` constants.  Hosted programs use the regular `<stdio.h>`, `<stdlib.h>`, `<unistd.h>`, `<dirent.h>`, POSIX and network headers installed from `usr/include`.
+
+## Hosted libc programs
+
+The rootfs ships the full libc header tree, `libc.a` and `libgcc.a` under
+`/usr/include` and `/usr/lib`, so the on-target compiler can build ordinary
+hosted programs:
+
+```sh
+cc hello.c -lc -o hello
+```
+
+`-lc` switches the callee side off the direct-syscall builtins, adds `-lgcc`,
+and links libc's `_start` so that `argv`/`environ` are initialized and
+`exit()` flushes stdio buffers.  Without a library-provided `_start`, or
+without `-lc`, the compiler still emits the freestanding `__cc_start` path.
+See `tests/cc/hosted.c` and `tests/cc/hosted_libc.c` for coverage.
 
 ## Multi-File and Linking
 
@@ -223,8 +245,10 @@ Generated programs are:
 - Fixed load base address `0x10000`, with code starting at file offset `0x1000`
 - `e_flags` sets the LP64D float ABI and adds `EF_RISCV_RVC` when any linked
   input uses compressed instructions
-- The entry point is the compiler-generated `__cc_start`
-- `__cc_start` receives `a0=argc, a1=argv, a2=envp` per the kernel convention, calls `main`, and then exits via `SYS_exit`
+- The entry point is `_start` when an input object or archive provides it
+  (libc's `_start` calls `exit(main(argc, argv, envp))`); otherwise it is the
+  compiler-generated `__cc_start`, which calls `main` and exits via
+  `SYS_exit`
 - System call numbers use BRK's POSIX.1-2024 numbering: `read=0, write=1, close=2, open=13, exit=49`.  `open()` is lowered to the kernel's `openat(AT_FDCWD, path, flags, mode)` entry.
 
 `puts`, struct copies, and aggregate initialization zeroing use `__cc_puts`, `__cc_memcpy`, and `__cc_memset`, respectively.
@@ -246,6 +270,12 @@ These limitations exist to keep the implementation sufficiently small:
 - Chained designators, mixing with complex brace elision
 - Global aggregate copy initialization
 - Dynamic libraries/shared objects and linker relaxation
+- 128-bit `long double` (the compiler and headers still use an 8-byte double
+  representation, so libc's `%Lf`/`strtold` ABI is not interoperable)
+- POSIX APIs not yet present in libc (`assert.h`, `wchar.h`, `fenv.h`,
+  `stdatomic.h`, `sigemptyset`, `fdopen`, `fgetpos`, ...)
+- Inline assembly (`__asm__`) in `<sys/syscall.h>`; hosted programs normally
+  use the libc wrappers instead
 - 128-bit `long double` (currently represented as `double`)
 - GCC-identical bit-field layout for unusual mixed base types
 - Hosted libc startup/header integration: `-lc -lgcc` archive linking works,
@@ -258,12 +288,12 @@ These limitations exist to keep the implementation sufficiently small:
 - `brkcc.h`: shared types, symbol tables, and function declarations between modules
 - `util.c`: memory allocation, error handling, and byte buffers
 - `lexer.c`: integer/character/string literals, identifiers, operators, comments, escapes
-- `preprocess.c`: macro tables, include search, conditional compilation, `#if` expression evaluation
+- `preprocess.c`: macro tables, include search, conditional compilation, `#if` expression evaluation, and GCC-compatible predefined macros
 - `types.c`: `struct type`, `struct node`, global/local symbols, and scopes
 - `emit.c`: instruction encoding, pseudo-instructions, labels, relocations and
   the structured instruction-record list
 - `asm.c`: assembler finalization and the `-S` human-readable listing
-- `parser.c`: declaration, initializer, statement, and expression parsing
+- `parser.c`: declaration, initializer, statement, and expression parsing; ignores GCC `__attribute__` annotations and supports flexible array members
 - `codegen.c`: stack-based evaluation; expression results are placed in `a0`, and lvalue addresses are placed in `a0`
 - `link.c`: merges text/data/bss from multiple units, resolves symbols, patches relocations and writes the executable
 - `elf.c`: standard ELF64 `ET_REL` writer and general ELF input reader
@@ -326,6 +356,8 @@ duplicate/undefined symbols and executable ELF layout.
 | `bitfield.c`                     | Bit-field load/store/RMW, signed and wide fields                                | Multiple lines of numbers            |
 | `abi.c`                         | LP64D FP/aggregate/stack argument and return classification                     | `3 1 2 3`, `12`, `66`, etc.          |
 | `stdarg.c`                      | GCC-compatible `<stdarg.h>` int/long/double varargs                             | `10 14`                              |
+| `hosted.c`                      | Installed libc headers, `-lc -lgcc`, libc `_start`/stdio flush                  | `hosted 42 9`                        |
+| `hosted_libc.c`                 | qsort, malloc, float printf, dirent, stdio file I/O through libc                 | Five lines of results                |
 | `args.c`                         | More than eight arguments, stack and float/aggregate slots, varargs             | `55`, `55`, `39`, `43`, `10`, `45`   |
 | `agg_deep.c`                     | Aggregate return with hidden slots plus a ninth stack argument                  | `10 35`, `30 105`, `10 35`           |
 | `pp_float.c`                     | Decimal floating literals and suffixes                                          | `pp_float ok`                        |

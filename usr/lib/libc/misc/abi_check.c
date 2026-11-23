@@ -100,7 +100,7 @@ _Static_assert(sizeof(struct timeval) == sizeof(struct __brk_timeval),
 	       "timeval layout drift vs kernel");
 _Static_assert(sizeof(struct tms) == 32, "struct tms ABI changed");
 
-_Static_assert(sizeof(struct dirent) == 268, "struct dirent ABI changed");
+_Static_assert(sizeof(struct dirent) == 280, "struct dirent ABI changed");
 _Static_assert(sizeof(ino_t) == 8, "ino_t is not 64-bit");
 _Static_assert(sizeof(struct posix_dent) == 24,
 	       "struct posix_dent ABI changed");

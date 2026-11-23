@@ -86,8 +86,8 @@ wires the CLI.
 - `long long` is accepted as an alias of `long`.
 - Aggregates use their natural alignment; bit-fields are laid out LSB-first
   inside the storage unit of their declared type.
-- Function arguments and return values use the private `cc` ABI documented in
-  `docs/cc-internal-abi.md`; it is self-consistent, not the RISC-V psABI.
+- Function arguments and return values follow the RISC-V LP64D psABI as
+  documented in `docs/cc-internal-abi.md`.
 
 ### 4.2 Calling convention summary
 
@@ -131,6 +131,16 @@ The legacy private CCO2 format is still readable (and writable with
 The assembler produces an in-memory `struct unit`; the linker owns
 serialization/deserialization.  `CCO1` objects remain readable for
 compatibility.
+
+### 4.4 Hosted libc mode
+
+`-lc` (or `-fhosted` for separate compilation) switches the compiler from the
+raw-syscall builtins to ordinary libc calls.  The rootfs installs the full
+`usr/include` header tree, the kernel UAPI headers, and stripped `libc.a`,
+`libcmdfw.a` and `libgcc.a` archives under `/usr/include` and `/usr/lib`.
+`-lc` implies `-lgcc`.  When the linked inputs provide `_start` (libc does),
+the linker uses it as the entry point; otherwise it generates `__cc_start`.
+libc's `_start` calls `exit(main(argc, argv, envp))`, so stdio is flushed.
 
 ## 5. Work protocol
 
