@@ -249,8 +249,8 @@ cc-tests:
 	$(Q)KERNEL_ROOT="$(abspath $(KERNEL_ROOT))" \
 		CROSS_COMPILE="$(CROSS_COMPILE)" scripts/run-cc-tests.sh
 
-# Host-side CCO2/object/linker tests; runs the RISC-V ELF writer but does
-# not execute the resulting programs.
+# Host-side object/archive/linker tests; runs the RISC-V ELF writer but
+# does not execute the resulting programs.
 cc-link-tests: $(CC_HOST)
 	$(Q)tests/cc/link_tests.sh
 
@@ -407,7 +407,7 @@ help:
 	@echo "  check        Build libc tests and run the host float validation"
 	@echo "  check-in-system   Boot BRK in QEMU and run the brktest suites"
 	@echo "  cc-tests     Compile and run tests/cc with the on-target cc"
-	@echo "  cc-link-tests Host-side CCO2/object/linker tests"
+	@echo "  cc-link-tests Host-side object/archive/linker tests"
 	@echo "  host-tests   Run the host float validation under tests/host"
 	@echo "  list-progs   Print the names of all user programs"
 	@echo "  kernel       Build the kernel (KERNEL_BUILD=debug|release)"

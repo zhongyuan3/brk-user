@@ -52,8 +52,8 @@ static void compile_source(const char *path, const char *asm_path)
 static void usage(const char *argv0)
 {
 	fprintf(stderr,
-		"usage: %s [-c] [-E] [-S] [-o output] [-I dir] "
-		"[-D name[=value]] [-U name] [--cco2-object] "
+		"usage: %s [-c] [-E] [-S] [-o output] [-I dir] [-L dir] "
+		"[-D name[=value]] [-U name] [-l name] [--cco2-object] "
 		"input.c|input.o [...]\n",
 		argv0);
 }
@@ -117,6 +117,108 @@ static void write_stdout(const char *buf, int len)
 	}
 }
 
+static char **lib_dirs;
+static int nlib_dirs;
+static char **lib_names;
+static int nlib_names;
+
+static bool global_defined(const char *name)
+{
+	struct unit *u;
+
+	for (u = units; u; u = u->next) {
+		struct sym *s;
+
+		for (s = u->syms; s; s = s->next) {
+			if (s->defined && !s->is_static && s->name &&
+			    !strcmp(s->name, name))
+				return true;
+		}
+	}
+	return false;
+}
+
+static char *library_path(const char *dir, const char *name)
+{
+	size_t n = strlen(dir) + strlen(name) + 6;
+	char *path = xmalloc(n);
+
+	strcpy(path, dir);
+	strcat(path, "/lib");
+	strcat(path, name);
+	strcat(path, ".a");
+	return path;
+}
+
+static char *find_library(const char *name)
+{
+	static const char *const defaults[] = {
+		"/usr/lib",
+		"/usr/local/lib",
+		"/lib",
+	};
+	char *path;
+	int i;
+	int j;
+
+	for (j = 0; j < nlib_dirs; j++) {
+		path = library_path(lib_dirs[j], name);
+		if (open_archive(path))
+			return path;
+		free(path);
+	}
+	for (i = 0; i < (int)(sizeof(defaults) / sizeof(defaults[0])); i++) {
+		path = library_path(defaults[i], name);
+		if (open_archive(path))
+			return path;
+		free(path);
+	}
+	fatal("cannot find -l%s", name);
+	return NULL;
+}
+
+static void resolve_libraries(void)
+{
+	struct archive **ars;
+	bool progress;
+	int i;
+
+	if (nlib_names == 0)
+		return;
+	ars = xcalloc((size_t)nlib_names, sizeof(*ars));
+	for (i = 0; i < nlib_names; i++) {
+		char *path = find_library(lib_names[i]);
+
+		ars[i] = open_archive(path);
+		free(path);
+	}
+
+	progress = true;
+	while (progress) {
+		struct unit *u;
+
+		progress = false;
+		for (u = units; u; u = u->next) {
+			struct sym *s;
+
+			for (s = u->syms; s; s = s->next) {
+				if (s->defined || s->is_static ||
+				    global_defined(s->name))
+					continue;
+				for (i = 0; i < nlib_names; i++) {
+					if (archive_load_symbol(ars[i],
+								s->name)) {
+						progress = true;
+						goto next_pass;
+					}
+				}
+			}
+		}
+next_pass:
+		;
+	}
+}
+
 int main(int argc, char **argv)
 {
 	const char *out = "a.out";
@@ -147,6 +249,30 @@ int main(int argc, char **argv)
 			pp_add_inc_path(argv[++i]);
 		} else if (!strncmp(argv[i], "-I", 2) && argv[i][2]) {
 			pp_add_inc_path(argv[i] + 2);
+		} else if (!strcmp(argv[i], "-L")) {
+			if (i + 1 >= argc)
+				usage(argv[0]);
+			lib_dirs = xrealloc(lib_dirs,
+					    (size_t)(nlib_dirs + 1) *
+						    sizeof(*lib_dirs));
+			lib_dirs[nlib_dirs++] = xstrdup(argv[++i]);
+		} else if (!strncmp(argv[i], "-L", 2) && argv[i][2]) {
+			lib_dirs = xrealloc(lib_dirs,
+					    (size_t)(nlib_dirs + 1) *
+						    sizeof(*lib_dirs));
+			lib_dirs[nlib_dirs++] = xstrdup(argv[i] + 2);
+		} else if (!strcmp(argv[i], "-l")) {
+			if (i + 1 >= argc)
+				usage(argv[0]);
+			lib_names = xrealloc(lib_names,
+					     (size_t)(nlib_names + 1) *
+						     sizeof(*lib_names));
+			lib_names[nlib_names++] = xstrdup(argv[++i]);
+		} else if (!strncmp(argv[i], "-l", 2) && argv[i][2]) {
+			lib_names = xrealloc(lib_names,
+					     (size_t)(nlib_names + 1) *
+						     sizeof(*lib_names));
+			lib_names[nlib_names++] = xstrdup(argv[i] + 2);
 		} else if (!strcmp(argv[i], "-D")) {
 			if (i + 1 >= argc)
 				usage(argv[0]);
@@ -258,6 +384,7 @@ int main(int argc, char **argv)
 			compile_source(inputs[i], NULL);
 	}
 
+	resolve_libraries();
 	link_and_write(out);
 	return 0;
 }

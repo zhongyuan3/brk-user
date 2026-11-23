@@ -140,16 +140,25 @@ unusual mixed base types.
 - sections: `.text`, `.data`, `.bss`, `.rela.text`, `.rela.data`, `.symtab`,
   `.strtab`, `.shstrtab`;
 - relocations: `R_RISCV_HI20`/`R_RISCV_LO12_I` for address materialization,
-  `R_RISCV_JAL` for calls, and `R_RISCV_64` for initialized pointers;
+  `R_RISCV_JAL` for calls, and `R_RISCV_32`/`R_RISCV_64` for initialized
+  data pointers;
+- a `.riscv.attributes` section with `Tag_RISCV_stack_align = 16` and an
+  `rv64i2p1_m2p0_f2p2_d2p2` architecture string;
 - the section header table is present, so GNU `readelf`/`objdump` and
   `ld -r` consume the objects directly.
 
-`.riscv.attributes` and linker relaxation are not emitted yet.
+Linker relaxation is not emitted.
 
-The built-in linker reads these ELF objects and retains readers for the
-previous private CCO2 and CCO1 formats.  `--cco2-object` can still write CCO2
-for compatibility testing.  CCO2 carries `.text`, `.data`, `.bss`, a symbol
-table and `HI20`/`LO12I`/`JAL` text plus 64-bit data relocations.
+The built-in linker also reads GCC-produced ELF objects and static archives,
+extracting archive members on demand.  It supports the RVC branch/jump,
+`CALL_PLT`, PC-relative HI20/LO12, LO12_S and 32/64-bit data relocations used
+by the in-tree libc and libgcc.  The previous private CCO2 and CCO1 formats
+remain readable; `--cco2-object` can still write CCO2 for compatibility
+testing.
+
+Executables use two `PT_LOAD` segments (read+execute text and read+write
+data+bss) with a fixed base of `0x10000`.  Read-only data is currently placed
+in the writable data segment.
 
 ## 9. Runtime helpers
 

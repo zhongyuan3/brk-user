@@ -214,63 +214,285 @@ void finalize_unit(void)
 	unit_tail = u;
 }
 
-static void patch_unit_relocs(struct unit *u, unsigned long text_section_base)
+static unsigned int get_u32(const unsigned char *p)
+{
+	return (unsigned int)p[0] | ((unsigned int)p[1] << 8) |
+	       ((unsigned int)p[2] << 16) | ((unsigned int)p[3] << 24);
+}
+
+static unsigned int get_u16(const unsigned char *p)
+{
+	return (unsigned int)p[0] | ((unsigned int)p[1] << 8);
+}
+
+static unsigned long get_bytes(const unsigned char *p, int size)
+{
+	unsigned long v = 0;
+	int i;
+
+	for (i = 0; i < size; i++)
+		v |= (unsigned long)p[i] << (i * 8);
+	return v;
+}
+
+static void put_bytes(unsigned char *p, unsigned long v, int size)
+{
+	int i;
+
+	for (i = 0; i < size; i++)
+		p[i] = (unsigned char)((v >> (i * 8)) & 0xff);
+}
+
+static void put_half(unsigned char *buf, int pos, unsigned int ins)
+{
+	buf[pos + 0] = (unsigned char)(ins & 0xff);
+	buf[pos + 1] = (unsigned char)((ins >> 8) & 0xff);
+}
+
+static unsigned long hi20_value(long long diff, const char *name)
+{
+	long long hi = (diff + 0x800) >> 12;
+
+	if (hi < -(1LL << 19) || hi > (1LL << 19) - 1)
+		fatal("relocation target out of range for '%s'", name);
+	return (unsigned long)hi & 0xfffffUL;
+}
+
+static long lo12_value(long long diff)
+{
+	long lo = (long)(diff & 0xfff);
+
+	if (lo & 0x800)
+		lo -= 0x1000;
+	return lo;
+}
+
+static unsigned int rvc_cb(unsigned int old, long off, const char *name)
+{
+	unsigned int imm;
+
+	if ((old & 0x3) != 1 || ((old >> 13) & 7) < 6 ||
+	    ((old >> 13) & 7) > 7)
+		fatal("invalid RVC branch instruction for '%s'", name);
+	if (off < -256 || off > 254 || (off & 1))
+		fatal("RVC branch out of range for '%s'", name);
+	imm = (unsigned int)off;
+	old &= ~(0x1c00u | 0x007cu);
+	old |= (((imm >> 8) & 1) << 12);
+	old |= (((imm >> 3) & 3) << 10);
+	old |= (((imm >> 6) & 3) << 5);
+	old |= (((imm >> 1) & 3) << 3);
+	old |= (((imm >> 5) & 1) << 2);
+	return old;
+}
+
+static unsigned int rvc_cj(unsigned int old, long off, const char *name)
+{
+	unsigned int imm;
+
+	if ((old & 0x3) != 1 || ((old >> 13) & 7) != 5)
+		fatal("invalid RVC jump instruction for '%s'", name);
+	if (off < -2048 || off > 2046 || (off & 1))
+		fatal("RVC jump out of range for '%s'", name);
+	imm = (unsigned int)off;
+	old &= ~0x1ffcu;
+	old |= (((imm >> 11) & 1) << 12);
+	old |= (((imm >> 4) & 1) << 11);
+	old |= (((imm >> 8) & 3) << 9);
+	old |= (((imm >> 10) & 1) << 8);
+	old |= (((imm >> 6) & 1) << 7);
+	old |= (((imm >> 7) & 1) << 6);
+	old |= (((imm >> 1) & 7) << 3);
+	old |= (((imm >> 5) & 1) << 2);
+	return old;
+}
+
+static struct reloc *find_pcrel_hi(struct unit *u, struct reloc *lo)
+{
+	struct reloc *r;
+
+	for (r = u->relocs; r; r = r->next) {
+		if (r->kind == R_PCREL_HI20 &&
+		    r->pos == lo->sym->offset)
+			return r;
+	}
+	return NULL;
+}
+
+static void patch_one_text_reloc(struct unit *u, struct reloc *r,
+				 unsigned long text_section_base)
+{
+	unsigned long target;
+	unsigned long pos_abs;
+	unsigned long data;
+	unsigned int old;
+	long long diff;
+	long lo;
+
+	pos_abs = text_section_base + u->text_base +
+		  (unsigned long)r->pos;
+
+	if (r->kind == R_RVC_BRANCH || r->kind == R_RVC_JUMP) {
+		target = add_addend(resolve_sym(r->sym), r->addend, "text",
+				    r->sym->name);
+		diff = (long long)target - (long long)pos_abs;
+		if (r->kind == R_RVC_BRANCH)
+			put_half(u->code, r->pos,
+				 rvc_cb(get_u16(u->code + r->pos),
+					(long)diff, r->sym->name));
+		else
+			put_half(u->code, r->pos,
+				 rvc_cj(get_u16(u->code + r->pos),
+					(long)diff, r->sym->name));
+		return;
+	}
+
+	old = get_u32(u->code + r->pos);
+
+	switch (r->kind) {
+	case R_HI20:
+		target = add_addend(resolve_sym(r->sym), r->addend, "text",
+				    r->sym->name);
+		data = hi20_value((long long)target, r->sym->name);
+		put_ins(u->code, r->pos,
+			(old & 0xfff) | ((unsigned int)data << 12));
+		return;
+	case R_PCREL_HI20:
+		target = add_addend(resolve_sym(r->sym), r->addend, "text",
+				    r->sym->name);
+		diff = (long long)target - (long long)pos_abs;
+		data = hi20_value(diff, r->sym->name);
+		put_ins(u->code, r->pos,
+			(old & 0xfff) | ((unsigned int)data << 12));
+		return;
+	case R_LO12I:
+		target = add_addend(resolve_sym(r->sym), r->addend, "text",
+				    r->sym->name);
+		lo = lo12_value((long long)target);
+		put_ins(u->code, r->pos,
+			(old & 0x000fffffUL) |
+				(((unsigned long)lo & 0xfff) << 20));
+		return;
+	case R_LO12S:
+		target = add_addend(resolve_sym(r->sym), r->addend, "text",
+				    r->sym->name);
+		lo = lo12_value((long long)target);
+		old &= ~((0x7fu << 25) | (0x1fu << 7));
+		old |= (((unsigned long)lo >> 5) & 0x7f) << 25;
+		old |= ((unsigned long)lo & 0x1f) << 7;
+		put_ins(u->code, r->pos, old);
+		return;
+	case R_PCREL_LO12I: {
+		struct reloc *hi = find_pcrel_hi(u, r);
+
+		if (!hi)
+			fatal("missing PCREL_HI20 pair for '%s'",
+			      r->sym->name);
+		target = add_addend(resolve_sym(hi->sym), hi->addend, "text",
+				    hi->sym->name);
+		{
+			unsigned long hi_pos = text_section_base +
+					       u->text_base +
+					       (unsigned long)hi->pos;
+			long long value = (long long)target -
+					  (long long)hi_pos;
+
+			lo = lo12_value(value);
+		}
+		put_ins(u->code, r->pos,
+			(old & 0x000fffffUL) |
+				(((unsigned long)lo & 0xfff) << 20));
+		return;
+	}
+	case R_PCREL_LO12S: {
+		struct reloc *hi = find_pcrel_hi(u, r);
+
+		if (!hi)
+			fatal("missing PCREL_HI20 pair for '%s'",
+			      r->sym->name);
+		target = add_addend(resolve_sym(hi->sym), hi->addend, "text",
+				    hi->sym->name);
+		{
+			unsigned long hi_pos = text_section_base +
+					       u->text_base +
+					       (unsigned long)hi->pos;
+			long long value = (long long)target -
+					  (long long)hi_pos;
+
+			lo = lo12_value(value);
+		}
+		old &= ~((0x7fu << 25) | (0x1fu << 7));
+		old |= (((unsigned long)lo >> 5) & 0x7f) << 25;
+		old |= ((unsigned long)lo & 0x1f) << 7;
+		put_ins(u->code, r->pos, old);
+		return;
+	}
+	case R_JAL:
+		target = add_addend(resolve_sym(r->sym), r->addend, "text",
+				    r->sym->name);
+		diff = (long long)target - (long long)pos_abs;
+		if ((diff & 1) || diff < -(1LL << 20) || diff >= (1LL << 20))
+			fatal("program too large for direct call to '%s'",
+			      r->sym->name);
+		put_ins(u->code, r->pos,
+			enc_j(0x6f, (int)((old >> 7) & 0x1f), (int)diff));
+		return;
+	case R_BRANCH:
+		target = add_addend(resolve_sym(r->sym), r->addend, "text",
+				    r->sym->name);
+		diff = (long long)target - (long long)pos_abs;
+		if ((diff & 1) || diff < -(1LL << 12) || diff >= (1LL << 12))
+			fatal("branch out of range for '%s'", r->sym->name);
+		put_ins(u->code, r->pos,
+			enc_b(0x63, (int)((old >> 12) & 7),
+			      (int)((old >> 15) & 0x1f),
+			      (int)((old >> 20) & 0x1f), (int)diff));
+		return;
+	case R_CALL:
+		target = add_addend(resolve_sym(r->sym), r->addend, "text",
+				    r->sym->name);
+		if (r->pos > u->code_len - 8)
+			fatal("truncated call relocation in '%s'", r->sym->name);
+		diff = (long long)target - (long long)pos_abs;
+		{
+			unsigned int old2 = get_u32(u->code + r->pos + 4);
+			unsigned long hi = hi20_value(diff, r->sym->name);
+			unsigned long v = hi << 12;
+			long lo2 = lo12_value(diff - (long long)v);
+
+			if ((old & 0x7f) != 0x17 ||
+			    (old2 & 0x7f) != 0x67)
+				fatal("invalid call relocation pair for '%s'",
+				      r->sym->name);
+			put_ins(u->code, r->pos,
+				(old & 0xfff) | ((unsigned int)hi << 12));
+			put_ins(u->code, r->pos + 4,
+				(old2 & 0x000fffffUL) |
+					(((unsigned long)lo2 & 0xfff) << 20));
+		}
+		return;
+	default:
+		fatal("bad relocation kind %d in object", r->kind);
+	}
+}
+
+static void patch_unit_relocs(struct unit *u, unsigned long text_section_base,
+			      unsigned long data_section_base)
 {
 	struct reloc *r;
 	struct sym *s;
 
 	for (r = u->relocs; r; r = r->next) {
-		unsigned long target;
-		unsigned long pos_abs;
-		unsigned int old;
-		unsigned int ins;
+		int need = 4;
 
-		if (r->pos < 0 || r->pos > u->code_len - 4 || (r->pos % 4))
+		if (r->kind == R_RVC_BRANCH || r->kind == R_RVC_JUMP)
+			need = 2;
+		else if (r->kind == R_CALL)
+			need = 8;
+		if (r->pos < 0 || r->pos > u->code_len - need)
 			fatal("text relocation out of range in '%s'",
 			      r->sym->name);
-		target = add_addend(resolve_sym(r->sym), r->addend, "text",
-				    r->sym->name);
-		if (target > 0x7fffffffUL)
-			fatal("relocation target out of range for '%s'",
-			      r->sym->name);
-		pos_abs = text_section_base + u->text_base +
-			  (unsigned long)r->pos;
-
-		memcpy(&old, u->code + r->pos, 4);
-		switch (r->kind) {
-		case R_HI20: {
-			long hi = (long)((target + 0x800) >> 12);
-
-			if (hi > (1L << 19) - 1)
-				fatal("relocation target out of range for '%s'",
-				      r->sym->name);
-			ins = enc_u(0x37, (int)rd_of(old), (int)hi);
-			break;
-		}
-		case R_LO12I: {
-			long lo = (long)(target & 0xfff);
-
-			if (lo & 0x800)
-				lo -= 0x1000;
-			ins = enc_i(0x13, (int)rd_of(old), 0, (int)rs1_of(old),
-				    (int)lo);
-			break;
-		}
-		case R_JAL: {
-			long off = (long)target - (long)pos_abs;
-
-			if (off & 1)
-				fatal("internal error: unaligned call");
-			if (off < -(1L << 20) || off >= (1L << 20))
-				fatal("program too large for direct call");
-			ins = enc_j(0x6f, (int)rd_of(old), (int)off);
-			break;
-		}
-		default:
-			fatal("bad relocation kind %d in object", r->kind);
-			return;
-		}
-		put_ins(u->code, r->pos, ins);
+		patch_one_text_reloc(u, r, text_section_base);
 	}
 
 	for (s = u->syms; s; s = s->next) {
@@ -281,9 +503,14 @@ static void patch_unit_relocs(struct unit *u, unsigned long text_section_base)
 		for (dr = s->drel; dr; dr = dr->next) {
 			unsigned long target;
 			unsigned long at;
+			unsigned long place;
+			unsigned long value;
 
-			if (dr->offset < 0 || s->size < 8 ||
-			    dr->offset > s->size - 8)
+			if (dr->offset < 0 || dr->size <= 0 ||
+			    (dr->size != 1 && dr->size != 2 &&
+			     dr->size != 4 && dr->size != 8) ||
+			    s->size < dr->size ||
+			    dr->offset > s->size - dr->size)
 				fatal("data relocation out of range for '%s'",
 				      s->name);
 			target = add_addend(resolve_sym(dr->sym), dr->addend,
@@ -291,10 +518,38 @@ static void patch_unit_relocs(struct unit *u, unsigned long text_section_base)
 			at = (unsigned long)s->offset +
 			     (unsigned long)dr->offset;
 			if (at > (unsigned long)u->data_len ||
-			    (unsigned long)u->data_len - at < 8)
+			    (unsigned long)u->data_len - at <
+				    (unsigned long)dr->size)
 				fatal("data relocation out of range for '%s'",
 				      s->name);
-			put64(u->data + at, target);
+			place = data_section_base + u->data_base + at;
+			switch (dr->kind) {
+			case DR_ABS:
+				if (dr->size == 4 &&
+				    target > 0xffffffffUL)
+					fatal("32-bit data relocation overflow for '%s'",
+					      s->name);
+				put_bytes(u->data + at, target, dr->size);
+				break;
+			case DR_PCREL:
+				value = (unsigned long)
+					((long long)target - (long long)place);
+				put_bytes(u->data + at, value, dr->size);
+				break;
+			case DR_ADD:
+				value = get_bytes(u->data + at, dr->size) +
+					target;
+				put_bytes(u->data + at, value, dr->size);
+				break;
+			case DR_SUB:
+				value = get_bytes(u->data + at, dr->size) -
+					target;
+				put_bytes(u->data + at, value, dr->size);
+				break;
+			default:
+				fatal("bad data relocation kind for '%s'",
+				      s->name);
+			}
 		}
 	}
 }
@@ -395,13 +650,14 @@ void link_and_write(const char *path)
 	unsigned long text_section_base;
 	unsigned long data_section_base;
 	unsigned long bss_section_base;
+	unsigned long data_file_off;
 	unsigned long file_len;
 	unsigned long mem_len;
 	unsigned long entry;
+	unsigned int out_flags = EF_RISCV_FLOAT_ABI_DOUBLE;
 	unsigned char *text;
 	unsigned char *data;
 	unsigned char *file;
-	int data_file_off;
 	int fd;
 	int written;
 
@@ -441,7 +697,16 @@ void link_and_write(const char *path)
 	}
 
 	text_section_base = USER_BASE + TEXT_FILE_OFF;
-	data_section_base = align_up(text_section_base + text_off,
+
+	/*
+	 * Put writable data in its own page-aligned segment so the text
+	 * segment can stay read+execute only.
+	 */
+	data_file_off = align_up(TEXT_FILE_OFF + text_off, 0x1000,
+				 "data file offset");
+	if (data_file_off > (unsigned long)INT_MAX)
+		fatal("program too large");
+	data_section_base = align_up(USER_BASE + data_file_off,
 				     section_align(SEC_DATA), "data section");
 	bss_section_base = align_up(data_section_base + data_off,
 				    section_align(SEC_BSS), "bss section");
@@ -468,7 +733,7 @@ void link_and_write(const char *path)
 		}
 	}
 	for (u = units; u; u = u->next)
-		patch_unit_relocs(u, text_section_base);
+		patch_unit_relocs(u, text_section_base, data_section_base);
 
 	l = link_find("__cc_start");
 	if (!l)
@@ -488,8 +753,7 @@ void link_and_write(const char *path)
 			       (size_t)u->data_len);
 	}
 
-	data_file_off = (int)(data_section_base - USER_BASE);
-	file_len = (unsigned long)data_file_off + data_off;
+	file_len = data_file_off + data_off;
 	mem_len = (bss_section_base - USER_BASE) + bss_off;
 	if (file_len > (unsigned long)INT_MAX ||
 	    mem_len > (unsigned long)INT_MAX)
@@ -513,23 +777,39 @@ void link_and_write(const char *path)
 	put64(file + 24, entry);
 	put64(file + 32, 64); /* e_phoff */
 	put64(file + 40, 0); /* e_shoff */
-	put32(file + 48, EF_RISCV_FLOAT_ABI_DOUBLE); /* e_flags: hard-FP */
+	for (u = units; u; u = u->next) {
+		if (u->uses_rvc) {
+			out_flags |= 1; /* EF_RISCV_RVC */
+			break;
+		}
+	}
+	put32(file + 48, out_flags);
 	put16(file + 52, 64); /* e_ehsize */
 	put16(file + 54, 56); /* e_phentsize */
-	put16(file + 56, 1); /* e_phnum */
+	put16(file + 56, 2); /* e_phnum */
 	put16(file + 58, 0); /* e_shentsize */
 	put16(file + 60, 0); /* e_shnum */
 	put16(file + 62, 0); /* e_shstrndx */
 
-	/* program header: one RWX PT_LOAD */
+	/* program header 0: headers + text, read+execute */
 	put32(file + 64, 1); /* PT_LOAD */
-	put32(file + 68, 7); /* R|W|X */
+	put32(file + 68, 5); /* R|X */
 	put64(file + 72, 0); /* p_offset */
 	put64(file + 80, USER_BASE);
 	put64(file + 88, USER_BASE);
-	put64(file + 96, file_len);
-	put64(file + 104, mem_len > file_len ? mem_len : file_len);
+	put64(file + 96, data_file_off);
+	put64(file + 104, data_file_off);
 	put64(file + 112, 0x1000);
+
+	/* program header 1: data + bss, read+write, bss outside the file */
+	put32(file + 120, 1); /* PT_LOAD */
+	put32(file + 124, 6); /* R|W */
+	put64(file + 128, data_file_off);
+	put64(file + 136, USER_BASE + data_file_off);
+	put64(file + 144, USER_BASE + data_file_off);
+	put64(file + 152, data_off);
+	put64(file + 160, mem_len - data_file_off);
+	put64(file + 168, 0x1000);
 
 	fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0755);
 	if (fd < 0)

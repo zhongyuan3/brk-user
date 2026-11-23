@@ -2152,6 +2152,8 @@ static void add_data_reloc(struct sym *s, int offset, struct sym *target,
 	struct data_reloc *dr = xcalloc(1, sizeof(*dr));
 
 	dr->offset = offset;
+	dr->size = 8;
+	dr->kind = DR_ABS;
 	dr->sym = target;
 	dr->addend = addend;
 	dr->next = s->drel;

@@ -159,6 +159,8 @@ void write_object(const char *path, struct unit *u)
 		struct data_reloc *dr;
 
 		for (dr = arr[i]->drel; dr; dr = dr->next) {
+			if (dr->size != 8 || dr->kind != DR_ABS)
+				fatal("internal error: CCO2 cannot encode this data relocation");
 			buf_u32(&b, (unsigned int)i);
 			buf_u32(&b,
 				obj_u32(dr->offset, "data relocation offset"));
@@ -429,6 +431,8 @@ struct unit *read_object(const char *path)
 			      own->name, path);
 		dr = xcalloc(1, sizeof(*dr));
 		dr->offset = off;
+		dr->size = 8;
+		dr->kind = DR_ABS;
 		dr->sym = arr[target];
 		dr->addend = (long)addend;
 		dr->next = own->drel;

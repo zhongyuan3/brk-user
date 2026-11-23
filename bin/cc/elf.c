@@ -22,6 +22,7 @@
 #define SHT_STRTAB 3
 #define SHT_RELA 4
 #define SHT_NOBITS 8
+#define SHT_RISCV_ATTRIBUTES 0x70000003
 
 #define SHF_WRITE 0x1
 #define SHF_ALLOC 0x2
@@ -38,11 +39,32 @@
 #define STT_OBJECT 1
 #define STT_FUNC 2
 #define STT_SECTION 3
+#define STT_FILE 4
 
+#define R_RISCV_32 1
 #define R_RISCV_64 2
+#define R_RISCV_32_PCREL 7
+#define R_RISCV_BRANCH 16
 #define R_RISCV_JAL 17
+#define R_RISCV_CALL 18
+#define R_RISCV_CALL_PLT 19
+#define R_RISCV_PCREL_HI20 23
+#define R_RISCV_PCREL_LO12_I 24
+#define R_RISCV_PCREL_LO12_S 25
 #define R_RISCV_HI20 26
 #define R_RISCV_LO12_I 27
+#define R_RISCV_LO12_S 28
+#define R_RISCV_ADD8 33
+#define R_RISCV_ADD16 34
+#define R_RISCV_ADD32 35
+#define R_RISCV_ADD64 36
+#define R_RISCV_SUB8 37
+#define R_RISCV_SUB16 38
+#define R_RISCV_SUB32 39
+#define R_RISCV_SUB64 40
+#define R_RISCV_ALIGN 43
+#define R_RISCV_RVC_BRANCH 44
+#define R_RISCV_RVC_JUMP 45
 #define R_RISCV_RELAX 51
 
 #define ELF_MAX_BYTES 0x40000000
@@ -56,6 +78,7 @@ enum {
 	SH_RELA_DATA,
 	SH_SYMTAB,
 	SH_STRTAB,
+	SH_ATTR,
 	SH_SHSTRTAB,
 	SH_COUNT,
 };
@@ -190,6 +213,7 @@ void write_elf_object(const char *path, struct unit *u)
 	struct buf rela_data;
 	struct buf symtab;
 	struct buf strtab;
+	struct buf attr;
 	struct buf shstrtab;
 	struct sym **arr;
 	int *symidx;
@@ -343,8 +367,10 @@ void write_elf_object(const char *path, struct unit *u)
 			int idx = -1;
 			int j;
 
-			if (dr->offset < 0 || s->size < 8 ||
-			    dr->offset > s->size - 8)
+			if (dr->offset < 0 || dr->kind != DR_ABS ||
+			    (dr->size != 4 && dr->size != 8) ||
+			    s->size < dr->size ||
+			    dr->offset > s->size - dr->size)
 				fatal("data relocation out of range for '%s'",
 				      s->name);
 			for (j = 0; j < nsyms; j++) {
@@ -355,7 +381,8 @@ void write_elf_object(const char *path, struct unit *u)
 			}
 			if (idx < 0)
 				fatal("internal error: data relocation target is not in the symbol table");
-			elf_rela(&rela_data, at, R_RISCV_64,
+			elf_rela(&rela_data, at,
+				 dr->size == 4 ? R_RISCV_32 : R_RISCV_64,
 				 (unsigned int)idx, dr->addend);
 		}
 	}
@@ -364,12 +391,32 @@ void write_elf_object(const char *path, struct unit *u)
 	data_align = elf_section_align(u, SEC_DATA);
 	bss_align = elf_section_align(u, SEC_BSS);
 
+	{
+		static const char arch[] = "rv64i2p1_m2p0_f2p2_d2p2";
+		/* stack-align tag+value, arch tag, arch string including NUL */
+		unsigned int attrs_len = 3 + (unsigned int)sizeof(arch);
+		unsigned int sub_len = 4 + 1 + attrs_len;
+		unsigned int vendor_len = 4 + 6 + 1 + 4 + attrs_len;
+
+		buf_init(&attr);
+		buf_byte(&attr, 'A');
+		buf_u32(&attr, vendor_len);
+		elf_append(&attr, "riscv", 6);
+		buf_byte(&attr, 1); /* Tag_File */
+		buf_u32(&attr, sub_len);
+		buf_byte(&attr, 4);  /* Tag_RISCV_stack_align */
+		buf_byte(&attr, 16);
+		buf_byte(&attr, 5);  /* Tag_RISCV_arch */
+		elf_append(&attr, arch, (int)sizeof(arch));
+	}
+
 	buf_init(&shstrtab);
 	buf_byte(&shstrtab, 0);
 	{
 		static const char *const names[SH_COUNT] = {
 			"", ".text", ".data", ".bss", ".rela.text",
-			".rela.data", ".symtab", ".strtab", ".shstrtab",
+			".rela.data", ".symtab", ".strtab",
+			".riscv.attributes", ".shstrtab",
 		};
 
 		for (i = 1; i < SH_COUNT; i++)
@@ -419,6 +466,11 @@ void write_elf_object(const char *path, struct unit *u)
 	shsize[SH_STRTAB] = (unsigned long)strtab.len;
 	shalign[SH_STRTAB] = 1;
 	elf_append(&out, strtab.data, strtab.len);
+
+	shoff[SH_ATTR] = (unsigned long)out.len;
+	shsize[SH_ATTR] = (unsigned long)attr.len;
+	shalign[SH_ATTR] = 1;
+	elf_append(&out, attr.data, attr.len);
 
 	shoff[SH_SHSTRTAB] = (unsigned long)out.len;
 	shsize[SH_SHSTRTAB] = (unsigned long)shstrtab.len;
@@ -498,6 +550,9 @@ void write_elf_object(const char *path, struct unit *u)
 		case SH_SHSTRTAB:
 			type = SHT_STRTAB;
 			break;
+		case SH_ATTR:
+			type = SHT_RISCV_ATTRIBUTES;
+			break;
 		default:
 			break;
 		}
@@ -525,6 +580,7 @@ void write_elf_object(const char *path, struct unit *u)
 	free(rela_data.data);
 	free(symtab.data);
 	free(strtab.data);
+	free(attr.data);
 	free(shstrtab.data);
 }
 
@@ -538,6 +594,13 @@ struct elf_file {
 	const char *path;
 };
 
+enum {
+	ESEC_IGNORE = 0,
+	ESEC_TEXT,
+	ESEC_DATA,
+	ESEC_BSS,
+};
+
 struct elf_section {
 	unsigned int name;
 	unsigned int type;
@@ -548,6 +611,8 @@ struct elf_section {
 	unsigned int info;
 	unsigned long align;
 	unsigned long entsize;
+	int kind;
+	unsigned long base;
 };
 
 static void er_need(const struct elf_file *e, unsigned long off,
@@ -594,6 +659,62 @@ static void er_check_section(const struct elf_file *e,
 	er_need(e, s->offset, s->size, name);
 }
 
+static unsigned long er_align(unsigned long n, unsigned long a, const char *path)
+{
+	unsigned long pad;
+
+	if (a == 0)
+		a = 1;
+	if (a > 4096 || (a & (a - 1)))
+		fatal("bad section alignment in ELF object '%s'", path);
+	pad = (a - n % a) % a;
+	if (n > (unsigned long)INT_MAX - pad)
+		fatal("section too large in ELF object '%s'", path);
+	return n + pad;
+}
+
+static void er_append(struct buf *b, const unsigned char *p, unsigned long n,
+		      const char *path)
+{
+	if (n > (unsigned long)INT_MAX || b->len > INT_MAX - (int)n)
+		fatal("section too large in ELF object '%s'", path);
+	buf_grow(b, (int)n);
+	if (n)
+		memcpy(b->data + b->len, p, (size_t)n);
+	b->len += (int)n;
+}
+
+static int er_sec_kind(const struct elf_section *s, const char *name)
+{
+	if (!(s->flags & SHF_ALLOC))
+		return ESEC_IGNORE;
+	if (!strcmp(name, ".eh_frame") || !strncmp(name, ".eh_frame.", 10) ||
+	    !strcmp(name, ".eh_frame_hdr") ||
+	    !strcmp(name, ".gcc_except_table") ||
+	    !strncmp(name, ".gcc_except_table.", 18))
+		return ESEC_IGNORE;
+	if (s->flags & SHF_EXECINSTR)
+		return ESEC_TEXT;
+	if (s->type == SHT_NOBITS)
+		return ESEC_BSS;
+	return ESEC_DATA;
+}
+
+static int er_kind_sec(int kind)
+{
+	switch (kind) {
+	case ESEC_TEXT:
+		return SEC_TEXT;
+	case ESEC_DATA:
+		return SEC_DATA;
+	case ESEC_BSS:
+		return SEC_BSS;
+	default:
+		fatal("internal error: bad ELF section kind");
+		return 0;
+	}
+}
+
 struct unit *read_elf_object(const char *path, const unsigned char *buf,
 			     int len)
 {
@@ -602,21 +723,19 @@ struct unit *read_elf_object(const char *path, const unsigned char *buf,
 	struct unit *u;
 	struct sym *tail = NULL;
 	struct sym **byidx;
+	struct buf textbuf;
+	struct buf databuf;
 	unsigned long shoff;
+	unsigned long bss_len = 0;
 	unsigned int nsecs;
 	unsigned int shentsize;
 	unsigned int shstrndx;
-	int text_sec = -1;
-	int data_sec = -1;
-	int bss_sec = -1;
 	int symtab_sec = -1;
 	int strtab_sec = -1;
-	int rela_text_sec = -1;
-	int rela_data_sec = -1;
-	unsigned long shstr_off = 0;
 	unsigned long shstr_size = 0;
 	const char *shstr = "";
 	unsigned int nsyms = 0;
+	unsigned int eflags = 0;
 	unsigned int i;
 
 	memset(&e, 0, sizeof(e));
@@ -635,6 +754,7 @@ struct unit *read_elf_object(const char *path, const unsigned char *buf,
 		fatal("'%s' is not a RISC-V ELF object", path);
 	if (er_u32(&e, 20, "e_version") != 1)
 		fatal("unsupported ELF version in '%s'", path);
+	eflags = er_u32(&e, 48, "e_flags");
 
 	shoff = er_u64(&e, 40, "e_shoff");
 	shentsize = er_u16(&e, 58, "e_shentsize");
@@ -674,9 +794,8 @@ struct unit *read_elf_object(const char *path, const unsigned char *buf,
 			fatal("section name table is not a string table in '%s'",
 			      path);
 		er_check_section(&e, sh, ".shstrtab");
-		shstr_off = sh->offset;
 		shstr_size = sh->size;
-		shstr = (const char *)(buf + shstr_off);
+		shstr = (const char *)(buf + sh->offset);
 	}
 
 	for (i = 1; i < nsecs; i++) {
@@ -689,30 +808,11 @@ struct unit *read_elf_object(const char *path, const unsigned char *buf,
 		if (!memchr(name, '\0', (size_t)(shstr_size - secs[i].name)))
 			fatal("unterminated section name in ELF object '%s'",
 			      path);
-		if (!strcmp(name, ".text"))
-			text_sec = (int)i;
-		else if (!strcmp(name, ".data"))
-			data_sec = (int)i;
-		else if (!strcmp(name, ".bss"))
-			bss_sec = (int)i;
-		else if (!strcmp(name, ".symtab"))
+		if (!strcmp(name, ".symtab"))
 			symtab_sec = (int)i;
 		else if (!strcmp(name, ".strtab"))
 			strtab_sec = (int)i;
-		else if (!strcmp(name, ".rela.text"))
-			rela_text_sec = (int)i;
-		else if (!strcmp(name, ".rela.data"))
-			rela_data_sec = (int)i;
 	}
-
-	if (text_sec >= 0)
-		er_check_section(&e, &secs[text_sec], ".text");
-	if (data_sec >= 0)
-		er_check_section(&e, &secs[data_sec], ".data");
-	if (bss_sec >= 0 && secs[bss_sec].type != SHT_NOBITS)
-		fatal(".bss is not SHT_NOBITS in ELF object '%s'", path);
-	if (text_sec < 0 || data_sec < 0 || bss_sec < 0)
-		fatal("ELF object '%s' is missing .text/.data/.bss", path);
 	if (symtab_sec < 0 || strtab_sec < 0)
 		fatal("ELF object '%s' is missing a symbol table", path);
 	if (secs[symtab_sec].type != SHT_SYMTAB ||
@@ -725,27 +825,58 @@ struct unit *read_elf_object(const char *path, const unsigned char *buf,
 	if (secs[symtab_sec].link != (unsigned int)strtab_sec)
 		fatal("symbol table does not reference .strtab in '%s'", path);
 
+	buf_init(&textbuf);
+	buf_init(&databuf);
+	for (i = 1; i < nsecs; i++) {
+		struct elf_section *s = &secs[i];
+		const char *name = shstr + s->name;
+		unsigned long align;
+
+		s->kind = er_sec_kind(s, name);
+		if (s->kind == ESEC_IGNORE)
+			continue;
+		er_check_section(&e, s, name);
+		align = s->align;
+		if (align == 0)
+			align = 1;
+		if (align > 4096 || (align & (align - 1)))
+			fatal("bad section alignment in ELF object '%s'", path);
+		switch (s->kind) {
+		case ESEC_TEXT:
+			buf_align(&textbuf, (int)align);
+			s->base = (unsigned long)textbuf.len;
+			er_append(&textbuf, buf + s->offset, s->size, path);
+			break;
+		case ESEC_DATA:
+			buf_align(&databuf, (int)align);
+			s->base = (unsigned long)databuf.len;
+			er_append(&databuf, buf + s->offset, s->size, path);
+			break;
+		case ESEC_BSS:
+			bss_len = er_align(bss_len, align, path);
+			if (s->size > (unsigned long)INT_MAX - bss_len)
+				fatal("section too large in ELF object '%s'",
+				      path);
+			s->base = bss_len;
+			bss_len += s->size;
+			break;
+		default:
+			break;
+		}
+	}
+
 	nsyms = (unsigned int)(secs[symtab_sec].size / 24);
 	if (nsyms == 0)
 		fatal("ELF object '%s' has an empty symbol table", path);
 	byidx = xcalloc(nsyms, sizeof(*byidx));
 
-	if (secs[text_sec].size > (unsigned long)INT_MAX ||
-	    secs[data_sec].size > (unsigned long)INT_MAX ||
-	    secs[bss_sec].size > (unsigned long)INT_MAX)
-		fatal("section too large in ELF object '%s'", path);
 	u = xcalloc(1, sizeof(*u));
-	u->code_len = (int)secs[text_sec].size;
-	u->data_len = (int)secs[data_sec].size;
-	u->bss_len = (int)secs[bss_sec].size;
-	u->code = xmalloc((size_t)(u->code_len > 0 ? u->code_len : 1));
-	if (u->code_len)
-		memcpy(u->code, buf + secs[text_sec].offset,
-		       (size_t)u->code_len);
-	u->data = xmalloc((size_t)(u->data_len > 0 ? u->data_len : 1));
-	if (u->data_len)
-		memcpy(u->data, buf + secs[data_sec].offset,
-		       (size_t)u->data_len);
+	u->code = textbuf.data;
+	u->code_len = textbuf.len;
+	u->data = databuf.data;
+	u->data_len = databuf.len;
+	u->bss_len = (int)bss_len;
+	u->uses_rvc = (eflags & 1) != 0;
 
 	{
 		const struct elf_section *st = &secs[symtab_sec];
@@ -765,7 +896,36 @@ struct unit *read_elf_object(const char *path, const unsigned char *buf,
 			const char *name;
 			struct sym *s;
 
-			if (type == STT_SECTION)
+			if (type == STT_SECTION) {
+				if (shndx < nsecs &&
+				    secs[shndx].kind != ESEC_IGNORE) {
+					const struct elf_section *ss =
+						&secs[shndx];
+
+					s = xcalloc(1, sizeof(*s));
+					s->name = xstrdup(shstr + ss->name);
+					s->sec = er_kind_sec(ss->kind);
+					s->defined = true;
+					s->is_static = true;
+					s->offset = (int)ss->base;
+					s->size = (int)ss->size;
+					s->align = (int)(ss->align ?
+								 ss->align : 1);
+					if (s->align < 1 || s->align > 4096 ||
+					    (s->align & (s->align - 1)))
+						s->align = 1;
+					byidx[i] = s;
+					if (tail)
+						tail->next = s;
+					else
+						u->syms = s;
+					tail = s;
+				}
+				continue;
+			}
+			if (type == STT_FILE)
+				continue;
+			if (shndx == SHN_ABS)
 				continue;
 			if (nameoff >= strsz)
 				fatal("bad symbol name offset in ELF object '%s'",
@@ -787,37 +947,34 @@ struct unit *read_elf_object(const char *path, const unsigned char *buf,
 				s->offset = 0;
 				s->size = 0;
 				s->align = 8;
-			} else if (shndx == SHN_ABS) {
-				fatal("absolute symbol '%s' in '%s' is not supported",
-				      name, path);
 			} else if (shndx == SHN_COMMON) {
 				fatal("common symbol '%s' in '%s' is not supported",
 				      name, path);
+			} else if (shndx >= nsecs) {
+				fatal("symbol '%s' in '%s' has an unsupported section index",
+				      name, path);
 			} else {
-				const struct elf_section *ss;
+				const struct elf_section *ss = &secs[shndx];
 
-				if ((int)shndx == text_sec)
-					s->sec = SEC_TEXT;
-				else if ((int)shndx == data_sec)
-					s->sec = SEC_DATA;
-				else if ((int)shndx == bss_sec)
-					s->sec = SEC_BSS;
-				else
-					fatal("symbol '%s' in '%s' has an unsupported section index",
-					      name, path);
-				ss = &secs[shndx];
+				if (ss->kind == ESEC_IGNORE)
+					continue;
 				if (value > ss->size ||
 				    size > ss->size - value)
 					fatal("symbol '%s' is outside its section in '%s'",
 					      name, path);
+				if (ss->base + value >
+				    (unsigned long)INT_MAX - size)
+					fatal("symbol offset too large in '%s'",
+					      path);
 				s->defined = true;
-				s->offset = (int)value;
+				s->sec = er_kind_sec(ss->kind);
+				s->offset = (int)(ss->base + value);
 				s->size = (int)size;
-				s->align = 1;
-				if (ss->align > 0 && (ss->align & (ss->align - 1)) == 0)
-					s->align = (int)ss->align;
-				if (s->align < 1 || s->align > 4096)
-					s->align = 8;
+				s->align = (int)(ss->align ?
+							 ss->align : 1);
+				if (s->align < 1 || s->align > 4096 ||
+				    (s->align & (s->align - 1)))
+					s->align = 1;
 			}
 			byidx[i] = s;
 			if (tail)
@@ -828,111 +985,196 @@ struct unit *read_elf_object(const char *path, const unsigned char *buf,
 		}
 	}
 
-	if (rela_text_sec >= 0) {
-		const struct elf_section *rs = &secs[rela_text_sec];
+	for (i = 1; i < nsecs; i++) {
+		const struct elf_section *rs = &secs[i];
+		unsigned int tgt;
+		unsigned long count;
+		unsigned long j;
 
-		if (rs->type != SHT_RELA || rs->entsize != 24 ||
-		    rs->size % 24 || rs->link != (unsigned int)symtab_sec ||
-		    rs->info != (unsigned int)text_sec)
-			fatal("bad .rela.text in ELF object '%s'", path);
-		er_check_section(&e, rs, ".rela.text");
-		for (i = 0; i < rs->size / 24; i++) {
-			unsigned long o = rs->offset + (unsigned long)i * 24;
+		if (rs->type != SHT_RELA)
+			continue;
+		if (rs->info >= nsecs)
+			fatal("bad relocation target section in ELF object '%s'",
+			      path);
+		tgt = rs->info;
+		if (secs[tgt].kind == ESEC_IGNORE)
+			continue;
+		if (rs->entsize != 24 || rs->size % 24 ||
+		    rs->link != (unsigned int)symtab_sec)
+			fatal("bad relocation section in ELF object '%s'", path);
+		er_check_section(&e, rs, "relocation section");
+		count = rs->size / 24;
+		for (j = 0; j < count; j++) {
+			unsigned long o = rs->offset + j * 24;
 			unsigned long off = er_u64(&e, o, "r_offset");
-			unsigned long info = er_u64(&e, o + 8, "r_info");
-			unsigned int type = (unsigned int)(info & 0xffffffffu);
+			unsigned long info =
+				er_u64(&e, o + 8, "r_info");
+			unsigned int type =
+				(unsigned int)(info & 0xffffffffu);
 			unsigned int target = (unsigned int)(info >> 32);
 			long addend = (long)er_u64(&e, o + 16, "r_addend");
-			struct reloc *r;
 
-			if (off > (unsigned long)u->code_len ||
-			    (unsigned long)u->code_len - off < 4)
-				fatal("text relocation out of range in ELF object '%s'",
-				      path);
-			if (off % 4)
-				fatal("unaligned text relocation in ELF object '%s'",
-				      path);
-			if (type == R_RISCV_RELAX)
+			if (type == R_RISCV_RELAX || type == R_RISCV_ALIGN)
 				continue;
 			if (target >= nsyms || !byidx[target])
-				fatal("text relocation target is not a symbol in ELF object '%s'",
-				      path);
-			r = xcalloc(1, sizeof(*r));
-			r->pos = (int)off;
-			r->sym = byidx[target];
-			r->addend = addend;
-			switch (type) {
-			case R_RISCV_HI20:
-				r->kind = R_HI20;
-				break;
-			case R_RISCV_LO12_I:
-				r->kind = R_LO12I;
-				break;
-			case R_RISCV_JAL:
-				r->kind = R_JAL;
-				break;
-			default:
-				fatal("unsupported RISC-V text relocation %u in ELF object '%s'",
-				      type, path);
-			}
-			r->next = u->relocs;
-			u->relocs = r;
-		}
-	}
+				fatal("relocation target %u (type %u, section %s) is not a symbol in ELF object '%s'",
+				      target, type,
+				      shstr + secs[tgt].name, path);
 
-	if (rela_data_sec >= 0) {
-		const struct elf_section *rs = &secs[rela_data_sec];
+			if (secs[tgt].kind == ESEC_TEXT) {
+				unsigned long isz =
+					(type == R_RISCV_RVC_BRANCH ||
+					 type == R_RISCV_RVC_JUMP) ? 2 : 4;
+				struct reloc *r;
+				int kind;
 
-		if (rs->type != SHT_RELA || rs->entsize != 24 ||
-		    rs->size % 24 || rs->link != (unsigned int)symtab_sec ||
-		    rs->info != (unsigned int)data_sec)
-			fatal("bad .rela.data in ELF object '%s'", path);
-		er_check_section(&e, rs, ".rela.data");
-		for (i = 0; i < rs->size / 24; i++) {
-			unsigned long o = rs->offset + (unsigned long)i * 24;
-			unsigned long off = er_u64(&e, o, "r_offset");
-			unsigned long info = er_u64(&e, o + 8, "r_info");
-			unsigned int type = (unsigned int)(info & 0xffffffffu);
-			unsigned int target = (unsigned int)(info >> 32);
-			long addend = (long)er_u64(&e, o + 16, "r_addend");
-			struct sym *owner = NULL;
-			struct sym *s;
-			struct data_reloc *dr;
-
-			if (off > (unsigned long)u->data_len ||
-			    (unsigned long)u->data_len - off < 8)
-				fatal("data relocation out of range in ELF object '%s'",
-				      path);
-			if (type != R_RISCV_64)
-				fatal("unsupported RISC-V data relocation %u in ELF object '%s'",
-				      type, path);
-			if (target >= nsyms || !byidx[target])
-				fatal("data relocation target is not a symbol in ELF object '%s'",
-				      path);
-			for (s = u->syms; s; s = s->next) {
-				if (!s->defined || s->sec != SEC_DATA ||
-				    s->size < 8)
-					continue;
-				if (off >= (unsigned long)s->offset &&
-				    off + 8 <=
-					    (unsigned long)s->offset +
-						    (unsigned long)s->size) {
-					owner = s;
+				if (off > secs[tgt].size ||
+				    secs[tgt].size - off < isz)
+					fatal("text relocation out of range in ELF object '%s'",
+					      path);
+				switch (type) {
+				case R_RISCV_HI20:
+					kind = R_HI20;
 					break;
+				case R_RISCV_LO12_I:
+					kind = R_LO12I;
+					break;
+				case R_RISCV_LO12_S:
+					kind = R_LO12S;
+					break;
+				case R_RISCV_JAL:
+					kind = R_JAL;
+					break;
+				case R_RISCV_BRANCH:
+					kind = R_BRANCH;
+					break;
+				case R_RISCV_CALL:
+				case R_RISCV_CALL_PLT:
+					kind = R_CALL;
+					break;
+				case R_RISCV_PCREL_HI20:
+					kind = R_PCREL_HI20;
+					break;
+				case R_RISCV_PCREL_LO12_I:
+					kind = R_PCREL_LO12I;
+					break;
+				case R_RISCV_PCREL_LO12_S:
+					kind = R_PCREL_LO12S;
+					break;
+				case R_RISCV_RVC_BRANCH:
+					kind = R_RVC_BRANCH;
+					break;
+				case R_RISCV_RVC_JUMP:
+					kind = R_RVC_JUMP;
+					break;
+				default:
+					fatal("unsupported RISC-V text relocation %u in ELF object '%s'",
+					      type, path);
+				}
+				r = xcalloc(1, sizeof(*r));
+				r->pos = (int)(secs[tgt].base + off);
+				r->kind = kind;
+				r->sym = byidx[target];
+				r->addend = addend;
+				r->next = u->relocs;
+				u->relocs = r;
+			} else if (secs[tgt].kind == ESEC_DATA) {
+				int size;
+				int kind;
+
+				switch (type) {
+				case R_RISCV_32:
+					size = 4;
+					kind = DR_ABS;
+					break;
+				case R_RISCV_64:
+					size = 8;
+					kind = DR_ABS;
+					break;
+				case R_RISCV_32_PCREL:
+					size = 4;
+					kind = DR_PCREL;
+					break;
+				case R_RISCV_ADD8:
+					size = 1;
+					kind = DR_ADD;
+					break;
+				case R_RISCV_ADD16:
+					size = 2;
+					kind = DR_ADD;
+					break;
+				case R_RISCV_ADD32:
+					size = 4;
+					kind = DR_ADD;
+					break;
+				case R_RISCV_ADD64:
+					size = 8;
+					kind = DR_ADD;
+					break;
+				case R_RISCV_SUB8:
+					size = 1;
+					kind = DR_SUB;
+					break;
+				case R_RISCV_SUB16:
+					size = 2;
+					kind = DR_SUB;
+					break;
+				case R_RISCV_SUB32:
+					size = 4;
+					kind = DR_SUB;
+					break;
+				case R_RISCV_SUB64:
+					size = 8;
+					kind = DR_SUB;
+					break;
+				default:
+					fatal("unsupported RISC-V data relocation %u in ELF object '%s'",
+					      type, path);
+				}
+				if (off > secs[tgt].size ||
+				    secs[tgt].size - off <
+					    (unsigned long)size)
+					fatal("data relocation out of range in ELF object '%s'",
+					      path);
+				{
+					unsigned long at = secs[tgt].base + off;
+					struct sym *owner = NULL;
+					struct sym *sym2;
+					struct data_reloc *dr;
+
+					for (sym2 = u->syms; sym2;
+					     sym2 = sym2->next) {
+						if (!sym2->defined ||
+						    sym2->sec != SEC_DATA ||
+						    sym2->size < size)
+							continue;
+						if (at >=
+							    (unsigned long)sym2->offset &&
+						    at + (unsigned long)size <=
+							    (unsigned long)sym2->offset +
+								    (unsigned long)sym2->size) {
+							owner = sym2;
+							break;
+						}
+					}
+					if (!owner)
+						fatal("data relocation is not inside a data symbol in ELF object '%s'",
+						      path);
+					dr = xcalloc(1, sizeof(*dr));
+					dr->offset = (int)(at -
+							   (unsigned long)owner->offset);
+					dr->size = size;
+					dr->kind = kind;
+					dr->sym = byidx[target];
+					dr->addend = addend;
+					dr->next = owner->drel;
+					owner->drel = dr;
 				}
 			}
-			if (!owner)
-				fatal("data relocation is not inside a data symbol in ELF object '%s'",
-				      path);
-			dr = xcalloc(1, sizeof(*dr));
-			dr->offset = (int)(off - (unsigned long)owner->offset);
-			dr->sym = byidx[target];
-			dr->addend = addend;
-			dr->next = owner->drel;
-			owner->drel = dr;
 		}
 	}
 
+	/* Section symbol names are not repeated in the global string table. */
 	free(byidx);
 	free(secs);
 	if (unit_tail)

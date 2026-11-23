@@ -276,8 +276,17 @@ enum {
 	SEC_BSS,
 };
 
+enum {
+	DR_ABS = 0,
+	DR_PCREL,
+	DR_ADD,
+	DR_SUB,
+};
+
 struct data_reloc {
 	int offset;
+	int size;   /* 1, 2, 4 or 8 bytes */
+	int kind;   /* DR_* */
 	struct sym *sym;
 	long addend;
 	struct data_reloc *next;
@@ -413,6 +422,14 @@ enum {
 	R_HI20 = 0,
 	R_LO12I,
 	R_JAL,
+	R_LO12S,
+	R_BRANCH,
+	R_CALL,      /* AUIPC + JALR */
+	R_PCREL_HI20,
+	R_PCREL_LO12I,
+	R_PCREL_LO12S,
+	R_RVC_BRANCH,
+	R_RVC_JUMP,
 };
 
 struct unit {
@@ -423,6 +440,7 @@ struct unit {
 	unsigned char *data;
 	int data_len;
 	int bss_len;
+	bool uses_rvc;
 	unsigned long text_base;
 	unsigned long data_base;
 	unsigned long bss_base;
@@ -481,6 +499,12 @@ struct unit *read_object(const char *path);
 void write_elf_object(const char *path, struct unit *u);
 struct unit *read_elf_object(const char *path, const unsigned char *buf,
 			     int len);
+
+/* static archives (ar) */
+struct archive;
+struct archive *open_archive(const char *path);
+bool archive_has_symbol(struct archive *a, const char *name);
+bool archive_load_symbol(struct archive *a, const char *name);
 void link_and_write(const char *path);
 
 #endif

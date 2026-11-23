@@ -112,10 +112,12 @@ than the psABI's 128-bit type; this remains a follow-up item.
 
 ### 4.3 Object format
 
-`cc -c` now emits standard ELF64 little-endian RISC-V `ET_REL` objects with
-`.text`, `.data`, `.bss`, `.rela.text`, `.rela.data`, `.symtab`, `.strtab`
-and `.shstrtab`, using `R_RISCV_HI20`, `R_RISCV_LO12_I`, `R_RISCV_JAL` and
-`R_RISCV_64` relocations.  The built-in linker consumes them directly.
+`cc -c` emits standard ELF64 little-endian RISC-V `ET_REL` objects with
+`.text`, `.data`, `.bss`, `.rela.text`, `.rela.data`, `.symtab`, `.strtab`,
+`.riscv.attributes` and `.shstrtab`, using standard RISC-V relocations.  The
+built-in linker consumes these objects, GCC-built ELF objects and static
+archives (`-L`/`-l`, on-demand member extraction), including the RVC and
+PC-relative relocation forms used by libc and libgcc.
 
 The legacy private CCO2 format is still readable (and writable with
 `--cco2-object` for compatibility tests).  It carries:

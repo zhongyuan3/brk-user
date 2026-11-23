@@ -6,10 +6,10 @@
 #   make cc-host HOSTCC=gcc
 #   tests/cc/link_tests.sh
 #
-# The generated RISC-V executables are not run here; the test checks that
-# CCO2 serialization round-trips, that CCO1 objects are still readable, that
-# source and object links produce identical images, and that malformed
-# objects and bad link inputs are rejected.
+# The generated RISC-V executables are not run here; the test checks ELF
+# object emission, standard relocations, archive extraction, links against
+# the built libc.a/libgcc.a, source/object image identity, legacy CCO1/CCO2
+# compatibility, and rejection of malformed objects and bad link inputs.
 
 set -u
 
@@ -204,21 +204,135 @@ else
 fi
 
 # ------------------------------------------------------------------
-# ELF layout: one RWX PT_LOAD, fixed base, bss outside the file.
+# Static archives and -L/-l resolution.
+# ------------------------------------------------------------------
+
+AR=${AR:-}
+if [ -z "$AR" ]; then
+	for candidate in riscv64-unknown-elf-ar riscv64-elf-ar ar; do
+		if command -v "$candidate" >/dev/null 2>&1; then
+			AR=$candidate
+			break
+		fi
+	done
+fi
+
+if [ -n "$AR" ]; then
+	cat >"$TMP/ar_use.c" <<'AR_EOF'
+int ar_double(int x);
+int ar_sum(void);
+int main(void)
+{
+	return ar_double(3) + ar_sum();
+}
+AR_EOF
+	cat >"$TMP/ar_x.c" <<'AR_EOF'
+int ar_value = 7;
+int ar_double(int x)
+{
+	return x * 2;
+}
+AR_EOF
+	cat >"$TMP/ar_y.c" <<'AR_EOF'
+extern int ar_value;
+int ar_sum(void)
+{
+	return ar_value + 3;
+}
+AR_EOF
+	cat >"$TMP/ar_unused.c" <<'AR_EOF'
+int missing_from_archive(void);
+int ar_unused(void)
+{
+	return missing_from_archive();
+}
+AR_EOF
+
+	if run_cc -c "$TMP/ar_x.c" -o "$TMP/ar_x.o" &&
+		run_cc -c "$TMP/ar_y.c" -o "$TMP/ar_y.o" &&
+		run_cc -c "$TMP/ar_unused.c" -o "$TMP/ar_unused.o" &&
+		"$AR" rc "$TMP/libarchive.a" "$TMP/ar_x.o" "$TMP/ar_y.o" 			"$TMP/ar_unused.o"; then
+		if run_cc "$TMP/ar_use.c" -L "$TMP" -larchive 			-o "$TMP/ar_prog"; then
+			note "archive member extraction and -L/-l"
+		else
+			fail "archive member extraction and -L/-l"
+		fi
+	else
+		fail "create archive fixture"
+	fi
+
+	expect_fail "missing library" "cannot find -lno_such_archive" 		run_cc "$TMP/ar_use.c" -L "$TMP" -lno_such_archive 			-o "$TMP/out.bin"
+else
+	note "ar not found; skipping archive tests"
+fi
+
+# ------------------------------------------------------------------
+# Real-world inputs: link against the built libc.a and the cross libgcc.a.
+# ------------------------------------------------------------------
+
+libc_dir=
+for d in "$root/build/debug" "$root/build/release"; do
+	if [ -f "$d/libc.a" ]; then
+		libc_dir=$d
+		break
+	fi
+done
+cross_gcc=$(command -v riscv64-unknown-elf-gcc ||
+	command -v riscv64-elf-gcc || true)
+if [ -n "$libc_dir" ] && [ -n "$cross_gcc" ]; then
+	libgcc=$("$cross_gcc" -march=rv64gc -mabi=lp64d 		-print-file-name=libgcc.a 2>/dev/null || true)
+	if [ -f "$libgcc" ]; then
+		cat >"$TMP/libc_use.c" <<'LIBC_EOF'
+unsigned long strlen(const char *s);
+int snprintf(char *buf, unsigned long n, const char *fmt, ...);
+int main(void)
+{
+	char b[16];
+
+	snprintf(b, sizeof(b), "%d", 7);
+	return (int)strlen(b);
+}
+LIBC_EOF
+		if run_cc "$TMP/libc_use.c" -L "$libc_dir" -lc 			-L "$(dirname "$libgcc")" -lgcc 			-o "$TMP/libc_prog"; then
+			note "libc.a + libgcc.a archive link"
+		else
+			fail "libc.a + libgcc.a archive link"
+		fi
+	else
+		note "libgcc.a not found; skipping libc archive link"
+	fi
+else
+	note "built libc.a or cross gcc not found; skipping libc archive link"
+fi
+
+# ------------------------------------------------------------------
+# ELF layout: separate RX and RW PT_LOAD segments, fixed base, bss
+# outside the file.
 # ------------------------------------------------------------------
 
 if command -v readelf >/dev/null 2>&1; then
-	loads=$(readelf -lW "$TMP/direct" |
-		awk '$1 == "LOAD" { n++ } END { print n + 0 }')
-	load=$(readelf -lW "$TMP/direct" | awk '$1 == "LOAD" { print; exit }')
-	set -- $load
-	if [ "$loads" -eq 1 ] && [ "$1" = "LOAD" ] &&
-		[ "$2" = "0x000000" ] &&
-		[ "$3" = "0x0000000000010000" ] &&
-		[ "$7" = "RWE" ] && [ $(( $5 )) -lt $(( $6 )) ]; then
-		note "single RWX PT_LOAD at 0x10000 with bss outside file"
+	layout=$(readelf -lW "$TMP/direct" | awk '
+		$1 == "LOAD" {
+			n++;
+			if (n == 1) {
+				off1 = $2; va1 = $3; fs1 = $5; ms1 = $6;
+				rx = ($7 == "R" && $8 == "E");
+			} else if (n == 2) {
+				off2 = $2; va2 = $3; fs2 = $5; ms2 = $6;
+				rw = ($7 == "RW");
+			}
+		}
+		END {
+			if (n == 2 && off1 == "0x000000" &&
+			    va1 == "0x0000000000010000" && rx && rw &&
+			    off2 != "0x000000" && va2 != va1 &&
+			    fs2 != "0x000000" && ms2 != fs2)
+				print "ok";
+		}')
+	if [ "$layout" = "ok" ]; then
+		note "separate RX and RW PT_LOAD segments with bss outside file"
 	else
-		fail "single RWX PT_LOAD at 0x10000 with bss outside file"
+		fail "separate RX and RW PT_LOAD segments with bss outside file"
 	fi
 	entry=$(readelf -h "$TMP/direct" |
 		awk -F: '/Entry point address/ { gsub(/ /, "", $2); print $2 }')

@@ -30,7 +30,8 @@ cc /home/tests/cc/multi_a.c /home/tests/cc/multi_b.c -o /tmp/multi
 Usage:
 
 ```text
-cc [-c] [-E] [-S] [-o output] [-I dir] [-D name[=value]] [-U name] input.c|input.o [...]
+cc [-c] [-E] [-S] [-o output] [-I dir] [-L dir] [-l name]
+   [-D name[=value]] [-U name] [--cco2-object] input.c|input.o [...]
 ```
 
 - If `-o` is not specified, the output is `a.out`
@@ -38,6 +39,10 @@ cc [-c] [-E] [-S] [-o output] [-I dir] [-D name[=value]] [-U name] input.c|input
 - `-S` compiles only and writes a human-readable RISC-V assembly listing
 - `-c` compiles only and writes a standard ELF64 `ET_REL` object; the legacy private `CCO2` format remains available with `--cco2-object`
 - `.o` inputs are passed to the linker together with `.c` inputs
+- `-L dir` adds an archive search directory; `-l name` links `libname.a`
+  from those directories (then `/usr/lib`, `/usr/local/lib`, `/lib`)
+- Archive members are extracted on demand, so an unused member is never
+  pulled into the executable
 - The output file is automatically set to `0755`
 
 ## Preprocessor
@@ -177,11 +182,18 @@ cc a.c b.o -o prog
 ```
 
 `cc -c` writes standard ELF64 `ET_REL` RISC-V objects with `.text`, `.data`,
-`.bss`, `.rela.text`, `.rela.data`, `.symtab` and `.strtab`, using the standard
-`R_RISCV_HI20`, `R_RISCV_LO12_I`, `R_RISCV_JAL` and `R_RISCV_64` relocations.
-The built-in linker reads these objects directly, and GNU `ld -r` accepts
-them.  For compatibility, `--cco2-object` still writes the old private CCO2
-format, and the linker continues to read both CCO2 and CCO1 objects.
+`.bss`, `.rela.text`, `.rela.data`, `.symtab`, `.strtab` and
+`.riscv.attributes`, using `R_RISCV_HI20`, `R_RISCV_LO12_I`, `R_RISCV_JAL`,
+`R_RISCV_64` and related relocations.  GNU `readelf`, `objdump` and `ld -r`
+accept them.  For compatibility, `--cco2-object` still writes the old private
+CCO2 format, and the linker continues to read CCO2 and CCO1 objects.
+
+The built-in linker also reads GCC-produced ELF objects and static archives.
+It supports the relocation forms used by the in-tree libc and libgcc:
+`R_RISCV_BRANCH`, `R_RISCV_CALL(_PLT)`, `R_RISCV_PCREL_HI20/LO12_I/LO12_S`,
+`R_RISCV_LO12_S`, `R_RISCV_RVC_BRANCH`, `R_RISCV_RVC_JUMP`, 32/64-bit absolute
+data, and ADD/SUB data relocations.  This makes `-lc -lgcc` work when the
+archives are available.
 
 Linking rules:
 
@@ -196,18 +208,21 @@ Linking rules:
 
 Not yet supported:
 
-- Static libraries/dynamic libraries and `-L`/`-l`
-- GNU ld-compatible `.riscv.attributes` and linker relaxation
-- Linker scripts/custom sections; the linked executable still uses one RWX
-  `PT_LOAD`
+- Dynamic libraries/shared objects
+- Linker relaxation (the `R_RISCV_RELAX`/`R_RISCV_ALIGN` markers are skipped
+  without shrinking code)
+- Linker scripts/custom sections; all read-only data is currently placed in
+  the writable data segment
 
 ## Generated Artifact ABI
 
 Generated programs are:
 
 - `ELF64`, `ET_EXEC`, little-endian, `e_machine = EM_RISCV`
-- A single `PT_LOAD` with permissions `R|W|X`
+- Two `PT_LOAD` segments: read+execute headers/text, and read+write data+bss
 - Fixed load base address `0x10000`, with code starting at file offset `0x1000`
+- `e_flags` sets the LP64D float ABI and adds `EF_RISCV_RVC` when any linked
+  input uses compressed instructions
 - The entry point is the compiler-generated `__cc_start`
 - `__cc_start` receives `a0=argc, a1=argv, a2=envp` per the kernel convention, calls `main`, and then exits via `SYS_exit`
 - System call numbers use BRK's POSIX.1-2024 numbering: `read=0, write=1, close=2, open=13, exit=49`.  `open()` is lowered to the kernel's `openat(AT_FDCWD, path, flags, mode)` entry.
@@ -230,10 +245,11 @@ These limitations exist to keep the implementation sufficiently small:
 - By-value `struct`/`union` arguments through `...`
 - Chained designators, mixing with complex brace elision
 - Global aggregate copy initialization
-- Static libraries/dynamic libraries; `.riscv.attributes` and linker relaxation
+- Dynamic libraries/shared objects and linker relaxation
 - 128-bit `long double` (currently represented as `double`)
 - GCC-identical bit-field layout for unusual mixed base types
-- Hosted `libc.a` linking (the next phase after standard ELF objects)
+- Hosted libc startup/header integration: `-lc -lgcc` archive linking works,
+  but the default startup path and libc headers are the next phase
 
 ## Implementation Structure
 
@@ -249,8 +265,9 @@ These limitations exist to keep the implementation sufficiently small:
 - `asm.c`: assembler finalization and the `-S` human-readable listing
 - `parser.c`: declaration, initializer, statement, and expression parsing
 - `codegen.c`: stack-based evaluation; expression results are placed in `a0`, and lvalue addresses are placed in `a0`
-- `link.c`: merges text/data/bss from multiple units, resolves symbols, and patches relocations
-- `elf.c`: standard ELF64 `ET_REL` writer and reader
+- `link.c`: merges text/data/bss from multiple units, resolves symbols, patches relocations and writes the executable
+- `elf.c`: standard ELF64 `ET_REL` writer and general ELF input reader
+- `archive.c`: static `ar` archive reader and on-demand member extraction
 - `obj.c`: legacy CCO2 object serialization/deserialization (CCO1 reader compatible)
 - `main.c`: command-line driver and ELF output entry point
 - `include/cc.h`: the runtime header for compiled programs—a raw-syscall subset with no `libc.a` dependency; installed into the rootfs as `/usr/include/cc.h`, the only userland header the image ships
