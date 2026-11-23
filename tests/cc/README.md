@@ -65,6 +65,10 @@ cc /home/tests/cc/abi.c -o /tmp/abi
 cc /home/tests/cc/stdarg.c -o /tmp/stdarg
 /tmp/stdarg
 
+# Cross-compiler ABI (abi_cross.c is compiled by cc, abi_gcc.o by GCC)
+cc /home/tests/cc/abi_cross.c /home/tests/abi_gcc.o -o /tmp/abi_cross
+/tmp/abi_cross
+
 # Hosted libc programs
 cc /home/tests/cc/hosted.c -lc -o /tmp/hosted
 /tmp/hosted
@@ -150,6 +154,8 @@ Expected results:
 - `abi`: `3 1 2 3`, `12`, `66`, `4 6`, `45`, `66`, `10`, `55`, `66`, `58`,
   `88`, `42`
 - `stdarg`: `10 14`
+- `abi_cross`: `3 5`, `36`, `14`, `600`, `650`, `45`, `12`, `100`, `94`,
+  `39`, `58`, `45`, `291`, `855`
 - `hosted`: `hosted 42 9`
 - `hosted_libc`: `qsort 1a 2b 3c`, `malloc heap`, `sqrt 3.0`,
   `dirent 3`, `read file 7`

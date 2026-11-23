@@ -209,7 +209,8 @@ DEPS := $(LIBC_OBJS:.o=.d) $(LIBCMD_OBJS:.o=.d) $(USER_OBJS:.o=.d) \
 TEST_SRCS := $(sort $(wildcard tests/libc/*.c))
 TEST_OBJS := $(patsubst tests/%.c,$(OBJDIR)/tests/%.o,$(TEST_SRCS))
 TEST_BINS := $(patsubst tests/%.c,$(USER_BUILD_ROOT)/tests/%,$(TEST_SRCS))
-DEPS += $(TEST_OBJS:.o=.d)
+ABI_GCC_OBJ := $(USER_BUILD_ROOT)/tests/abi_gcc.o
+DEPS += $(TEST_OBJS:.o=.d) $(ABI_GCC_OBJ:.o=.d)
 
 # Keep object files around for debugging and incremental rebuilds.
 .SECONDARY: $(LIBC_OBJS) $(LIBCMD_OBJS) $(USER_OBJS) $(TEST_OBJS) $(LUA_OBJS)
@@ -230,7 +231,13 @@ lib: $(LIBC_A) $(LIBCMD_A)
 
 cc-host: $(CC_HOST)
 
-tests: $(TEST_BINS)
+tests: $(TEST_BINS) $(ABI_GCC_OBJ)
+
+# GCC-built half of the cross-compiler ABI test (tests/cc/abi_cross.c is
+# compiled on target by cc).
+$(ABI_GCC_OBJ): tests/cc/abi_gcc.c $(FLAGS_DEP)
+	$(Q)mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -c -o $@ $<
 
 # One entry point for validation.  check covers everything that runs
 # without a kernel boot: the libc tests are built (they execute inside

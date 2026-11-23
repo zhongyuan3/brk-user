@@ -326,8 +326,11 @@ riscv64-unknown-elf-readelf -h -l /tmp/hello.elf
 `make cc-tests` boots BRK in QEMU and runs the on-target sources;
 `make cc-link-tests` runs the host-side object/relocation/linker checks.
 The linker fixture `tests/cc/link_tests.sh` covers ELF object structure,
-standard relocations, CCO1/CCO2 compatibility, malformed objects,
-duplicate/undefined symbols and executable ELF layout.
+standard relocations, archive extraction, a real libc.a + libgcc.a link,
+CCO1/CCO2 compatibility, malformed objects, duplicate/undefined symbols and
+the executable segment layout.  `tests/cc/abi_cross.c` is compiled by cc and
+linked with a GCC-built `abi_gcc.o` inside BRK; the two halves call each
+other to validate the LP64D register/stack/return conventions.
 
 `tests/cc/` contains verified examples:
 
@@ -356,7 +359,8 @@ duplicate/undefined symbols and executable ELF layout.
 | `bitfield.c`                     | Bit-field load/store/RMW, signed and wide fields                                | Multiple lines of numbers            |
 | `abi.c`                         | LP64D FP/aggregate/stack argument and return classification                     | `3 1 2 3`, `12`, `66`, etc.          |
 | `stdarg.c`                      | GCC-compatible `<stdarg.h>` int/long/double varargs                             | `10 14`                              |
-| `hosted.c`                      | Installed libc headers, `-lc -lgcc`, libc `_start`/stdio flush                  | `hosted 42 9`                        |
+| `abi_cross.c` + `abi_gcc.c`     | GCC/cc cross-calls: FP fallback, split aggregates, hidden returns, varargs        | Fourteen lines of ABI checks         |
+| `hosted.c`                      | Installed libc headers, `-lc`, libc `_start`/stdio flush                         | `hosted 42 9`                        |
 | `hosted_libc.c`                 | qsort, malloc, float printf, dirent, stdio file I/O through libc                 | Five lines of results                |
 | `args.c`                         | More than eight arguments, stack and float/aggregate slots, varargs             | `55`, `55`, `39`, `43`, `10`, `45`   |
 | `agg_deep.c`                     | Aggregate return with hidden slots plus a ninth stack argument                  | `10 35`, `30 105`, `10 35`           |

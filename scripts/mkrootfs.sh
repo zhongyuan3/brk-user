@@ -140,6 +140,13 @@ if [[ -d $USER_ROOT/tests ]]; then
 	"$BRKFS" cp -r "$USER_ROOT/tests" "/home/tests" "$IMG"
 fi
 
+# GCC-built object for the cross-compiler ABI test; the on-target cc
+# compiles the other half and links the two inside BRK.
+if [[ -f $VARIANT_ROOT/tests/abi_gcc.o ]]; then
+	"$BRKFS" cp "$VARIANT_ROOT/tests/abi_gcc.o" \
+		"/home/tests/abi_gcc.o" "$IMG"
+fi
+
 # libc tests are built as normal library-linked executables; install
 # those alongside their sources so they can be run directly inside BRK.
 if [[ -d $VARIANT_ROOT/tests/libc ]]; then
