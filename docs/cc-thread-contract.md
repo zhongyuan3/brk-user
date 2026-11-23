@@ -91,19 +91,29 @@ wires the CLI.
 
 ### 4.2 Calling convention summary
 
-- Every argument occupies one 8-byte slot.
-- The first 8 slots are in `a0`-`a7`; slots 8.. are on the caller stack at
-  `0(sp)`, `8(sp)`, ...
-- Integer/pointer/float/double values are passed as raw 64-bit slot bits.
-- An aggregate argument is passed as a pointer to a caller-owned copy.
-- An aggregate return uses a hidden result pointer in `a0`; explicit
-  arguments start at slot 1.  The callee returns the result pointer in `a0`.
-- `s0` is the frame pointer, `s1` is reserved for the outgoing-argument base
-  and must be preserved by generated functions.
+Core scalar/FP/aggregate/variadic rules follow the RISC-V LP64D ELF psABI:
+
+- integer/pointer arguments use `a0`-`a7`; named `float`/`double` arguments
+  use `fa0`-`fa7`;
+- arguments that do not fit in their register sequence go on the caller stack
+  at `0(sp)`, `8(sp)`, ...; the stack is 16-byte aligned;
+- variadic floating-point arguments use the integer sequence;
+- small aggregates are classified by up to two eight-byte words and may use
+  integer and FP registers; large aggregates are passed by reference;
+- small aggregates return in `a0/a1`, `fa0/fa1`, or a mixture; large
+  aggregates use a hidden result pointer in `a0`;
+- `s0`/`s1` are preserved; generated functions do not use `s2`-`s11` or
+  `fs0`-`fs11`;
+- `va_list` points at the saved argument area, as described in
+  `docs/cc-internal-abi.md`.
+
+`long double` is currently the compiler's 8-byte double representation rather
+than the psABI's 128-bit type; this remains a follow-up item.
 
 ### 4.3 Object format
 
-`CCO2` is little-endian and carries:
+The current `CCO2` format is still private (the standard ELF relocatable
+object emitter is the next phase).  It carries:
 
 - magic `CCO2`, version 2;
 - `.text` bytes, `.data` bytes, `.bss` size;

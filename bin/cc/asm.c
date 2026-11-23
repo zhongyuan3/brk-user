@@ -317,6 +317,19 @@ static void print_insn(FILE *fp, unsigned int ins)
 			fprintf(fp, "\t.word 0x%08x\n", ins);
 			return;
 		}
+	case 0x07:
+		if (f3 == 2) {
+			fprintf(fp, "\tflw %s, %d(%s)\n", f_name(rd),
+				imm_i(ins), r_name(rs1));
+			return;
+		}
+		if (f3 == 3) {
+			fprintf(fp, "\tfld %s, %d(%s)\n", f_name(rd),
+				imm_i(ins), r_name(rs1));
+			return;
+		}
+		fprintf(fp, "\t.word 0x%08x\n", ins);
+		return;
 	case 0x23: {
 		static const char *const st[8] = {
 			"sb", "sh", "sw", "sd",
@@ -329,6 +342,19 @@ static void print_insn(FILE *fp, unsigned int ins)
 			fprintf(fp, "\t.word 0x%08x\n", ins);
 		return;
 	}
+	case 0x27:
+		if (f3 == 2) {
+			fprintf(fp, "\tfsw %s, %d(%s)\n", f_name(rs2),
+				imm_s(ins), r_name(rs1));
+			return;
+		}
+		if (f3 == 3) {
+			fprintf(fp, "\tfsd %s, %d(%s)\n", f_name(rs2),
+				imm_s(ins), r_name(rs1));
+			return;
+		}
+		fprintf(fp, "\t.word 0x%08x\n", ins);
+		return;
 	case 0x63: {
 		static const char *const br[8] = {
 			"beq", "bne", "blt", "bge",

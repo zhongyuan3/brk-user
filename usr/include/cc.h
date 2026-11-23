@@ -19,12 +19,12 @@ void exit(int status);
 int putchar(int c);
 int puts(const char *s);
 
-typedef char *va_list;
+typedef void *va_list;
 
-char *__builtin_va_start(void);
+void *__builtin_va_start(void);
 
 #define va_start(ap, last) ((ap) = __builtin_va_start())
-#define va_arg(ap, type) (*(type *)((ap += 8) - 8))
+#define va_arg(ap, type) __builtin_va_arg(ap, type)
 #define va_end(ap) ((void)0)
 #define va_copy(dst, src) ((dst) = (src))
 

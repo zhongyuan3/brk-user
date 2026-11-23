@@ -59,6 +59,12 @@ cc -c /home/tests/cc/multi_b.c -o /tmp/b.o
 cc /tmp/a.o /tmp/b.o -o /tmp/multi_obj
 /tmp/multi_obj
 
+# ABI and standard stdarg
+cc /home/tests/cc/abi.c -o /tmp/abi
+/tmp/abi
+cc /home/tests/cc/stdarg.c -o /tmp/stdarg
+/tmp/stdarg
+
 # Preprocessor additions
 cc /home/tests/cc/pp_float.c -o /tmp/pp_float
 /tmp/pp_float
@@ -135,6 +141,9 @@ Expected results:
 - `multi`: `multi`, `5`, `101`, `1`, `2`, `7`
 - `multi_obj`: the same as `multi`; both `.o` files contain a same-named `static helper`,
   used to verify that local symbols do not conflict
+- `abi`: `3 1 2 3`, `12`, `66`, `4 6`, `45`, `66`, `10`, `55`, `66`, `58`,
+  `88`, `42`
+- `stdarg`: `10 14`
 - `pp_float`: `pp_float ok`
 - `pp_line`: `pp_line ok`
 - `float`: `4 5 7 4 9`, `3 4 1 1 1 1 0`, `8 6`, `3 3 3`, `1 1 1`

@@ -205,6 +205,7 @@ enum {
 	ND_CAST,
 	ND_COND,
 	ND_COMMA,
+	ND_VA_ARG,
 	ND_RETURN,
 	ND_IF,
 	ND_WHILE,

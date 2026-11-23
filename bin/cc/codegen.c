@@ -81,28 +81,6 @@ static void i_srai(int rd, int rs, int sh)
 	emit32(enc_i(0x13, rd, 5, rs, 0x400 | sh));
 }
 
-static void load_s0(int rd, int off)
-{
-	if (off >= -2048 && off <= 2047) {
-		i_ld(rd, S0, off);
-		return;
-	}
-	i_li(T6, off);
-	i_r(0, 0, rd, S0, T6);
-	i_ld(rd, rd, 0);
-}
-
-static void store_s1(int reg, int off)
-{
-	if (off >= -2048 && off <= 2047) {
-		i_sd(reg, S1, off);
-		return;
-	}
-	i_li(T6, off);
-	i_r(0, 0, T6, S1, T6);
-	i_sd(reg, T6, 0);
-}
-
 static void load_s1(int rd, int off)
 {
 	if (off >= -2048 && off <= 2047) {
@@ -137,6 +115,26 @@ static void fp_const(int f, unsigned long bits, bool d)
 {
 	i_li(T0, (long)bits);
 	fp_from_int(f, T0, d);
+}
+
+static void i_flw(int fd, int rs1, int imm)
+{
+	emit32(enc_i(0x07, fd, 2, rs1, imm));
+}
+
+static void i_fld(int fd, int rs1, int imm)
+{
+	emit32(enc_i(0x07, fd, 3, rs1, imm));
+}
+
+static void i_fsw(int fs2, int rs1, int imm)
+{
+	emit32(enc_s(0x27, 2, rs1, fs2, imm));
+}
+
+static void i_fsd(int fs2, int rs1, int imm)
+{
+	emit32(enc_s(0x27, 3, rs1, fs2, imm));
 }
 
 /* ------------------------------------------------------------------ */
@@ -359,9 +357,437 @@ static int type_step(struct type *ty)
 	return step;
 }
 
-static bool returns_aggregate(struct obj *fn)
+/* ------------------------------------------------------------------ */
+/* RISC-V LP64D argument classification                                */
+/* ------------------------------------------------------------------ */
+
+/*
+ * The first two eight-byte words of a small aggregate are classified
+ * independently.  GCC's RISC-V psABI uses per-field registers for a
+ * two-field aggregate (including mixed float/int), packs integer-only
+ * aggregates by eightbyte, and falls back to the integer convention for
+ * aggregates with more than two leaf fields.  Aggregates larger than
+ * 2*XLEN, or with unaligned/oversized fields, are passed by reference.
+ */
+
+struct abi_leaf {
+	int offset;
+	int size;
+	bool fp;
+};
+
+struct abi_word {
+	bool fp;
+	int offset;
+	int size;
+};
+
+struct abi_class {
+	bool mem;
+	int nwords;
+	struct abi_word word[2];
+};
+
+static bool abi_collect_leaves(struct type *ty, int off,
+			       struct abi_leaf *leaf, int *n, int cap,
+			       bool *bad)
 {
-	return fn->ty && fn->ty->base && is_aggregate(fn->ty->base);
+	int i;
+
+	if (is_aggregate(ty)) {
+		if (!ty->is_complete || ty->size <= 0 || ty->size > 16 ||
+		    ty->align > 8)
+			*bad = true;
+		if (ty->kind == TY_UNION) {
+			/*
+			 * Unions overlap; use the conservative integer
+			 * convention for multi-member unions.  A single-member
+			 * union still classifies like that member.
+			 */
+			if (ty->nmembers != 1)
+				return false;
+			return abi_collect_leaves(ty->members[0].ty, off,
+						  leaf, n, cap, bad);
+		}
+		for (i = 0; i < ty->nmembers; i++) {
+			struct member *m = &ty->members[i];
+
+			if (!m->name && m->bit_width == 0)
+				continue;
+			if (!abi_collect_leaves(m->ty, off + m->offset,
+						leaf, n, cap, bad))
+				return false;
+		}
+		return true;
+	}
+	if (ty->kind == TY_ARRAY) {
+		if (ty->array_len < 0 || ty->base->size <= 0)
+			*bad = true;
+		for (i = 0; i < ty->array_len; i++) {
+			if (!abi_collect_leaves(ty->base,
+						off + i * ty->base->size,
+						leaf, n, cap, bad))
+				return false;
+		}
+		return true;
+	}
+	if (ty->kind == TY_FUNC || ty->kind == TY_VOID || ty->size <= 0 ||
+	    ty->size > 8 || ty->align > 8 || (off % ty->size) != 0) {
+		*bad = true;
+		return true;
+	}
+	if (*n >= cap)
+		return false;
+	leaf[*n].offset = off;
+	leaf[*n].size = ty->size;
+	leaf[*n].fp = is_float(ty);
+	(*n)++;
+	return true;
+}
+
+static void abi_integer_words(struct abi_class *c, int size)
+{
+	int i;
+	int left = size;
+
+	c->mem = false;
+	c->nwords = (size + 7) / 8;
+	for (i = 0; i < c->nwords; i++) {
+		int n = left > 8 ? 8 : left;
+
+		c->word[i].fp = false;
+		c->word[i].offset = i * 8;
+		c->word[i].size = n;
+		left -= n;
+	}
+}
+
+static void classify_aggregate(struct type *ty, struct abi_class *c)
+{
+	struct abi_leaf leaf[3];
+	int n = 0;
+	int fp_count = 0;
+	int i;
+	bool bad = false;
+	bool overflow;
+
+	memset(c, 0, sizeof(*c));
+	if (!ty->is_complete || ty->size <= 0 || ty->size > 16 ||
+	    ty->align > 8 || ty->kind == TY_UNION) {
+		if (ty->kind == TY_UNION && ty->size > 0 && ty->size <= 16 &&
+		    ty->align <= 8)
+			abi_integer_words(c, ty->size);
+		else
+			c->mem = true;
+		return;
+	}
+	overflow = !abi_collect_leaves(ty, 0, leaf, &n,
+				       (int)(sizeof(leaf) / sizeof(leaf[0])),
+				       &bad);
+	if (bad || n == 0) {
+		c->mem = true;
+		return;
+	}
+	for (i = 0; i < n; i++)
+		if (leaf[i].fp)
+			fp_count++;
+
+	/*
+	 * More than two leaf fields use the integer convention.  This is
+	 * what GCC does for {float,float,float}, float arrays, and large
+	 * integer arrays.
+	 */
+	if (overflow || n > 2) {
+		abi_integer_words(c, ty->size);
+		return;
+	}
+	if (fp_count == 0) {
+		abi_integer_words(c, ty->size);
+		return;
+	}
+	if (fp_count == n) {
+		c->nwords = n;
+		for (i = 0; i < n; i++) {
+			c->word[i].fp = true;
+			c->word[i].offset = leaf[i].offset;
+			c->word[i].size = leaf[i].size;
+		}
+		return;
+	}
+	/* Exactly two mixed fields, e.g. {float,int} or {char,double}. */
+	if (n != 2) {
+		abi_integer_words(c, ty->size);
+		return;
+	}
+	c->nwords = 2;
+	for (i = 0; i < 2; i++) {
+		c->word[i].fp = leaf[i].fp;
+		c->word[i].offset = leaf[i].offset;
+		c->word[i].size = leaf[i].size;
+	}
+}
+
+static void classify_type(struct type *ty, bool fp_allowed,
+			  struct abi_class *c)
+{
+	memset(c, 0, sizeof(*c));
+	if (is_aggregate(ty)) {
+		classify_aggregate(ty, c);
+		return;
+	}
+	c->nwords = 1;
+	c->word[0].offset = 0;
+	c->word[0].size = ty->size > 0 ? ty->size : 8;
+	c->word[0].fp = fp_allowed && is_float(ty);
+}
+
+struct abi_word_assign {
+	int reg;      /* register number, or -1 */
+	int reg_slot; /* temporary outgoing slot, or -1 */
+	int stack_off;
+	bool stack;
+};
+
+struct abi_value {
+	struct abi_class cls;
+	bool mem;        /* aggregate passed/returned by reference */
+	bool agg;        /* value is a struct/union */
+	bool fp_allowed; /* named argument or return value */
+	int size;        /* size of the original type in bytes */
+	int nwords;
+	struct abi_word_assign w[2];
+};
+
+static void classify_value(struct type *ty, bool fp_allowed,
+			   struct abi_value *v)
+{
+	struct abi_class raw;
+
+	memset(v, 0, sizeof(*v));
+	classify_type(ty, fp_allowed, &raw);
+	v->mem = is_aggregate(ty) && raw.mem;
+	v->agg = is_aggregate(ty);
+	v->fp_allowed = fp_allowed;
+	v->size = ty->size;
+	if (v->mem) {
+		raw.mem = false;
+		raw.nwords = 1;
+		raw.word[0].fp = false;
+		raw.word[0].offset = 0;
+		raw.word[0].size = 8;
+	}
+	v->cls = raw;
+	v->nwords = raw.nwords;
+}
+
+static void abi_count(struct abi_value *v, int *need_i, int *need_f)
+{
+	int i;
+
+	*need_i = 0;
+	*need_f = 0;
+	for (i = 0; i < v->nwords; i++) {
+		if (v->cls.word[i].fp)
+			(*need_f)++;
+		else
+			(*need_i)++;
+	}
+}
+
+static void abi_assign_regs(struct abi_value *v, int *ir, int *fr,
+			    int *rs)
+{
+	int i;
+
+	for (i = 0; i < v->nwords; i++) {
+		v->w[i].stack = false;
+		v->w[i].stack_off = -1;
+		v->w[i].reg_slot = (*rs)++;
+		if (v->cls.word[i].fp)
+			v->w[i].reg = (*fr)++;
+		else
+			v->w[i].reg = (*ir)++;
+	}
+}
+
+static void abi_assign_stack(struct abi_value *v, int *stk, int from)
+{
+	int i;
+
+	for (i = from; i < v->nwords; i++) {
+		v->w[i].stack = true;
+		v->w[i].stack_off = (*stk)++;
+		v->w[i].reg = -1;
+		v->w[i].reg_slot = -1;
+	}
+}
+
+/*
+ * Assign one argument (or return value) to registers and/or the stack.
+ *
+ * The hardware floating-point convention says a named floating-point value
+ * is passed in an FP register "if at least one floating-point argument
+ * register is available.  Otherwise, it is passed according to the integer
+ * calling convention."  A multiword value needs its whole FP register
+ * group, so a two-FP struct with only one FP register left also falls back
+ * to the integer convention.  The integer convention may split a two-word
+ * aggregate when only one integer register remains: the first word goes in
+ * the register, the rest on the stack.
+ */
+static void abi_assign(struct abi_value *v, int *ir, int *fr, int *stk,
+		       int *rs)
+{
+	int need_i;
+	int need_f;
+	int i;
+
+	abi_count(v, &need_i, &need_f);
+	if (*ir + need_i <= 8 && *fr + need_f <= 8) {
+		abi_assign_regs(v, ir, fr, rs);
+		return;
+	}
+
+	if (v->fp_allowed && need_f > 0) {
+		if (v->agg)
+			abi_integer_words(&v->cls, v->size);
+		else {
+			v->cls.nwords = 1;
+			v->cls.word[0].fp = false;
+			v->cls.word[0].offset = 0;
+			v->cls.word[0].size = v->size > 0 ? v->size : 8;
+		}
+		v->nwords = v->cls.nwords;
+		v->fp_allowed = false;
+		abi_count(v, &need_i, &need_f);
+		if (*ir + need_i <= 8) {
+			abi_assign_regs(v, ir, fr, rs);
+			return;
+		}
+	}
+
+	if (need_f == 0 && *ir < 8) {
+		int avail = 8 - *ir;
+
+		if (avail > v->nwords)
+			avail = v->nwords;
+		if (avail > 0 && v->agg) {
+			/* Split an aggregate across the boundary. */
+			for (i = 0; i < avail; i++) {
+				v->w[i].stack = false;
+				v->w[i].stack_off = -1;
+				v->w[i].reg_slot = (*rs)++;
+				v->w[i].reg = (*ir)++;
+			}
+			abi_assign_stack(v, stk, avail);
+			return;
+		}
+	}
+
+	for (i = 0; i < v->nwords; i++) {
+		v->w[i].stack = true;
+		v->w[i].stack_off = (*stk)++;
+		v->w[i].reg = -1;
+		v->w[i].reg_slot = -1;
+	}
+}
+
+static void mem_base(int rd, int base, int off)
+{
+	if (off >= -2048 && off <= 2047) {
+		i_addi(rd, base, off);
+		return;
+	}
+	i_li(T6, off);
+	i_r(0, 0, rd, base, T6);
+}
+
+static void load_word_size(int rd, int base, int off, int size)
+{
+	mem_base(T6, base, off);
+	switch (size) {
+	case 1:
+		i_lbu(rd, T6, 0);
+		break;
+	case 2:
+		i_lhu(rd, T6, 0);
+		break;
+	case 4:
+		i_lwu(rd, T6, 0);
+		break;
+	case 8:
+		i_ld(rd, T6, 0);
+		break;
+	default:
+		fatal("internal error: bad ABI word size");
+	}
+}
+
+static void store_word_size(int reg, int base, int off, int size)
+{
+	mem_base(T6, base, off);
+	switch (size) {
+	case 1:
+		i_sb(reg, T6, 0);
+		break;
+	case 2:
+		i_sh(reg, T6, 0);
+		break;
+	case 4:
+		i_sw(reg, T6, 0);
+		break;
+	case 8:
+		i_sd(reg, T6, 0);
+		break;
+	default:
+		fatal("internal error: bad ABI word size");
+	}
+}
+
+static void load_fp_size(int fd, int base, int off, int size)
+{
+	if (size == 4)
+		i_flw(fd, base, off);
+	else if (size == 8)
+		i_fld(fd, base, off);
+	else
+		fatal("internal error: bad FP ABI word size");
+}
+
+static void store_fp_size(int fs, int base, int off, int size)
+{
+	if (size == 4)
+		i_fsw(fs, base, off);
+	else if (size == 8)
+		i_fsd(fs, base, off);
+	else
+		fatal("internal error: bad FP ABI word size");
+}
+
+static int va_start_offset(struct obj *fn)
+{
+	int ir = 0;
+	int fr = 0;
+	int stk = 0;
+	int rs = 0;
+	int i;
+	struct type *rt = fn->ty->base;
+
+	if (is_aggregate(rt)) {
+		struct abi_value rv;
+
+		classify_value(rt, true, &rv);
+		if (rv.mem)
+			ir = 1; /* hidden result pointer */
+	}
+	for (i = 0; i < fn->ty->nparams; i++) {
+		struct abi_value v;
+
+		classify_value(fn->ty->params[i].ty, true, &v);
+		abi_assign(&v, &ir, &fr, &stk, &rs);
+	}
+	if (ir < 8)
+		return ir * 8;
+	return 64 + stk * 8;
 }
 
 /* ------------------------------------------------------------------ */
@@ -519,24 +945,60 @@ static void gen_call(struct node *n)
 	const char *name = n->var ? n->var->name : NULL;
 	bool direct = n->var != NULL;
 	bool builtin_ok = direct && !n->var->defined;
-	struct type *rt = n->ty;
-	bool hidden;
 	bool indirect = n->callee != NULL;
-	int nslots;
+	struct type *rt = n->ty;
+	struct type *fnty = NULL;
+	bool varargs = false;
+	bool hidden = false;
+	struct abi_value retv;
+	struct abi_value hiddenv;
+	struct abi_value *av = NULL;
+	int nparams = 0;
+	int ir = 0;
+	int fr = 0;
+	int stk = 0;
+	int rs = 0;
+	int reg_words;
+	int stack_words;
+	int total_slots;
 	int total;
+	int int_slot[8];
+	int fp_slot[8];
+	int fp_size[8];
+	int indirect_slot;
 	int sysno = -1;
 	int i;
+	int j;
 
 	if (direct && !strcmp(name, "__builtin_va_start")) {
 		int off;
 
-		if (!gen_fn || !gen_fn->va_area)
+		if (!gen_fn || !gen_fn->ty->variadic)
 			fatal("va_start used outside a variadic function");
-		off = -(gen_fn->va_area->offset) +
-		      (gen_fn->ty->nparams +
-		       (returns_aggregate(gen_fn) ? 1 : 0)) *
-			      8;
-		i_addi(A0, S0, off);
+		off = va_start_offset(gen_fn);
+		if (n->nargs > 0) {
+			gen_addr(n->args[0]);
+			i_mv(T2, A0);
+			i_addi(A0, S0, off);
+			i_sd(A0, T2, 0);
+		} else {
+			i_addi(A0, S0, off);
+		}
+		return;
+	}
+
+	if (direct && !strcmp(name, "__builtin_va_end")) {
+		i_li(A0, 0);
+		return;
+	}
+	if (direct && !strcmp(name, "__builtin_va_copy")) {
+		if (n->nargs != 2)
+			fatal("va_copy expects two arguments");
+		gen_expr(n->args[1]);
+		i_mv(T0, A0);
+		gen_addr(n->args[0]);
+		i_sd(T0, A0, 0);
+		i_mv(A0, T0);
 		return;
 	}
 
@@ -576,34 +1038,101 @@ static void gen_call(struct node *n)
 	if (builtin_ok)
 		sysno = builtin_syscall(name);
 
-	if (!rt) {
-		if (n->var && n->var->ty && n->var->ty->kind == TY_FUNC)
-			rt = n->var->ty->base;
-		else
-			rt = ty_int;
-	}
-	hidden = is_aggregate(rt);
-	if (hidden && !n->ret_tmp)
-		fatal("internal error: missing aggregate-return temporary");
+	if (n->var && n->var->ty && n->var->ty->kind == TY_FUNC)
+		fnty = n->var->ty;
+	else if (n->callee) {
+		struct type *ct = decay(n->callee->ty);
 
-	nslots = n->nargs + (hidden ? 1 : 0);
-	total = align_to((nslots + (indirect ? 1 : 0)) * 8, 16);
+		if (ct->kind == TY_PTR && ct->base->kind == TY_FUNC)
+			fnty = ct->base;
+	}
+	if (fnty) {
+		nparams = fnty->nparams;
+		varargs = fnty->variadic;
+		if (fnty->base)
+			rt = fnty->base;
+	}
+	if (!rt)
+		rt = ty_int;
+
+	if (is_aggregate(rt)) {
+		classify_value(rt, true, &retv);
+		hidden = retv.mem;
+		if (!hidden && !n->ret_tmp)
+			fatal("internal error: missing aggregate-return temporary");
+		if (hidden && !n->ret_tmp)
+			fatal("internal error: missing aggregate-return temporary");
+	}
+
+	memset(int_slot, -1, sizeof(int_slot));
+	memset(fp_slot, -1, sizeof(fp_slot));
+	memset(fp_size, 0, sizeof(fp_size));
+
+	av = xcalloc((size_t)(n->nargs > 0 ? n->nargs : 1), sizeof(*av));
+
+	/* Hidden result pointer is always the first integer argument. */
+	memset(&hiddenv, 0, sizeof(hiddenv));
+	if (hidden) {
+		hiddenv.nwords = 1;
+		hiddenv.cls.nwords = 1;
+		hiddenv.cls.word[0].size = 8;
+		hiddenv.cls.word[0].fp = false;
+		hiddenv.size = 8;
+		abi_assign(&hiddenv, &ir, &fr, &stk, &rs);
+		if (hiddenv.w[0].reg < 0)
+			fatal("internal error: hidden result pointer on stack");
+	}
+
+	for (i = 0; i < n->nargs; i++) {
+		struct node *arg = n->args[i];
+		bool fp_allowed = !(varargs && i >= nparams);
+
+		classify_value(arg->ty, fp_allowed, &av[i]);
+		abi_assign(&av[i], &ir, &fr, &stk, &rs);
+	}
+	reg_words = rs;
+	stack_words = stk;
+
+	if (hidden)
+		int_slot[hiddenv.w[0].reg] =
+			stack_words + hiddenv.w[0].reg_slot;
+	for (i = 0; i < n->nargs; i++) {
+		for (j = 0; j < av[i].nwords; j++) {
+			if (!av[i].w[j].stack) {
+				if (av[i].cls.word[j].fp) {
+					fp_slot[av[i].w[j].reg] =
+						stack_words + av[i].w[j].reg_slot;
+					fp_size[av[i].w[j].reg] =
+						av[i].cls.word[j].size;
+				} else {
+					int_slot[av[i].w[j].reg] =
+						stack_words + av[i].w[j].reg_slot;
+				}
+			}
+		}
+	}
+	indirect_slot = stack_words + reg_words;
+	total_slots = indirect_slot + (indirect ? 1 : 0);
+	total = align_to(total_slots * 8, 16);
+
 	push_reg(S1);
-	i_addi(SP, SP, -total);
+	if (total)
+		i_addi(SP, SP, -total);
 	i_mv(S1, SP);
 
 	if (hidden) {
+		int off = stack_words + hiddenv.w[0].reg_slot;
+
 		i_addi(A0, S0, -n->ret_tmp->offset);
-		i_sd(A0, S1, 0);
+		store_word_size(A0, S1, off * 8, 8);
 	}
 	if (indirect) {
 		gen_expr(n->callee);
-		i_mv(S1, SP);
-		store_s1(A0, nslots * 8);
+		store_word_size(A0, S1, indirect_slot * 8, 8);
 	}
+
 	for (i = n->nargs - 1; i >= 0; i--) {
 		struct node *arg = n->args[i];
-		int slot = i + (hidden ? 1 : 0);
 
 		if (is_aggregate(arg->ty)) {
 			struct obj *tmp = n->arg_temps ? n->arg_temps[i] : NULL;
@@ -617,32 +1146,67 @@ static void gen_call(struct node *n)
 			i_addi(A0, S0, -tmp->offset);
 			i_li(A2, arg->ty->size);
 			i_call_sym(memcpy_sym);
-			i_mv(S1, SP);
-			store_s1(A0, slot * 8);
+			if (av[i].mem) {
+				int off;
+
+				if (av[i].w[0].stack)
+					off = av[i].w[0].stack_off * 8;
+				else
+					off = (stack_words +
+					       av[i].w[0].reg_slot) *
+					      8;
+				i_addi(A0, S0, -tmp->offset);
+				store_word_size(A0, S1, off, 8);
+			} else {
+				for (j = 0; j < av[i].nwords; j++) {
+					int off;
+					struct abi_word *w = &av[i].cls.word[j];
+
+					load_word_size(T0, S0,
+						       -tmp->offset + w->offset,
+						       w->size);
+					if (av[i].w[j].stack)
+						off = av[i].w[j].stack_off * 8;
+					else
+						off = (stack_words +
+						       av[i].w[j].reg_slot) *
+						      8;
+					store_word_size(T0, S1, off, w->size);
+				}
+			}
 		} else {
+			int off;
+			struct abi_word *w = &av[i].cls.word[0];
+			int size = w->size;
+
 			gen_expr(arg);
-			i_mv(S1, SP);
-			store_s1(A0, slot * 8);
+			/*
+			 * Scalar integers/pointers occupy a full XLEN register in
+			 * the standard ABI.  Fill the whole outgoing slot so a
+			 * syscall or an unprototyped callee cannot observe stale
+			 * upper bits.
+			 */
+			if (!w->fp && !is_float(arg->ty))
+				size = 8;
+			if (av[i].w[0].stack)
+				off = av[i].w[0].stack_off * 8;
+			else
+				off = (stack_words + av[i].w[0].reg_slot) * 8;
+			store_word_size(A0, S1, off, size);
 		}
 	}
 
-	i_mv(S1, SP);
-	for (i = 0; i < 8; i++)
-		load_s1(A0 + i, i * 8);
+	for (i = 0; i < 8; i++) {
+		if (int_slot[i] >= 0)
+			i_ld(A0 + i, S1, int_slot[i] * 8);
+		if (fp_slot[i] >= 0)
+			load_fp_size(10 + i, S1, fp_slot[i] * 8, fp_size[i]);
+	}
 	if (indirect)
-		load_s1(T2, nslots * 8);
-	if (nslots > 8)
-		i_addi(SP, S1, 64);
-	else
-		i_mv(SP, S1);
+		load_s1(T2, indirect_slot * 8);
 
+	i_mv(SP, S1);
 	if (sysno == SYS_OPEN) {
-		/*
-		 * The kernel entry named SYS_OPEN is openat(dirfd, path, flags,
-		 * mode).  The C builtin is open(path, flags[, mode]), so shift
-		 * the arguments up and pass AT_FDCWD in a0.  A two-argument
-		 * open() implies mode 0, matching the common non-O_CREAT use.
-		 */
 		if (n->nargs == 2) {
 			i_li(A0 + 3, 0);
 			i_mv(A2, A1);
@@ -671,8 +1235,37 @@ static void gen_call(struct node *n)
 	i_addi(SP, S1, total);
 	pop_reg(S1);
 
-	if (hidden) {
-		i_addi(A0, S0, -n->ret_tmp->offset);
+	if (is_aggregate(rt)) {
+		if (hidden) {
+			i_addi(A0, S0, -n->ret_tmp->offset);
+			return;
+		}
+		{
+			int rir = 0;
+			int rfr = 0;
+			int rstk = 0;
+			int rrs = 0;
+
+			abi_assign(&retv, &rir, &rfr, &rstk, &rrs);
+			i_addi(T0, S0, -n->ret_tmp->offset);
+			for (j = 0; j < retv.nwords; j++) {
+				struct abi_word *w = &retv.cls.word[j];
+
+				if (retv.w[j].stack)
+					fatal("internal error: aggregate return spilled");
+				if (w->fp)
+					store_fp_size(10 + retv.w[j].reg, T0,
+						      w->offset, w->size);
+				else
+					store_word_size(A0 + retv.w[j].reg, T0,
+							w->offset, w->size);
+			}
+			i_addi(A0, S0, -n->ret_tmp->offset);
+			return;
+		}
+	}
+	if (rt->kind == TY_FLOAT || rt->kind == TY_DOUBLE) {
+		fp_to_int(A0, 10, rt->kind == TY_DOUBLE);
 		return;
 	}
 	cast_to(rt);
@@ -1073,6 +1666,29 @@ static void gen_float_const(struct node *n)
 	}
 }
 
+static void gen_va_arg(struct node *n)
+{
+	int align = n->ty->align > 8 ? n->ty->align : 8;
+	int step = align_to(n->ty->size > 8 ? n->ty->size : 8, align);
+
+	gen_addr(n->lhs);
+	i_mv(T2, A0);            /* address of the va_list object */
+	i_ld(T0, T2, 0);         /* current argument pointer */
+	if (align > 8) {
+		i_addi(T1, T0, align - 1);
+		i_li(T6, -align);
+		i_r(0, 7, T0, T1, T6); /* and */
+	}
+	i_addi(T1, T0, step);
+	i_sd(T1, T2, 0);         /* advance ap */
+	if (is_aggregate(n->ty)) {
+		i_mv(A0, T0);
+		return;
+	}
+	i_mv(A0, T0);
+	load_value(n->ty);
+}
+
 static void gen_expr(struct node *n)
 {
 	switch (n->kind) {
@@ -1151,6 +1767,9 @@ static void gen_expr(struct node *n)
 	case ND_CAST:
 		gen_expr(n->lhs);
 		cast_convert(n->lhs->ty, n->ty);
+		return;
+	case ND_VA_ARG:
+		gen_va_arg(n);
 		return;
 	case ND_COMMA:
 		gen_expr(n->lhs);
@@ -1250,20 +1869,48 @@ static void gen_expr(struct node *n)
 
 static void gen_epilogue(void)
 {
-	i_mv(SP, S0);
-	i_ld(RA, SP, -8);
-	i_ld(S1, SP, -24);
-	i_ld(S0, SP, -16);
+	/* s0 = old_sp - 64; the caller's stack starts at s0 + 64. */
+	i_addi(SP, S0, 64);
+	i_ld(RA, S0, -8);
+	i_ld(S1, S0, -24);
+	i_ld(S0, S0, -16);
 	i_ret();
 }
 
 static void gen_default_return(struct obj *fn)
 {
-	if (returns_aggregate(fn)) {
-		if (!fn->ret_ptr)
-			fatal("internal error: missing aggregate-return pointer");
-		i_addi(T0, S0, -fn->ret_ptr->offset);
-		i_ld(A0, T0, 0);
+	struct type *rt = fn->ty->base;
+
+	if (is_aggregate(rt)) {
+		struct abi_value rv;
+
+		classify_value(rt, true, &rv);
+		if (rv.mem) {
+			if (!fn->ret_ptr)
+				fatal("internal error: missing aggregate-return pointer");
+			i_addi(T0, S0, -fn->ret_ptr->offset);
+			i_ld(A0, T0, 0);
+		} else {
+			int ir = 0;
+			int fr = 0;
+			int stk = 0;
+			int rs = 0;
+			int i;
+
+			abi_assign(&rv, &ir, &fr, &stk, &rs);
+			for (i = 0; i < rv.nwords; i++) {
+				if (rv.w[i].stack)
+					continue;
+				if (rv.cls.word[i].fp)
+					fp_const(10 + rv.w[i].reg, 0,
+						 rv.cls.word[i].size == 8);
+				else
+					i_li(A0 + rv.w[i].reg, 0);
+			}
+		}
+	} else if (rt->kind == TY_FLOAT || rt->kind == TY_DOUBLE) {
+		i_li(A0, 0);
+		fp_from_int(10, A0, rt->kind == TY_DOUBLE);
 	} else {
 		i_li(A0, 0);
 	}
@@ -1275,27 +1922,60 @@ static void gen_return(struct node *n)
 	struct type *rt = gen_fn->ty->base;
 
 	if (n->lhs && is_aggregate(rt)) {
-		if (!gen_fn->ret_ptr)
-			fatal("internal error: missing aggregate-return pointer");
-		if (!memcpy_sym)
-			fatal("internal error: missing memcpy runtime reference");
-		gen_expr(n->lhs);
-		i_mv(A1, A0);
-		i_addi(T0, S0, -gen_fn->ret_ptr->offset);
-		i_ld(A0, T0, 0); /* hidden result pointer */
-		i_li(A2, rt->size);
-		i_call_sym(memcpy_sym);
-		i_addi(T0, S0, -gen_fn->ret_ptr->offset);
-		i_ld(A0, T0, 0);
+		struct abi_value rv;
+		int i;
+
+		classify_value(rt, true, &rv);
+		if (rv.mem) {
+			if (!gen_fn->ret_ptr)
+				fatal("internal error: missing aggregate-return pointer");
+			if (!memcpy_sym)
+				fatal("internal error: missing memcpy runtime reference");
+			gen_expr(n->lhs);
+			i_mv(A1, A0);
+			i_addi(T0, S0, -gen_fn->ret_ptr->offset);
+			i_ld(A0, T0, 0); /* hidden result pointer */
+			i_li(A2, rt->size);
+			i_call_sym(memcpy_sym);
+			i_addi(T0, S0, -gen_fn->ret_ptr->offset);
+			i_ld(A0, T0, 0);
+			gen_epilogue();
+			return;
+		}
+		gen_expr(n->lhs); /* source address in a0 */
+		i_mv(T0, A0);
+		{
+			int ir = 0;
+			int fr = 0;
+			int stk = 0;
+			int rs = 0;
+
+			abi_assign(&rv, &ir, &fr, &stk, &rs);
+		}
+		for (i = 0; i < rv.nwords; i++) {
+			struct abi_word *w = &rv.cls.word[i];
+
+			if (rv.w[i].stack)
+				fatal("internal error: aggregate return spilled");
+			if (w->fp)
+				load_fp_size(10 + rv.w[i].reg, T0, w->offset,
+					     w->size);
+			else
+				load_word_size(A0 + rv.w[i].reg, T0, w->offset,
+					       w->size);
+		}
 		gen_epilogue();
 		return;
 	}
 	if (n->lhs) {
 		gen_expr(n->lhs);
-		if (rt->kind != TY_VOID && !is_aggregate(rt))
-			cast_convert(n->lhs->ty, rt);
-		else if (rt->kind == TY_VOID)
+		if (rt->kind == TY_FLOAT || rt->kind == TY_DOUBLE) {
+			fp_from_int(10, A0, rt->kind == TY_DOUBLE);
+		} else if (rt->kind == TY_VOID) {
 			i_li(A0, 0);
+		} else {
+			cast_convert(n->lhs->ty, rt);
+		}
 	} else {
 		gen_default_return(gen_fn);
 		return;
@@ -1473,61 +2153,102 @@ static void gen_stmt(struct node *n)
 
 static void emit_prologue(struct obj *fn)
 {
-	int f = fn->frame_size;
-	bool hidden = returns_aggregate(fn);
+	struct abi_value *pv;
+	bool *copy;
+	struct abi_value rv;
+	bool hidden = false;
+	int ir = 0;
+	int fr = 0;
+	int stk = 0;
+	int rs = 0;
+	int f;
 	int i;
+	int j;
 
-	if (f < 32)
-		f = 32;
-	f = align_to(f, 16);
+	memset(&rv, 0, sizeof(rv));
+	if (is_aggregate(fn->ty->base)) {
+		classify_value(fn->ty->base, true, &rv);
+		hidden = rv.mem;
+	}
+	f = align_to(fn->frame_size + 64, 16);
+	if (f < 96)
+		f = 96;
 
 	/* Preserve the caller's s0 before s0 becomes the new frame pointer. */
 	i_mv(T0, S0);
 	i_addi(SP, SP, -f);
-	i_addi(S0, SP, f);
+	i_addi(S0, SP, f - 64);
 	i_sd(RA, S0, -8);
 	i_sd(T0, S0, -16);
 	i_sd(S1, S0, -24);
+
+	/*
+	 * The 64 bytes at s0+0..s0+63 are the va_list register save area.
+	 * The caller's stack arguments start at s0+64 (the old sp).
+	 */
+	if (fn->ty->variadic) {
+		for (i = 0; i < 8; i++)
+			i_sd(A0 + i, S0, i * 8);
+	}
+
+	pv = xcalloc((size_t)(fn->ty->nparams > 0 ? fn->ty->nparams : 1),
+		     sizeof(*pv));
+	copy = xcalloc((size_t)(fn->ty->nparams > 0 ? fn->ty->nparams : 1),
+		       sizeof(*copy));
 
 	if (hidden) {
 		if (!fn->ret_ptr)
 			fatal("internal error: missing aggregate-return pointer");
 		i_addi(T0, S0, -fn->ret_ptr->offset);
 		i_sd(A0, T0, 0);
+		ir = 1;
 	}
-	if (fn->ty->variadic) {
-		if (!fn->va_area)
-			fatal("internal error: missing va area");
-		i_addi(T0, S0, -fn->va_area->offset);
-		for (i = 0; i < 8; i++)
-			i_sd(A0 + i, T0, i * 8);
-		for (i = 0; i < 8; i++) {
-			load_s0(T1, i * 8);
-			i_sd(T1, T0, 64 + i * 8);
-		}
-	}
+
 	for (i = 0; i < fn->ty->nparams; i++) {
 		struct param *p = &fn->ty->params[i];
-		struct obj *v = p->obj;
-		int slot = i + (hidden ? 1 : 0);
 
-		if (!v)
+		if (!p->obj)
 			fatal("internal error: missing parameter");
-		i_addi(T0, S0, -v->offset);
-		if (slot < 8) {
-			i_sd(A0 + slot, T0, 0);
-		} else {
-			load_s0(T1, (slot - 8) * 8);
-			i_sd(T1, T0, 0);
+		classify_value(p->ty, true, &pv[i]);
+		abi_assign(&pv[i], &ir, &fr, &stk, &rs);
+	}
+
+	for (i = 0; i < fn->ty->nparams; i++) {
+		struct obj *v = fn->ty->params[i].obj;
+
+		if (pv[i].mem) {
+			struct abi_word_assign *w = &pv[i].w[0];
+
+			if (w->stack)
+				load_word_size(T0, S0, 64 + w->stack_off * 8, 8);
+			else
+				i_mv(T0, A0 + w->reg);
+			store_word_size(T0, S0, -v->offset, 8);
+			copy[i] = true;
+			continue;
+		}
+		for (j = 0; j < pv[i].nwords; j++) {
+			struct abi_word *w = &pv[i].cls.word[j];
+			struct abi_word_assign *a = &pv[i].w[j];
+			int off = -v->offset + w->offset;
+
+			if (a->stack) {
+				load_word_size(T0, S0, 64 + a->stack_off * 8,
+					       w->size);
+				store_word_size(T0, S0, off, w->size);
+			} else if (w->fp) {
+				store_fp_size(10 + a->reg, S0, off, w->size);
+			} else {
+				store_word_size(A0 + a->reg, S0, off, w->size);
+			}
 		}
 	}
-	for (i = 0; i < fn->ty->nparams; i++) {
-		struct param *p = &fn->ty->params[i];
-		struct obj *v = p->obj;
 
-		if (!v)
-			fatal("internal error: missing parameter");
-		if (!is_aggregate(v->ty))
+	/* Copy by-reference aggregate parameters into their local objects. */
+	for (i = 0; i < fn->ty->nparams; i++) {
+		struct obj *v = fn->ty->params[i].obj;
+
+		if (!copy[i])
 			continue;
 		if (!memcpy_sym)
 			fatal("internal error: missing memcpy runtime reference");
@@ -1537,6 +2258,9 @@ static void emit_prologue(struct obj *fn)
 		i_li(A2, v->ty->size);
 		i_call_sym(memcpy_sym);
 	}
+
+	free(pv);
+	free(copy);
 }
 
 void gen_function(struct obj *fn)

@@ -208,11 +208,13 @@ Generated programs are:
 
 `puts`, struct copies, and aggregate initialization zeroing use `__cc_puts`, `__cc_memcpy`, and `__cc_memset`, respectively.
 
-The generated calling convention is private to this toolchain: every argument
-occupies one 8-byte slot (`a0`-`a7`, then the caller stack), `float`/`double`
-values travel as raw IEEE bits in those slots, aggregates are passed by pointer
-to a caller copy, and aggregate returns use a hidden result pointer in `a0`.
-The complete contract is in `docs/cc-internal-abi.md`.
+The generated scalar, floating-point, aggregate and variadic calling
+convention follows the RISC-V LP64D ELF psABI: integer/pointer arguments use
+`a0`-`a7`, named `float`/`double` arguments use `fa0`-`fa7`, overflow arguments
+go on the caller stack at `0(sp)`, small aggregates are classified by up to two
+eight-byte words (including mixed integer/FP fields), and large aggregates use
+a hidden result pointer.  See `docs/cc-internal-abi.md` for the exact rules and
+the remaining `long double`/bit-field gaps.
 
 ## Explicitly Unsupported Features
 
@@ -223,8 +225,9 @@ These limitations exist to keep the implementation sufficiently small:
 - Chained designators, mixing with complex brace elision
 - Global aggregate copy initialization
 - Standard ELF `.o`, static libraries/dynamic libraries
-- Interactions with the system compiler's ABI (the `cc` calling convention is
-  intentionally private and documented in `docs/cc-internal-abi.md`)
+- 128-bit `long double` (currently represented as `double`)
+- GCC-identical bit-field layout for unusual mixed base types
+- Hosted `libc.a` linking (the next phase after standard ELF objects)
 
 ## Implementation Structure
 
@@ -296,6 +299,8 @@ malformed objects, duplicate/undefined symbols and ELF layout.
 | `blockfn.c`                      | Block-scope function declarations and function pointers                         | `5 6 7`                              |
 | `byvalue.c`                      | Aggregate parameters/returns by value, large structs                            | `7`, `10`, `7 10`, etc.              |
 | `bitfield.c`                     | Bit-field load/store/RMW, signed and wide fields                                | Multiple lines of numbers            |
+| `abi.c`                         | LP64D FP/aggregate/stack argument and return classification                     | `3 1 2 3`, `12`, `66`, etc.          |
+| `stdarg.c`                      | GCC-compatible `<stdarg.h>` int/long/double varargs                             | `10 14`                              |
 | `args.c`                         | More than eight arguments, stack and float/aggregate slots, varargs             | `55`, `55`, `39`, `43`, `10`, `45`   |
 | `agg_deep.c`                     | Aggregate return with hidden slots plus a ninth stack argument                  | `10 35`, `30 105`, `10 35`           |
 | `pp_float.c`                     | Decimal floating literals and suffixes                                          | `pp_float ok`                        |

@@ -177,6 +177,12 @@ if [[ -f $USER_ROOT/usr/include/cc.h ]]; then
 	"$BRKFS" cp "$USER_ROOT/usr/include/cc.h" "/usr/include/cc.h" "$IMG"
 fi
 
+# The on-target compiler now understands the standard GCC-compatible
+# <stdarg.h> builtins; install it alongside the freestanding cc.h.
+if [[ -f $USER_ROOT/usr/include/stdarg.h ]]; then
+	"$BRKFS" cp "$USER_ROOT/usr/include/stdarg.h" "/usr/include/stdarg.h" "$IMG"
+fi
+
 for doc in README.md README.cn.md LICENSE; do
 	if [[ -f $KERNEL_ROOT/$doc ]]; then
 		"$BRKFS" cp --parents "$KERNEL_ROOT/$doc" \

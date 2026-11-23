@@ -205,7 +205,7 @@ static bool is_typename_at(int pos)
 		"void",	  "char",   "short", "int",	"long",	   "float",
 		"double", "unsigned", "signed", "const", "volatile", "static",
 		"extern", "register", "inline", "struct", "union",   "enum",
-		"typedef",
+		"typedef", "__builtin_va_list",
 	};
 
 	if (pos < 0 || pos >= ntokens || tokens[pos].kind != TK_IDENT)
@@ -831,6 +831,8 @@ static struct type *parse_declspec(void)
 			declspec_extern = saved_extern;
 			declspec_typedef = saved_typedef;
 			return ty;
+		} else if (consume("__builtin_va_list")) {
+			return ty_ptr(ty_void);
 		} else if (consume("float")) {
 			base = base == BS_LONG ? BS_DOUBLE : BS_FLOAT;
 			seen = true;
@@ -2923,6 +2925,21 @@ static struct node *parse_postfix(void)
 			continue;
 		}
 		if (consume("(")) {
+			if (n->kind == ND_VAR && n->var->name &&
+			    !strcmp(n->var->name, "__builtin_va_arg")) {
+				struct node *ap = parse_assign();
+				struct node *va;
+				struct type *ty;
+
+				expect(",");
+				ty = parse_type_name();
+				expect(")");
+				va = new_node(ND_VA_ARG);
+				va->lhs = ap;
+				va->ty = ty;
+				n = va;
+				continue;
+			}
 			struct node *call;
 			struct node *callee = NULL;
 			struct obj *fn = NULL;
