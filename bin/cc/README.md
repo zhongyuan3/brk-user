@@ -36,7 +36,7 @@ cc [-c] [-E] [-S] [-o output] [-I dir] [-D name[=value]] [-U name] input.c|input
 - If `-o` is not specified, the output is `a.out`
 - Multiple `.c` files are compiled separately within the same invocation and then linked into a single executable
 - `-S` compiles only and writes a human-readable RISC-V assembly listing
-- `-c` compiles only, without linking, using the built-in `CCO2` object format
+- `-c` compiles only and writes a standard ELF64 `ET_REL` object; the legacy private `CCO2` format remains available with `--cco2-object`
 - `.o` inputs are passed to the linker together with `.c` inputs
 - The output file is automatically set to `0755`
 
@@ -176,7 +176,12 @@ cc a.o b.o -o prog
 cc a.c b.o -o prog
 ```
 
-Object files use the compiler's private `CCO2` format, not standard ELF `.o`; they are used only for this compiler's linking stage.  The reader also accepts older `CCO1` objects.
+`cc -c` writes standard ELF64 `ET_REL` RISC-V objects with `.text`, `.data`,
+`.bss`, `.rela.text`, `.rela.data`, `.symtab` and `.strtab`, using the standard
+`R_RISCV_HI20`, `R_RISCV_LO12_I`, `R_RISCV_JAL` and `R_RISCV_64` relocations.
+The built-in linker reads these objects directly, and GNU `ld -r` accepts
+them.  For compatibility, `--cco2-object` still writes the old private CCO2
+format, and the linker continues to read both CCO2 and CCO1 objects.
 
 Linking rules:
 
@@ -191,9 +196,10 @@ Linking rules:
 
 Not yet supported:
 
-- Standard ELF `.o` / interoperability with the system linker
-- Static libraries/dynamic libraries
-- Linker scripts/custom sections
+- Static libraries/dynamic libraries and `-L`/`-l`
+- GNU ld-compatible `.riscv.attributes` and linker relaxation
+- Linker scripts/custom sections; the linked executable still uses one RWX
+  `PT_LOAD`
 
 ## Generated Artifact ABI
 
@@ -224,7 +230,7 @@ These limitations exist to keep the implementation sufficiently small:
 - By-value `struct`/`union` arguments through `...`
 - Chained designators, mixing with complex brace elision
 - Global aggregate copy initialization
-- Standard ELF `.o`, static libraries/dynamic libraries
+- Static libraries/dynamic libraries; `.riscv.attributes` and linker relaxation
 - 128-bit `long double` (currently represented as `double`)
 - GCC-identical bit-field layout for unusual mixed base types
 - Hosted `libc.a` linking (the next phase after standard ELF objects)
@@ -244,7 +250,8 @@ These limitations exist to keep the implementation sufficiently small:
 - `parser.c`: declaration, initializer, statement, and expression parsing
 - `codegen.c`: stack-based evaluation; expression results are placed in `a0`, and lvalue addresses are placed in `a0`
 - `link.c`: merges text/data/bss from multiple units, resolves symbols, and patches relocations
-- `obj.c`: CCO2 object serialization/deserialization (CCO1 reader compatible)
+- `elf.c`: standard ELF64 `ET_REL` writer and reader
+- `obj.c`: legacy CCO2 object serialization/deserialization (CCO1 reader compatible)
 - `main.c`: command-line driver and ELF output entry point
 - `include/cc.h`: the runtime header for compiled programs—a raw-syscall subset with no `libc.a` dependency; installed into the rootfs as `/usr/include/cc.h`, the only userland header the image ships
 
@@ -270,9 +277,10 @@ riscv64-unknown-elf-readelf -h -l /tmp/hello.elf
 ```
 
 `make cc-tests` boots BRK in QEMU and runs the on-target sources;
-`make cc-link-tests` runs the host-side CCO2/relocation/linker checks.
-The linker fixture `tests/cc/link_tests.sh` covers CCO1 compatibility,
-malformed objects, duplicate/undefined symbols and ELF layout.
+`make cc-link-tests` runs the host-side object/relocation/linker checks.
+The linker fixture `tests/cc/link_tests.sh` covers ELF object structure,
+standard relocations, CCO1/CCO2 compatibility, malformed objects,
+duplicate/undefined symbols and executable ELF layout.
 
 `tests/cc/` contains verified examples:
 
@@ -310,7 +318,7 @@ malformed objects, duplicate/undefined symbols and ELF layout.
 | `front_bitfield.c`               | Bit-field layout, unions, zero-width and padding                                | Multiple lines of numbers            |
 | `front_static.c`                 | Static locals, nested statics, extern locals                                    | Multiple lines of numbers            |
 | `front_manyargs.c`               | Nine-plus parameters and mixed argument slots                                   | `55`, `45`, `78`, `550`, `155`, `24` |
-| `link_multi_a.c` + `link_multi_b.c` | CCO2 cross-unit data relocations, bss, static name collisions                | `link`, `42`, etc.                   |
+| `link_multi_a.c` + `link_multi_b.c` | Cross-unit data relocations, bss, static name collisions                        | `link`, `42`, etc.                   |
 | `multi_a.c` + `multi_b.c`        | Multi-file linking, `extern`, `static` internal linkage                         | `multi`, `5`, `101`, `1`, `2`, `7`   |
 | `multi_a.c` + `multi_b.c` (`-c`) | Separate compilation, object files, local symbols                               | Same as above                        |
 

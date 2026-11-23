@@ -335,6 +335,14 @@ struct unit *read_object(const char *path)
 		fatal("cannot open object file '%s'", path);
 	if (len < 0 || len > OBJ_MAX_BYTES)
 		fatal("object file too large '%s'", path);
+	if (len >= 4 && (unsigned char)buf[0] == 0x7f && buf[1] == 'E' &&
+	    buf[2] == 'L' && buf[3] == 'F') {
+		struct unit *u = read_elf_object(
+			path, (const unsigned char *)buf, len);
+
+		free(buf);
+		return u;
+	}
 	memset(&rd, 0, sizeof(rd));
 	rd.p = (const unsigned char *)buf;
 	rd.len = len;

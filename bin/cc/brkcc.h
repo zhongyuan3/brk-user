@@ -478,6 +478,9 @@ void finalize_unit(void);
 void make_runtime_refs(void);
 void write_object(const char *path, struct unit *u);
 struct unit *read_object(const char *path);
+void write_elf_object(const char *path, struct unit *u);
+struct unit *read_elf_object(const char *path, const unsigned char *buf,
+			     int len);
 void link_and_write(const char *path);
 
 #endif

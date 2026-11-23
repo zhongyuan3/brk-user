@@ -39,7 +39,7 @@ structured instruction records (asm.c)
     v
 relocatable unit (struct unit)
     |
-    |  object serialization (CCO2)
+    |  object serialization (ELF ET_REL)
     v
 .o file
     |
@@ -112,8 +112,13 @@ than the psABI's 128-bit type; this remains a follow-up item.
 
 ### 4.3 Object format
 
-The current `CCO2` format is still private (the standard ELF relocatable
-object emitter is the next phase).  It carries:
+`cc -c` now emits standard ELF64 little-endian RISC-V `ET_REL` objects with
+`.text`, `.data`, `.bss`, `.rela.text`, `.rela.data`, `.symtab`, `.strtab`
+and `.shstrtab`, using `R_RISCV_HI20`, `R_RISCV_LO12_I`, `R_RISCV_JAL` and
+`R_RISCV_64` relocations.  The built-in linker consumes them directly.
+
+The legacy private CCO2 format is still readable (and writable with
+`--cco2-object` for compatibility tests).  It carries:
 
 - magic `CCO2`, version 2;
 - `.text` bytes, `.data` bytes, `.bss` size;

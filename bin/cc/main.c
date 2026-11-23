@@ -53,7 +53,8 @@ static void usage(const char *argv0)
 {
 	fprintf(stderr,
 		"usage: %s [-c] [-E] [-S] [-o output] [-I dir] "
-		"[-D name[=value]] [-U name] input.c|input.o [...]\n",
+		"[-D name[=value]] [-U name] [--cco2-object] "
+		"input.c|input.o [...]\n",
 		argv0);
 }
 
@@ -125,6 +126,7 @@ int main(int argc, char **argv)
 	bool preprocess_only = false;
 	bool compile_only = false;
 	bool assembly_only = false;
+	bool cco2_object = false;
 	bool out_given = false;
 
 	for (i = 1; i < argc; i++) {
@@ -135,6 +137,8 @@ int main(int argc, char **argv)
 			out_given = true;
 		} else if (!strcmp(argv[i], "-c")) {
 			compile_only = true;
+		} else if (!strcmp(argv[i], "--cco2-object")) {
+			cco2_object = true;
 		} else if (!strcmp(argv[i], "-S")) {
 			assembly_only = true;
 		} else if (!strcmp(argv[i], "-I")) {
@@ -237,7 +241,10 @@ int main(int argc, char **argv)
 			obj = (out_given && ninputs == 1) ?
 				      (char *)out :
 				      object_path(inputs[i]);
-			write_object(obj, unit_tail);
+			if (cco2_object)
+				write_object(obj, unit_tail);
+			else
+				write_elf_object(obj, unit_tail);
 			if (obj != out)
 				free(obj);
 		}

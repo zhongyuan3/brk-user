@@ -102,12 +102,40 @@ else
 	fail "multi-unit -c compile"
 fi
 
-magic=$(dd if="$TMP/a.o" bs=1 count=4 2>/dev/null)
-version=$(od -An -tx1 -j4 -N4 "$TMP/a.o" | tr -d ' \n')
-if [ "$magic" = "CCO2" ] && [ "$version" = "02000000" ]; then
-	note "CCO2 magic and version 2"
+ident=$(od -An -tx1 -N4 "$TMP/a.o" | tr -d ' \n')
+etype=$(od -An -tu2 -j16 -N2 "$TMP/a.o" | tr -d ' \n')
+machine=$(od -An -tu2 -j18 -N2 "$TMP/a.o" | tr -d ' \n')
+flags=$(od -An -tu4 -j48 -N4 "$TMP/a.o" | tr -d ' \n')
+if [ "$ident" = "7f454c46" ] && [ "$etype" = "1" ] &&
+	[ "$machine" = "243" ] && [ "$flags" = "4" ]; then
+	note "ELF64 ET_REL RISC-V object with double-float flags"
 else
-	fail "CCO2 magic and version 2 (magic='$magic' version='$version')"
+	fail "ELF64 ET_REL RISC-V object with double-float flags (ident='$ident' type='$etype' machine='$machine' flags='$flags')"
+fi
+
+if command -v readelf >/dev/null 2>&1; then
+	sections=$(readelf -SW "$TMP/a.o")
+	if printf '%s\n' "$sections" | grep -q '\.text .*PROGBITS' &&
+		printf '%s\n' "$sections" | grep -q '\.data .*PROGBITS' &&
+		printf '%s\n' "$sections" | grep -q '\.bss .*NOBITS' &&
+		printf '%s\n' "$sections" | grep -q '\.rela\.text .*RELA' &&
+		printf '%s\n' "$sections" | grep -q '\.rela\.data .*RELA' &&
+		printf '%s\n' "$sections" | grep -q '\.symtab .*SYMTAB'; then
+		note "ELF object carries text/data/bss/symtab/rela sections"
+	else
+		fail "ELF object carries text/data/bss/symtab/rela sections"
+	fi
+	relocs=$(readelf -rW "$TMP/a.o")
+	if printf '%s\n' "$relocs" | grep -q 'R_RISCV_HI20' &&
+		printf '%s\n' "$relocs" | grep -q 'R_RISCV_LO12_I' &&
+		printf '%s\n' "$relocs" | grep -q 'R_RISCV_JAL' &&
+		printf '%s\n' "$relocs" | grep -q 'R_RISCV_64'; then
+		note "ELF object uses standard RISC-V relocations"
+	else
+		fail "ELF object uses standard RISC-V relocations"
+	fi
+else
+	note "readelf not found; skipping ELF section checks"
 fi
 
 if run_cc "$TMP/a.o" "$TMP/b.o" -o "$TMP/obj"; then
@@ -145,11 +173,27 @@ else
 fi
 
 # ------------------------------------------------------------------
-# CCO1 compatibility: the body is identical, only magic/version differ.
+# CCO2/CCO1 compatibility: --cco2-object still writes the legacy format,
+# and the body is identical to the old CCO2 layout.
 # ------------------------------------------------------------------
 
-cp "$TMP/a.o" "$TMP/a1.o"
-cp "$TMP/b.o" "$TMP/b1.o"
+if run_cc --cco2-object -c "$src_dir/link_multi_a.c" -o "$TMP/a.cco2.o" &&
+	run_cc --cco2-object -c "$src_dir/link_multi_b.c" -o "$TMP/b.cco2.o"; then
+	note "legacy CCO2 -c compile"
+else
+	fail "legacy CCO2 -c compile"
+fi
+
+magic=$(dd if="$TMP/a.cco2.o" bs=1 count=4 2>/dev/null)
+version=$(od -An -tx1 -j4 -N4 "$TMP/a.cco2.o" | tr -d ' \n')
+if [ "$magic" = "CCO2" ] && [ "$version" = "02000000" ]; then
+	note "CCO2 magic and version 2"
+else
+	fail "CCO2 magic and version 2 (magic='$magic' version='$version')"
+fi
+
+cp "$TMP/a.cco2.o" "$TMP/a1.o"
+cp "$TMP/b.cco2.o" "$TMP/b1.o"
 patch 'CCO1\001\000\000\000' 0 "$TMP/a1.o"
 patch 'CCO1\001\000\000\000' 0 "$TMP/b1.o"
 if run_cc "$TMP/a1.o" "$TMP/b1.o" -o "$TMP/obj1" &&
@@ -278,8 +322,10 @@ expect_fail "undefined static symbol stays unit-local" \
 	"undefined static symbol" \
 	run_cc "$TMP/static_undef.o" "$TMP/static_other.o" -o "$TMP/out.bin"
 
-run_cc -c "$TMP/data_a.c" -o "$TMP/data_a.o" || fail "compile relocation fixture"
-run_cc -c "$TMP/data_b.c" -o "$TMP/data_b.o" || fail "compile relocation fixture"
+run_cc --cco2-object -c "$TMP/data_a.c" -o "$TMP/data_a.o" ||
+	fail "compile relocation fixture"
+run_cc --cco2-object -c "$TMP/data_b.c" -o "$TMP/data_b.o" ||
+	fail "compile relocation fixture"
 set -- $(sym_end "$TMP/data_a.o")
 sym_off=$1
 ndrels=$2
@@ -326,6 +372,35 @@ cp "$TMP/data_a.o" "$TMP/baddata.o"
 patch '\377\377\377\177' $((sym_off + 4)) "$TMP/baddata.o"
 expect_fail "data relocation out of range" "data relocation out of range" \
 	run_cc "$TMP/baddata.o" "$TMP/data_b.o" -o "$TMP/out.bin"
+
+# ------------------------------------------------------------------
+# Malformed standard ELF objects.
+# ------------------------------------------------------------------
+
+run_cc -c "$TMP/data_a.c" -o "$TMP/data_a.elf.o" ||
+	fail "compile ELF relocation fixture"
+
+cp "$TMP/data_a.elf.o" "$TMP/badmachine.o"
+patch '\001\000' 18 "$TMP/badmachine.o"
+expect_fail "non-RISC-V ELF object" "is not a RISC-V ELF object" \
+	run_cc "$TMP/badmachine.o" -o "$TMP/out.bin"
+
+cp "$TMP/data_a.elf.o" "$TMP/badshoff.o"
+patch '\377\377\377\177\000\000\000\000' 40 "$TMP/badshoff.o"
+expect_fail "bad ELF section header offset" "truncated section header table" \
+	run_cc "$TMP/badshoff.o" -o "$TMP/out.bin"
+
+cp "$TMP/data_a.elf.o" "$TMP/truncated.o"
+esize=$(wc -c <"$TMP/truncated.o")
+dd if="$TMP/truncated.o" of="$TMP/truncated2.o" bs=1 count=$((esize - 3)) \
+	2>/dev/null
+expect_fail "truncated ELF object" "truncated" \
+	run_cc "$TMP/truncated2.o" -o "$TMP/out.bin"
+
+cp "$TMP/data_a.elf.o" "$TMP/badelfmagic.o"
+patch 'XXXX' 0 "$TMP/badelfmagic.o"
+expect_fail "bad ELF magic" "is not a cc object file" \
+	run_cc "$TMP/badelfmagic.o" -o "$TMP/out.bin"
 
 if [ "$failures" -ne 0 ]; then
 	printf '%d linker test(s) failed\n' "$failures" >&2
