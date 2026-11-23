@@ -1,4 +1,6 @@
-#include <cc.h>
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 #define ADD(a, b) ((a) + (b))
 #define MAX(a, b) ((a) > (b) ? (a) : (b))

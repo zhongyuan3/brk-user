@@ -122,8 +122,8 @@ s0 + 64`, and returns.
   128-bit `long double`;
 - `va_copy` copies the pointer; `va_end` is a no-op.
 
-`usr/include/cc.h` uses the same pointer representation, and
-`usr/include/stdarg.h` uses the GCC-style `__builtin_va_list` / builtins.
+`usr/include/stdarg.h` uses the GCC-style `__builtin_va_list` / builtins with
+the same pointer representation.
 
 ## 7. Bit-fields
 

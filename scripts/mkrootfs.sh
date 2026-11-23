@@ -177,8 +177,7 @@ if [[ -f $VARIANT_ROOT/libdyn.so ]]; then
 fi
 
 # On-target toolchain: install the full libc header tree plus the kernel
-# UAPI headers it derives its ABI types from.  <cc.h> remains available for
-# freestanding programs.
+# UAPI headers it derives its ABI types from.
 if [[ -d $USER_ROOT/usr/include ]]; then
 	"$BRKFS" cp -r --parents "$USER_ROOT/usr/include" "/usr/include" "$IMG"
 fi

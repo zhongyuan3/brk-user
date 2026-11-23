@@ -1,3 +1,4 @@
+#include <stdio.h>
 /*
  * Second unit of the multi-object linking test; see link_multi_a.c.
  * Exercises external data defined in another unit, cross-unit data

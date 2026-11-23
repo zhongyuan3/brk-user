@@ -15,7 +15,9 @@
  *   88
  *   42
  */
-#include <cc.h>
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 struct S {
 	double x;

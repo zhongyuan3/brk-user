@@ -3,7 +3,9 @@
  * Expected output:
  *   20 30 30 6
  */
-#include <cc.h>
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 int arr[4] = { 10, 20, 30, 40 };
 int *p1 = &arr[1];

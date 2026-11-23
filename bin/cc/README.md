@@ -10,7 +10,7 @@ Build user programs (including `/bin/cc`):
 make -C brk-user
 ```
 
-Regenerate the rootfs (this installs `cc` to `/bin/cc`, `usr/include/cc.h` to `/usr/include/cc.h`, and copies `tests/` to `/home/tests`):
+Regenerate the rootfs (this installs `cc` to `/bin/cc`, the standard header tree and static archives, and copies `tests/` to `/home/tests`):
 
 ```sh
 make -C brk-user rootfs CROSS_COMPILE=riscv64-unknown-elf-
@@ -74,7 +74,7 @@ Supported:
 Not supported:
 
 - Hexadecimal floating constants (`0x1p3`)
-- Complex standard headers (the target machine provides only a minimal `usr/include/cc.h`)
+- Headers that require inline assembly or full 128-bit `long double`
 
 ## Supported C Subset
 
@@ -168,7 +168,7 @@ int putchar(int c);
 int puts(const char *s);
 ```
 
-`usr/include/cc.h` provides these prototypes as well as `NULL`, `EOF`, and `O_*` constants.  Hosted programs use the regular `<stdio.h>`, `<stdlib.h>`, `<unistd.h>`, `<dirent.h>`, POSIX and network headers installed from `usr/include`.
+Freestanding programs can use the regular `<stdio.h>`, `<stdlib.h>`, `<unistd.h>`, `<fcntl.h>` and `<stdarg.h>` headers: when no libc is linked, the compiler lowers the raw-syscall functions above to builtins.  Hosted programs use the same headers with `-lc` and the libc implementations.
 
 ## Hosted libc programs
 
@@ -300,7 +300,7 @@ These limitations exist to keep the implementation sufficiently small:
 - `archive.c`: static `ar` archive reader and on-demand member extraction
 - `obj.c`: legacy CCO2 object serialization/deserialization (CCO1 reader compatible)
 - `main.c`: command-line driver and ELF output entry point
-- `include/cc.h`: the runtime header for compiled programs—a raw-syscall subset with no `libc.a` dependency; installed into the rootfs as `/usr/include/cc.h`, the only userland header the image ships
+- `usr/include/`: the standard C and POSIX header tree installed by the rootfs build
 
 To avoid the RISC-V `B-type` branch's ±4KB range limitation, conditional jumps are uniformly generated as:
 
@@ -318,7 +318,7 @@ Build only the host version (for quickly inspecting generated ELF files):
 
 ```sh
 make -C brk-user cc-host
-./brk-user/build/cc-host -I brk-user/usr/include \
+./brk-user/build/cc-host -I brk-user/build/include -I brk-user/usr/include \
     -o /tmp/hello.elf brk-user/tests/cc/hello.c
 riscv64-unknown-elf-readelf -h -l /tmp/hello.elf
 ```

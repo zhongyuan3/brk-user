@@ -1,4 +1,6 @@
-#include <cc.h>
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include "pp.h"
 
 #define BASE 3

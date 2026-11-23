@@ -3,7 +3,9 @@
  * Expected output:
  *   5 6 7
  */
-#include <cc.h>
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 int later(int x)
 {

@@ -1,3 +1,4 @@
+#include <stdio.h>
 void putnum(int n)
 {
 	if (n < 0) {

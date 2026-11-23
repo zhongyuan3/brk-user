@@ -1,3 +1,6 @@
+#include <stdio.h>
+#include <unistd.h>
+#include <fcntl.h>
 void putnum(int n)
 {
 	if (n < 0) {

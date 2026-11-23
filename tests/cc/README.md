@@ -182,7 +182,7 @@ Expected results:
   `cross`
 - `hello.s`: a readable `.text` listing containing `main:` and RISC-V mnemonics
 
-`pp.c` depends on `/usr/include/cc.h` and `pp.h` in the same directory, so the rootfs build script must first
+`pp.c` depends on the installed `<stdio.h>` headers and `pp.h` in the same directory, so the rootfs build script must first
 install the headers and copy the entire `tests/` directory.
 
 Host-side CCO2, relocation, malformed-object and ELF-layout checks live in

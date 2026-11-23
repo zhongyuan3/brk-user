@@ -12,7 +12,7 @@ bin/                    # commands installed under /bin (sh/, cc/, *.c)
 sbin/                   # commands installed under /sbin (init/)
 usr/
 ├── bin/                # commands installed under /usr/bin (brktest/, *.c)
-├── include/            # public headers (libcmdfw.h, cc.h, POSIX headers)
+├── include/            # public headers (libcmdfw.h, POSIX headers)
 └── lib/
     ├── libc/           # BRK C library (libc API; math/ written from scratch)
     └── libcmdfw/         # command helper library (cmdfw_* API)
@@ -150,7 +150,7 @@ The rootfs script builds the user commands and libc tests, then installs:
 - `/etc` configuration files
 - `tests/` under `/home/tests`
 - libc test binaries under `/home/tests/libc`
-- `usr/include/cc.h` under `/usr/include/cc.h`
+- the full `usr/include` tree, including POSIX headers, under `/usr/include`
 
 `KERNEL_ROOT` and `TOOLS_ROOT` can be overridden when the kernel or
 `brk-tools` repositories are checked out elsewhere.

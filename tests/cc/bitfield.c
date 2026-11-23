@@ -1,4 +1,6 @@
-#include <cc.h>
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 /*
  * Bit-field loads, stores, compound assignment and increments.

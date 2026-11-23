@@ -7,7 +7,9 @@
  *   30 105
  *   10 35
  */
-#include <cc.h>
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 struct P {
 	long a;

@@ -1,4 +1,6 @@
-#include <cc.h>
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 /*
  * Aggregate parameters and return values by value.

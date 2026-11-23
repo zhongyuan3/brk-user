@@ -1,3 +1,4 @@
+#include <stdio.h>
 char *greet = "hi";
 char text[16] = "abc";
 int nums[4] = { 3, 1, 4, 2 };

@@ -8,7 +8,9 @@
 #include "pp_line.c"
 #include "./pp_line.c"
 
-#include <cc.h>
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 #if !defined(__STDC__) || !defined(__DATE__) || !defined(__TIME__)
 #error predefined macros must be visible to defined()

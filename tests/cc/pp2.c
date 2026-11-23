@@ -4,7 +4,9 @@
  * __FILE__/__LINE__/__STDC__ builtins.  Everything is checked in
  * memory and the exit code reports the verdict.
  */
-#include <cc.h>
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 #define HDR "ppm.h"
 #include HDR

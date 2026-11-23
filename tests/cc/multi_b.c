@@ -1,4 +1,6 @@
-#include <cc.h>
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 extern int shared;
 int add(int a, int b);

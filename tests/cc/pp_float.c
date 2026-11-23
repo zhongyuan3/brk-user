@@ -3,7 +3,9 @@
  * f/F suffix.  This test also exercises the front end and code
  * generator once they support TK_FLOAT.
  */
-#include <cc.h>
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 static int fails;
 
