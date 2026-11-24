@@ -11,7 +11,7 @@
 
 /*
  * POSIX file status.  libc owns this layout; the kernel ABI is
- * struct __brk_statx (uapi/stat.h) and stat/statx_impl.h converts
+ * struct __brk_stat (uapi/stat.h) and stat/statx_impl.h converts
  * field by field.  Kept in the traditional 128-byte shape.
  */
 struct stat {
