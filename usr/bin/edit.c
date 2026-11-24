@@ -403,38 +403,198 @@ static void ensure_visible(struct editor *ed)
 		ed->left = width - (size_t)ed->cols + 1;
 }
 
+enum hl_style {
+	HL_NORMAL,
+	HL_KEYWORD,
+	HL_NUMBER,
+	HL_STRING,
+	HL_COMMENT,
+	HL_PREPROC,
+};
+
+static const char *const hl_sequence[] = {
+	"\033[0m",
+	"\033[1;34m",
+	"\033[33m",
+	"\033[32m",
+	"\033[36m",
+	"\033[35m",
+};
+
+static const char *const hl_keywords[] = {
+	"_Alignas", "_Alignof", "_Atomic", "_Bool", "_Complex", "_Generic",
+	"_Imaginary", "_Noreturn", "_Static_assert", "_Thread_local",
+	"auto", "break", "case", "char", "const", "continue", "default",
+	"do", "double", "else", "enum", "extern", "float", "for", "goto",
+	"if", "inline", "int", "long", "register", "restrict", "return",
+	"short", "signed", "sizeof", "static", "struct", "switch",
+	"typedef", "union", "unsigned", "void", "volatile", "while",
+};
+
+static bool hl_alpha(unsigned char c)
+{
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_';
+}
+
+static bool hl_digit(unsigned char c)
+{
+	return c >= '0' && c <= '9';
+}
+
+static bool hl_alnum(unsigned char c)
+{
+	return hl_alpha(c) || hl_digit(c);
+}
+
+static bool hl_is_keyword(const char *s, size_t n)
+{
+	size_t i;
+
+	for (i = 0; i < sizeof(hl_keywords) / sizeof(hl_keywords[0]); i++) {
+		size_t len = strlen(hl_keywords[i]);
+
+		if (len == n && !memcmp(s, hl_keywords[i], n))
+			return true;
+	}
+	return false;
+}
+
+/*
+ * Classify one token on a single line.  The highlighter is deliberately
+ * line-local: an unclosed block comment stops coloring at end of line and
+ * strings do not carry escape state into the next line.
+ */
+static int hl_token(const char *s, size_t len, size_t i, size_t *n)
+{
+	unsigned char c = (unsigned char)s[i];
+	size_t j;
+
+	if (i == 0) {
+		size_t k = 0;
+
+		while (k < len && (s[k] == ' ' || s[k] == '\t'))
+			k++;
+		if (k < len && s[k] == '#') {
+			*n = len - i;
+			return HL_PREPROC;
+		}
+	}
+	if (c == '/' && i + 1 < len && s[i + 1] == '/') {
+		*n = len - i;
+		return HL_COMMENT;
+	}
+	if (c == '/' && i + 1 < len && s[i + 1] == '*') {
+		j = i + 2;
+		while (j + 1 < len && !(s[j] == '*' && s[j + 1] == '/'))
+			j++;
+		j = (j + 1 < len) ? j + 2 : len;
+		*n = j - i;
+		return HL_COMMENT;
+	}
+	if (c == '"' || c == '\'') {
+		j = i + 1;
+		while (j < len) {
+			if (s[j] == '\\' && j + 1 < len) {
+				j += 2;
+				continue;
+			}
+			j++;
+			if (s[j - 1] == c)
+				break;
+		}
+		*n = j - i;
+		return HL_STRING;
+	}
+	if (hl_digit(c)) {
+		j = i + 1;
+		while (j < len) {
+			unsigned char d = (unsigned char)s[j];
+
+			if (hl_alnum(d) || d == '.') {
+				j++;
+				continue;
+			}
+			if ((d == '+' || d == '-') &&
+			    (s[j - 1] == 'e' || s[j - 1] == 'E' ||
+			     s[j - 1] == 'p' || s[j - 1] == 'P')) {
+				j++;
+				continue;
+			}
+			break;
+		}
+		*n = j - i;
+		return HL_NUMBER;
+	}
+	if (hl_alpha(c)) {
+		j = i + 1;
+		while (j < len && hl_alnum((unsigned char)s[j]))
+			j++;
+		*n = j - i;
+		return hl_is_keyword(s + i, *n) ? HL_KEYWORD : HL_NORMAL;
+	}
+	*n = 1;
+	return HL_NORMAL;
+}
+
+static bool has_c_syntax(const char *path)
+{
+	const char *dot = strrchr(path, '.');
+
+	if (!dot)
+		return false;
+	return !strcmp(dot, ".c") || !strcmp(dot, ".h") ||
+	       !strcmp(dot, ".cc") || !strcmp(dot, ".cpp") ||
+	       !strcmp(dot, ".hpp") || !strcmp(dot, ".s") ||
+	       !strcmp(dot, ".S");
+}
+
 static int render_line(struct outbuf *out, const struct line *line,
-		       size_t left, size_t cols)
+		       size_t left, size_t cols, bool highlight)
 {
 	size_t disp = 0;
 	size_t i = 0;
+	int cur_style = HL_NORMAL;
 
 	while (i < line->len && disp < left + cols) {
-		unsigned char c = (unsigned char)line->data[i++];
-		size_t next;
+		size_t n = 1;
+		int style = highlight ? hl_token(line->data, line->len, i, &n) :
+					HL_NORMAL;
+		size_t end = i + n;
 
-		if (c == '\t')
-			next = disp + (TAB_WIDTH - (disp % TAB_WIDTH));
-		else
-			next = disp + 1;
+		while (i < end) {
+			unsigned char c = (unsigned char)line->data[i++];
+			size_t next;
 
-		if (next > left) {
-			if (c == '\t') {
-				size_t d = disp < left ? left : disp;
+			if (c == '\t')
+				next = disp + (TAB_WIDTH - (disp % TAB_WIDTH));
+			else
+				next = disp + 1;
 
-				for (; d < next && d < left + cols; d++)
-					if (out_char(out, ' '))
+			if (next > left) {
+				if (highlight && style != cur_style) {
+					if (out_str(out, hl_sequence[style]))
 						return -1;
-			} else if (disp >= left) {
-				char show = (c >= 0x20 && c != 0x7f) ?
-						    (char)c :
-						    '.';
-				if (out_char(out, show))
-					return -1;
+					cur_style = style;
+				}
+				if (c == '\t') {
+					size_t d = disp < left ? left : disp;
+
+					for (; d < next && d < left + cols; d++)
+						if (out_char(out, ' '))
+							return -1;
+				} else if (disp >= left) {
+					char show = (c >= 0x20 && c != 0x7f) ?
+							    (char)c :
+							    '.';
+					if (out_char(out, show))
+						return -1;
+				}
 			}
+			disp = next;
 		}
-		disp = next;
 	}
+	if (cur_style != HL_NORMAL && out_str(out, hl_sequence[HL_NORMAL]))
+		return -1;
 	return 0;
 }
 
@@ -446,6 +606,7 @@ static int draw(struct editor *ed)
 	size_t width;
 	size_t crow;
 	size_t ccol;
+	bool highlight = has_c_syntax(ed->path);
 
 	ensure_visible(ed);
 
@@ -457,11 +618,14 @@ static int draw(struct editor *ed)
 
 		if (idx < ed->nlines &&
 		    render_line(&out, &ed->lines[idx], ed->left,
-				(size_t)ed->cols))
+				(size_t)ed->cols, highlight))
 			return -1;
 		if (out_str(&out, "\033[K\r\n"))
 			return -1;
 	}
+
+	if (out_str(&out, "\033[0m"))
+		return -1;
 
 	snprintf(status, sizeof(status), " %s%s  %lu:%lu  %s%s%s",
 		 ed->path, ed->dirty ? " [modified]" : "",
@@ -1063,18 +1227,36 @@ int main(int argc, char *argv[])
 
 	static const struct cmdfw_option options[] = {
 		{ 'k', 'k', "keys", CMDFW_OPT_NO_ARG },
+		/* Non-interactive rendering hook used by tests. */
+		{ 2, 0, "highlight-line", CMDFW_OPT_REQUIRED_ARG },
 		CMDFW_OPTION_END,
 	};
+	const char *highlight_line = NULL;
 	int opt;
 	int debug_keys = 0;
 
 	while ((opt = cmdfw_optparse(&ctx, options)) > 0) {
 		if (opt == 'k')
 			debug_keys = 1;
+		else if (opt == 2)
+			highlight_line = ctx.arg;
+	}
+
+	if (highlight_line) {
+		struct line line = {
+			.data = (char *)highlight_line,
+			.len = strlen(highlight_line),
+		};
+		struct outbuf out = { .len = 0 };
+
+		if (render_line(&out, &line, 0, 4096, true) ||
+		    out_str(&out, "\n") || out_flush(&out))
+			return CMDFW_EXIT_FAIL;
+		return CMDFW_EXIT_OK;
 	}
 
 	if (cmdfw_operand_count(&ctx) != 1)
-		cmdfw_usage("Usage: edit [-k] FILE");
+		cmdfw_usage("Usage: edit [-k] [--highlight-line TEXT] FILE");
 
 	if (cmdfw_term_check() != 0)
 		return CMDFW_EXIT_FAIL;
