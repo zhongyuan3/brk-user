@@ -52,9 +52,11 @@ KERNEL_ELF := $(KERNEL_BUILD_ROOT)/brk
 KERNEL_MAKE_ARGS ?=
 
 UAPI_SRC := $(KERNEL_ROOT)/include/uapi
+UAPI_ARCH_SRC := $(KERNEL_ROOT)/arch/$(KERNEL_ARCH)/include/uapi
 UAPI_DIR := $(BUILD_ROOT)/include/uapi
 UAPI_STAMP := $(UAPI_DIR)/.stamp
 UAPI_HEADERS := $(wildcard $(UAPI_SRC)/*.h)
+UAPI_ARCH_HEADERS := $(wildcard $(UAPI_ARCH_SRC)/asm/*.h)
 
 ROOTFS_IMG ?= $(USER_BUILD_ROOT)/rootfs.img
 MKROOTFS := scripts/mkrootfs.sh
@@ -66,7 +68,7 @@ EXTRA_QEMU_OPTS ?=
 
 # Inputs that determine the rootfs contents.  Rebuild the image when the
 # packaging script, userland sources, headers or binaries change.
-ROOTFS_DEPS := $(MKROOTFS) Makefile $(UAPI_HEADERS) \
+ROOTFS_DEPS := $(MKROOTFS) Makefile $(UAPI_HEADERS) $(UAPI_ARCH_HEADERS) \
 	$(wildcard $(BINDIR)/*) \
 	$(shell find bin sbin usr etc tests vendor user.ld.S -type f \
 		2>/dev/null)
@@ -464,10 +466,14 @@ $(BINDIR): | $(BUILD_ROOT)
 # Copy only the kernel UAPI headers into a private include root: the
 # kernel's implementation headers (everything outside include/uapi) are
 # never exposed to userland builds.
-$(UAPI_STAMP): $(UAPI_SRC) $(UAPI_HEADERS) | $(BUILD_ROOT)
+$(UAPI_STAMP): Makefile $(UAPI_SRC) $(UAPI_HEADERS) $(UAPI_ARCH_HEADERS) | $(BUILD_ROOT)
 	$(RM) -rf $(UAPI_DIR)
 	mkdir -p $(UAPI_DIR)
 	cp $(UAPI_HEADERS) $(UAPI_DIR)/
+	@if [ -d "$(UAPI_ARCH_SRC)/asm" ]; then \
+		mkdir -p $(UAPI_DIR)/asm; \
+		cp $(UAPI_ARCH_SRC)/asm/*.h $(UAPI_DIR)/asm/; \
+	fi
 	touch $@
 
 $(USER_LD): $(USER_LD_SOURCE) $(FLAGS_DEP) | $(BUILD_ROOT)
