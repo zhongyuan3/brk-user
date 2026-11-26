@@ -11,9 +11,7 @@ brktest stress [suite|suite.case]
 brktest all
 ```
 
-`all` runs the functional suites followed by a short stress pass.  Legacy
-suite names (`fork`, `kill`, `sig`, `meta`, `perm`, `group`, `auth`,
-`symlink`, `posix`, `net`) are kept as aliases.
+`all` runs the functional suites followed by a short stress pass.
 
 Useful options:
 
@@ -43,18 +41,13 @@ brktest all --format tap
 
 | suite | contents |
 |---|---|
-| `process` | fork, wait, exit status and kill |
-| `signal` | handlers, masks, pending signals, SIGWINCH |
-| `fs` | metadata, hard links and symlinks |
-| `creds` | uid/gid, permissions, setuid and auth databases |
-| `posix` | POSIX syscall batch |
-| `net` | TCP/UDP loopback sockets and inet helpers |
 | `file` | file I/O, append, truncate, rename and directories |
 | `io` | pipes, readv/writev, poll/select and SIGPIPE |
 | `memory` | malloc, mmap, mprotect and copy-on-write |
 | `time` | clocks, sleeps and wall-clock changes |
 | `sys` | process identity, uname, rusage, times and `/proc` |
 | `dev` | devtmpfs nodes and basic device access |
+| `exec` | ELF loading and static PIE validation |
 | `env` | environment variables, execve and shell integration |
 
 ## Stress suites

@@ -5,12 +5,6 @@
 #include <string.h>
 #include <unistd.h>
 
-extern const struct test_suite brktest_process_suite;
-extern const struct test_suite brktest_signal_suite;
-extern const struct test_suite brktest_fs_suite;
-extern const struct test_suite brktest_creds_suite;
-extern const struct test_suite brktest_posix_suite;
-extern const struct test_suite brktest_net_suite;
 extern const struct test_suite brktest_file_suite;
 extern const struct test_suite brktest_io_suite;
 extern const struct test_suite brktest_memory_suite;
@@ -29,10 +23,8 @@ extern const struct test_suite brktest_stress_signal_suite;
 extern const struct test_suite brktest_stress_mixed_suite;
 
 static const struct test_suite *const suites[] = {
-	&brktest_process_suite, &brktest_signal_suite, &brktest_fs_suite,
-	&brktest_creds_suite,	&brktest_posix_suite,  &brktest_net_suite,
-	&brktest_file_suite,	&brktest_io_suite,     &brktest_memory_suite,
-	&brktest_time_suite,	&brktest_sys_suite,    &brktest_dev_suite,
+	&brktest_file_suite,	&brktest_io_suite, &brktest_memory_suite,
+	&brktest_time_suite,	&brktest_sys_suite, &brktest_dev_suite,
 	&brktest_exec_suite,	&brktest_env_suite,
 	&brktest_stress_process_suite, &brktest_stress_fd_suite,
 	&brktest_stress_fs_suite, &brktest_stress_io_suite,
@@ -40,48 +32,22 @@ static const struct test_suite *const suites[] = {
 	&brktest_stress_signal_suite, &brktest_stress_mixed_suite,
 };
 
-struct suite_alias {
-	const char *name;
-	const struct test_suite *suite;
-	const char *case_name;
-};
-
-static const struct suite_alias aliases[] = {
-	{ "fork", &brktest_process_suite, "fork" },
-	{ "kill", &brktest_process_suite, "kill" },
-	{ "sig", &brktest_signal_suite, "basic" },
-	{ "meta", &brktest_fs_suite, "meta" },
-	{ "perm", &brktest_creds_suite, "perm" },
-	{ "group", &brktest_creds_suite, "group" },
-	{ "auth", &brktest_creds_suite, "auth" },
-	{ "symlink", &brktest_fs_suite, "symlink" },
-	{ "posix", &brktest_posix_suite, "batch" },
-	{ "net", &brktest_net_suite, "loopback" },
-};
-
 static void usage(const char *prog)
 {
 	fprintf(stderr,
 		"usage: %s [suite|suite.case|all] [options]\n\n"
 		"Suites:\n"
-		"  process  fork, wait, exit status and kill\n"
-		"  signal   signal handlers, masks and SIGWINCH\n"
-		"  fs       file metadata, links and symlinks\n"
-		"  creds    uid/gid, permissions and auth databases\n"
-		"  posix    POSIX syscall batch\n"
-		"  net      TCP/UDP loopback sockets and inet helpers\n"
 		"  file     regular file I/O, flags and directories\n"
 		"  io       pipes, vectors, poll/select and SIGPIPE\n"
 		"  memory   malloc, mmap, mprotect and copy-on-write\n"
 		"  time     POSIX clocks, sleeps and wall-clock changes\n"
 		"  sys      process identity, uname, rusage and /proc\n"
 		"  dev      devtmpfs nodes and basic device access\n"
+		"  exec     ELF loading and static PIE validation\n"
 		"  env      environment variables, execve and shell integration\n"
 		"  functional  run functional suites only\n"
 		"  stress      run stress suites only\n"
 		"  all         run functional + short stress (default)\n\n"
-		"Legacy aliases:\n"
-		"  fork kill sig meta perm group auth symlink posix net\n\n"
 		"Options:\n"
 		"  --list             list suites and cases\n"
 		"  --seed N           random seed (default: pid)\n"
@@ -170,18 +136,6 @@ static int run_named_case(const struct test_suite *suite, const char *name,
 		return -1;
 	}
 	return test_run_case(suite, tc, ctx) == TEST_FAIL ? -1 : 0;
-}
-
-static int run_alias(const struct suite_alias *alias, struct test_ctx *ctx)
-{
-	if (test_config.format == TEST_FORMAT_HUMAN)
-		printf("\n=== %s ===\n", alias->name);
-	int ret = run_named_case(alias->suite, alias->case_name, ctx);
-
-	if (test_config.format == TEST_FORMAT_HUMAN)
-		printf("=== %s: %s ===\n", alias->name,
-		       ret ? "FAILED" : "ok");
-	return ret;
 }
 
 int main(int argc, char *argv[])
@@ -279,16 +233,6 @@ int main(int argc, char *argv[])
 		total = count_group(true);
 		failures += run_group(true, &ctx);
 	} else {
-		for (size_t i = 0;
-		     i < sizeof(aliases) / sizeof(aliases[0]); i++) {
-			if (!strcmp(target, aliases[i].name)) {
-				total = 1;
-				if (run_alias(&aliases[i], &ctx) != 0)
-					failures++;
-				goto done;
-			}
-		}
-
 		const struct test_suite *suite = find_suite(target);
 
 		if (suite) {
