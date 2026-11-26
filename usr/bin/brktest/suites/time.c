@@ -48,6 +48,37 @@ static int case_clock_basic(struct test_ctx *ctx)
 	return 0;
 }
 
+static int case_cpu_clocks(struct test_ctx *ctx)
+{
+	struct timespec thread1, thread2, proc1, proc2, start, now;
+	long long elapsed;
+
+	(void)ctx;
+	if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &thread1) != 0 ||
+	    clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &proc1) != 0)
+		return test_fail_msg("time: CPU clocks unavailable");
+
+	if (clock_gettime(CLOCK_MONOTONIC, &start) != 0)
+		return test_fail_msg("time: clock_gettime failed");
+	do {
+		if (clock_gettime(CLOCK_MONOTONIC, &now) != 0)
+			return test_fail_msg("time: clock_gettime failed");
+		elapsed = ts_to_ns(&now) - ts_to_ns(&start);
+	} while (elapsed < 5 * 1000 * 1000LL);
+
+	if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &thread2) != 0 ||
+	    clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &proc2) != 0)
+		return test_fail_msg("time: CPU clocks unavailable");
+
+	if (ts_to_ns(&thread2) < ts_to_ns(&thread1))
+		return test_fail_msg("time: thread CPU clock went backwards");
+	if (ts_to_ns(&proc2) < ts_to_ns(&proc1))
+		return test_fail_msg("time: process CPU clock went backwards");
+	if (ts_to_ns(&thread2) > ts_to_ns(&proc2))
+		return test_fail_msg("time: thread CPU time exceeds process time");
+	return 0;
+}
+
 static int case_nanosleep(struct test_ctx *ctx)
 {
 	struct timespec req = { .tv_sec = 0, .tv_nsec = 10 * 1000 * 1000 };
@@ -206,6 +237,7 @@ static int case_tz_offset(struct test_ctx *ctx)
 
 static const struct test_case time_cases[] = {
 	{ "clocks", case_clock_basic, TEST_OWN_PGRP, 10000 },
+	{ "cpu_clocks", case_cpu_clocks, TEST_OWN_PGRP, 10000 },
 	{ "nanosleep", case_nanosleep, TEST_OWN_PGRP, 10000 },
 	{ "clock_nanosleep_rel", case_clock_nanosleep_rel, TEST_OWN_PGRP,
 	  10000 },
