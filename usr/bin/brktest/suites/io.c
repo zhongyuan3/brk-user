@@ -243,6 +243,42 @@ static int case_large_pipe(struct test_ctx *ctx)
 	return 0;
 }
 
+static int case_dup_shared(struct test_ctx *ctx)
+{
+	char dir[128], path[160];
+	char buf[8] = { 0 };
+	int fd, dupfd;
+
+	(void)ctx;
+	if (test_tmpdir(dir, sizeof(dir), "dup") != 0)
+		return test_fail_msg("io: cannot create temp dir");
+	if (snprintf(path, sizeof(path), "%s/file", dir) < 0)
+		return -1;
+	fd = open(path, O_RDWR | O_CREAT | O_TRUNC, 0644);
+	if (fd < 0)
+		return test_fail_msg("io: open failed: %d", errno);
+	if (write(fd, "abcdef", 6) != 6)
+		return test_fail_msg("io: write failed: %d", errno);
+	if (lseek(fd, 0, SEEK_SET) != 0)
+		return test_fail_msg("io: lseek failed");
+	dupfd = dup(fd);
+	if (dupfd < 0)
+		return test_fail_msg("io: dup failed: %d", errno);
+	if (read(fd, buf, 2) != 2 || memcmp(buf, "ab", 2))
+		return test_fail_msg("io: first read failed");
+	if (read(dupfd, buf, 2) != 2 || memcmp(buf, "cd", 2))
+		return test_fail_msg("io: duplicate did not share the offset");
+	if (lseek(dupfd, 0, SEEK_SET) != 0)
+		return test_fail_msg("io: lseek duplicate failed");
+	if (read(fd, buf, 2) != 2 || memcmp(buf, "ab", 2))
+		return test_fail_msg("io: offset is not shared");
+	close(dupfd);
+	close(fd);
+	unlink(path);
+	rmdir(dir);
+	return 0;
+}
+
 static const struct test_case io_cases[] = {
 	{ "pipe", case_pipe_basic, TEST_OWN_PGRP, 10000 },
 	{ "readv_writev", case_readv_writev, TEST_OWN_PGRP, 10000 },
@@ -251,6 +287,7 @@ static const struct test_case io_cases[] = {
 	{ "select", case_select_basic, TEST_OWN_PGRP, 10000 },
 	{ "sigpipe", case_sigpipe, 0, 10000 },
 	{ "large_pipe", case_large_pipe, TEST_OWN_PGRP, 15000 },
+	{ "dup_shared", case_dup_shared, TEST_OWN_PGRP, 10000 },
 };
 
 const struct test_suite brktest_io_suite = {

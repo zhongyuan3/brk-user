@@ -2,6 +2,7 @@
 #include "../util.h"
 
 #include <errno.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -235,9 +236,55 @@ static int case_tz_offset(struct test_ctx *ctx)
 	return 0;
 }
 
+struct timer_thread {
+	long long elapsed_ns;
+	int ok;
+};
+
+static void *timer_thread_fn(void *arg)
+{
+	struct timer_thread *result = arg;
+	struct timespec start, end;
+	struct timespec req = { .tv_sec = 0, .tv_nsec = 10 * 1000 * 1000 };
+
+	if (clock_gettime(CLOCK_MONOTONIC, &start) != 0)
+		return NULL;
+	if (nanosleep(&req, NULL) != 0)
+		return NULL;
+	if (clock_gettime(CLOCK_MONOTONIC, &end) != 0)
+		return NULL;
+
+	result->elapsed_ns = ts_to_ns(&end) - ts_to_ns(&start);
+	result->ok = result->elapsed_ns >= 5 * 1000 * 1000LL &&
+		     result->elapsed_ns < 1000 * 1000 * 1000LL;
+	return NULL;
+}
+
+static int case_timer_smp(struct test_ctx *ctx)
+{
+	struct timer_thread results[4] = { 0 };
+	pthread_t threads[4];
+
+	(void)ctx;
+	for (size_t i = 0; i < 4; i++) {
+		if (pthread_create(&threads[i], NULL, timer_thread_fn,
+				   &results[i]) != 0)
+			return test_fail_msg("time: pthread_create failed");
+	}
+	for (size_t i = 0; i < 4; i++) {
+		if (pthread_join(threads[i], NULL) != 0)
+			return test_fail_msg("time: pthread_join failed");
+		if (!results[i].ok)
+			return test_fail_msg("time: thread sleep elapsed=%lldns",
+					     results[i].elapsed_ns);
+	}
+	return 0;
+}
+
 static const struct test_case time_cases[] = {
 	{ "clocks", case_clock_basic, TEST_OWN_PGRP, 10000 },
 	{ "cpu_clocks", case_cpu_clocks, TEST_OWN_PGRP, 10000 },
+	{ "timer_smp", case_timer_smp, TEST_OWN_PGRP, 15000 },
 	{ "nanosleep", case_nanosleep, TEST_OWN_PGRP, 10000 },
 	{ "clock_nanosleep_rel", case_clock_nanosleep_rel, TEST_OWN_PGRP,
 	  10000 },

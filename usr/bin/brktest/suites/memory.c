@@ -3,6 +3,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -152,11 +153,92 @@ static int case_fork_cow(struct test_ctx *ctx)
 	return 0;
 }
 
+static int case_mprotect_fault(struct test_ctx *ctx)
+{
+	unsigned char *p;
+	pid_t pid;
+	int status;
+
+	(void)ctx;
+	p = mmap(NULL, 4096, PROT_READ | PROT_WRITE,
+		 MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	if (p == MAP_FAILED)
+		return test_fail_msg("memory: mmap failed: %d", errno);
+	p[0] = 1;
+	if (mprotect(p, 4096, PROT_READ) != 0)
+		return test_fail_msg("memory: mprotect failed: %d", errno);
+
+	pid = fork();
+	if (pid < 0)
+		return test_fail_msg("memory: fork failed: %d", errno);
+	if (pid == 0) {
+		p[0] = 2;
+		_exit(0);
+	}
+	if (waitpid(pid, &status, 0) != pid)
+		return test_fail_msg("memory: waitpid failed: %d", errno);
+	if (!WIFSIGNALED(status) || WTERMSIG(status) != SIGSEGV)
+		return test_fail_msg("memory: write to PROT_READ did not SIGSEGV");
+	munmap(p, 4096);
+	return 0;
+}
+
+static int case_map_private(struct test_ctx *ctx)
+{
+	char dir[128], path[160];
+	unsigned char *p;
+	char buf[4];
+	int fd;
+
+	(void)ctx;
+	if (test_tmpdir(dir, sizeof(dir), "map_private") != 0)
+		return test_fail_msg("memory: cannot create temp dir");
+	if (snprintf(path, sizeof(path), "%s/file", dir) < 0)
+		return -1;
+	fd = open(path, O_RDWR | O_CREAT | O_TRUNC, 0644);
+	if (fd < 0)
+		return test_fail_msg("memory: open failed: %d", errno);
+	if (write(fd, "ABCD", 4) != 4)
+		return test_fail_msg("memory: write failed: %d", errno);
+
+	p = mmap(NULL, 4096, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
+	if (p == MAP_FAILED)
+		return test_fail_msg("memory: private mmap failed: %d", errno);
+	if (p[0] != 'A')
+		return test_fail_msg("memory: private mmap read failed");
+	p[0] = 'Z';
+	if (munmap(p, 4096) != 0)
+		return test_fail_msg("memory: private munmap failed");
+	if (lseek(fd, 0, SEEK_SET) != 0 || read(fd, buf, 1) != 1)
+		return test_fail_msg("memory: read after private mmap failed");
+	if (buf[0] != 'A')
+		return test_fail_msg("memory: private mmap changed the file");
+
+	p = mmap(NULL, 4096, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+	if (p == MAP_FAILED)
+		return test_fail_msg("memory: shared mmap failed: %d", errno);
+	p[0] = 'Q';
+	if (msync(p, 4096, MS_SYNC) != 0)
+		return test_fail_msg("memory: shared msync failed: %d", errno);
+	if (munmap(p, 4096) != 0)
+		return test_fail_msg("memory: shared munmap failed");
+	if (lseek(fd, 0, SEEK_SET) != 0 || read(fd, buf, 1) != 1)
+		return test_fail_msg("memory: read after shared mmap failed");
+	if (buf[0] != 'Q')
+		return test_fail_msg("memory: shared mmap did not update the file");
+	close(fd);
+	unlink(path);
+	rmdir(dir);
+	return 0;
+}
+
 static const struct test_case memory_cases[] = {
 	{ "malloc", case_malloc, TEST_OWN_PGRP, 10000 },
 	{ "mmap_anon", case_mmap_anon, TEST_OWN_PGRP, 10000 },
 	{ "mmap_file", case_mmap_file, TEST_OWN_PGRP, 10000 },
 	{ "fork_cow", case_fork_cow, TEST_OWN_PGRP, 10000 },
+	{ "mprotect_fault", case_mprotect_fault, TEST_OWN_PGRP, 10000 },
+	{ "map_private", case_map_private, TEST_OWN_PGRP, 10000 },
 };
 
 const struct test_suite brktest_memory_suite = {

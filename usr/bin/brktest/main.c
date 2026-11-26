@@ -5,6 +5,12 @@
 #include <string.h>
 #include <unistd.h>
 
+extern const struct test_suite brktest_process_suite;
+extern const struct test_suite brktest_signal_suite;
+extern const struct test_suite brktest_fsmeta_suite;
+extern const struct test_suite brktest_creds_suite;
+extern const struct test_suite brktest_net_suite;
+extern const struct test_suite brktest_errno_suite;
 extern const struct test_suite brktest_file_suite;
 extern const struct test_suite brktest_io_suite;
 extern const struct test_suite brktest_memory_suite;
@@ -23,7 +29,10 @@ extern const struct test_suite brktest_stress_signal_suite;
 extern const struct test_suite brktest_stress_mixed_suite;
 
 static const struct test_suite *const suites[] = {
-	&brktest_file_suite,	&brktest_io_suite, &brktest_memory_suite,
+	&brktest_process_suite, &brktest_signal_suite, &brktest_fsmeta_suite,
+	&brktest_creds_suite, &brktest_net_suite, &brktest_errno_suite,
+	&brktest_file_suite, &brktest_io_suite,
+	&brktest_memory_suite,
 	&brktest_time_suite,	&brktest_sys_suite, &brktest_dev_suite,
 	&brktest_exec_suite,	&brktest_env_suite,
 	&brktest_stress_process_suite, &brktest_stress_fd_suite,
@@ -37,6 +46,12 @@ static void usage(const char *prog)
 	fprintf(stderr,
 		"usage: %s [suite|suite.case|all] [options]\n\n"
 		"Suites:\n"
+		"  process  fork, wait, exit status and process groups\n"
+		"  signal   handlers, masks, pending signals and EINTR\n"
+		"  fsmeta   metadata, links, symlinks and timestamps\n"
+		"  creds    identity, permissions and auth databases\n"
+		"  net      TCP/UDP loopback sockets and inet helpers\n"
+		"  errno    invalid arguments, bad fds and faulting pointers\n"
 		"  file     regular file I/O, flags and directories\n"
 		"  io       pipes, vectors, poll/select and SIGPIPE\n"
 		"  memory   malloc, mmap, mprotect and copy-on-write\n"

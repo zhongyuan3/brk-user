@@ -41,6 +41,12 @@ brktest all --format tap
 
 | suite | contents |
 |---|---|
+| `process` | fork, wait, exit status and process groups |
+| `signal` | handlers, masks, pending signals and interrupted syscalls |
+| `fsmeta` | metadata, hard links, symlinks and timestamps |
+| `creds` | identity, credentials, permissions and auth databases |
+| `net` | TCP/UDP loopback sockets, options and inet helpers |
+| `errno` | invalid arguments, bad fds and error paths |
 | `file` | file I/O, append, truncate, rename and directories |
 | `io` | pipes, readv/writev, poll/select and SIGPIPE |
 | `memory` | malloc, mmap, mprotect and copy-on-write |
