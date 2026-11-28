@@ -1,5 +1,5 @@
-#ifndef BRK_LENGTHOF_H
-#define BRK_LENGTHOF_H
+#ifndef _LENGTHOF_H
+#define _LENGTHOF_H
 
 #define lengthof(arr) (sizeof(arr) / sizeof((arr)[0]))
 

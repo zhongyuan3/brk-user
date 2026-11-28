@@ -1,5 +1,5 @@
-#ifndef SH_H
-#define SH_H
+#ifndef _BRKSH_H
+#define _BRKSH_H
 
 #include <ctype.h>
 #include <dirent.h>

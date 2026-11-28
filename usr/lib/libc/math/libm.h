@@ -21,8 +21,8 @@
  *     rounding.
  */
 
-#ifndef _BRK_LIBM_H
-#define _BRK_LIBM_H
+#ifndef _LIBM_H
+#define _LIBM_H
 
 #include <math.h>
 #include <stdint.h>
@@ -91,4 +91,4 @@ hidden void __brk_ln1p_pair(double f, double *hi, double *lo);
 hidden double __brk_asin_poly(double t);
 hidden double __brk_atan_core(double u);
 
-#endif /* _BRK_LIBM_H */
+#endif /* _LIBM_H */

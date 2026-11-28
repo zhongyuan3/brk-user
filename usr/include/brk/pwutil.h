@@ -1,5 +1,5 @@
-#ifndef _PWUTIL_H
-#define _PWUTIL_H
+#ifndef _BRK_PWUTIL_H
+#define _BRK_PWUTIL_H
 
 #include <stddef.h>
 #include <sys/types.h>

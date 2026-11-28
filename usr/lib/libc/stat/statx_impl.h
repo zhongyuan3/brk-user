@@ -1,5 +1,5 @@
-#ifndef LIBBRKC_STATX_IMPL_H
-#define LIBBRKC_STATX_IMPL_H
+#ifndef _STATX_IMPL_H
+#define _STATX_IMPL_H
 
 #include <fcntl.h>
 #include <string.h>

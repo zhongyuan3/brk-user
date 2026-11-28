@@ -1,5 +1,5 @@
-#ifndef BRKTEST_UTIL_H
-#define BRKTEST_UTIL_H
+#ifndef _UTIL_H
+#define _UTIL_H
 
 #include <stddef.h>
 

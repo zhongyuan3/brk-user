@@ -1,5 +1,5 @@
-#ifndef PP_H
-#define PP_H
+#ifndef _PP_H
+#define _PP_H
 
 #define PP_VALUE 40
 

@@ -1,5 +1,5 @@
-#ifndef BRK_PTHREAD_IMPL_H
-#define BRK_PTHREAD_IMPL_H
+#ifndef _PTHREAD_IMPL_H
+#define _PTHREAD_IMPL_H
 
 #include <pthread.h>
 #include <stdint.h>

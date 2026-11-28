@@ -1,5 +1,5 @@
-#ifndef BRK_BITS_H
-#define BRK_BITS_H
+#ifndef _BITS_H
+#define _BITS_H
 
 #include <stdint.h>
 

@@ -1,5 +1,5 @@
-#ifndef BRKTEST_HARNESS_H
-#define BRKTEST_HARNESS_H
+#ifndef _HARNESS_H
+#define _HARNESS_H
 
 #include <stdbool.h>
 #include <stddef.h>

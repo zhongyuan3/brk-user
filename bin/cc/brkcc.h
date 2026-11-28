@@ -1,5 +1,5 @@
-#ifndef CC_H
-#define CC_H
+#ifndef _BRKCC_H
+#define _BRKCC_H
 
 #include <fcntl.h>
 #include <stdarg.h>
